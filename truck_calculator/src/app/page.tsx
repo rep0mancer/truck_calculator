@@ -60,435 +60,355 @@ export default function HomePage() {
   const [eupWeightPerPallet, setEupWeightPerPallet] = useState('');
   const [dinWeightPerPallet, setDinWeightPerPallet] = useState('');
 
-  const [loadedEuroPalletsBase, setLoadedEuroPalletsBase] = useState(0); // Base footprints
-  const [loadedIndustrialPalletsBase, setLoadedIndustrialPalletsBase] = useState(0); // Base footprints
-  const [totalEuroPalletsVisual, setTotalEuroPalletsVisual] = useState(0); // Includes stacked
-  const [totalDinPalletsVisual, setTotalDinPalletsVisual] = useState(0); // Includes stacked
+  // State for calculation results
+  const [loadedEuroPalletsBase, setLoadedEuroPalletsBase] = useState(0);
+  const [loadedIndustrialPalletsBase, setLoadedIndustrialPalletsBase] = useState(0);
+  const [totalEuroPalletsVisual, setTotalEuroPalletsVisual] = useState(0);
+  const [totalDinPalletsVisual, setTotalDinPalletsVisual] = useState(0);
   const [utilizationPercentage, setUtilizationPercentage] = useState(0);
   const [warnings, setWarnings] = useState([]);
-  const [palletArrangement, setPalletArrangement] = useState([]);
+  const [palletArrangement, setPalletArrangement] = useState([]); // Initialized as empty array
   const [totalWeightKg, setTotalWeightKg] = useState(0);
 
   const currentTruckDef = TRUCK_TYPES[selectedTruck];
 
-  // Auto-check stackable if quantity exceeds single layer capacity
+  // Effect for auto-checking stackable (can be disabled if preferred)
   useEffect(() => {
     const currentTruck = TRUCK_TYPES[selectedTruck];
     let singleLayerEUPCapacity = 0;
     let singleLayerDINCapacity = 0;
 
     if (currentTruck.units.length > 1) {
-        // Use per-unit capacity for multi-unit trucks if defined, otherwise estimate based on total
         singleLayerEUPCapacity = (currentTruck.singleLayerEUPCapacityLongPerUnit || currentTruck.singleLayerEUPCapacityLong || 0) * currentTruck.units.length;
         singleLayerDINCapacity = (currentTruck.singleLayerDINCapacityPerUnit || currentTruck.singleLayerDINCapacity || 0) * currentTruck.units.length;
     } else {
-        // Use total capacity for single-unit trucks
-        singleLayerEUPCapacity = currentTruck.singleLayerEUPCapacityLong || 0; // Default to long for check
+        singleLayerEUPCapacity = currentTruck.singleLayerEUPCapacityLong || 0;
         singleLayerDINCapacity = currentTruck.singleLayerDINCapacity || 0;
     }
-
-    if (eupQuantity > 0 && singleLayerEUPCapacity > 0 && eupQuantity > singleLayerEUPCapacity && !isEUPStackable) {
-      // Automatically check stackable if quantity exceeds capacity
-      // Note: This check is basic and uses 'long' capacity. 'Broad' might differ.
-      // Consider removing auto-check or making it smarter if needed.
-      // setIsEUPStackable(true); // Temporarily disable auto-check for clarity
-    }
-    if (dinQuantity > 0 && singleLayerDINCapacity > 0 && dinQuantity > singleLayerDINCapacity && !isDINStackable) {
-      // setIsDINStackable(true); // Temporarily disable auto-check for clarity
-    }
+    // Optional: Auto-enable stacking if quantity exceeds single layer.
+    // Consider user experience implications.
+    // if (eupQuantity > 0 && singleLayerEUPCapacity > 0 && eupQuantity > singleLayerEUPCapacity && !isEUPStackable) {
+    //   setIsEUPStackable(true);
+    // }
+    // if (dinQuantity > 0 && singleLayerDINCapacity > 0 && dinQuantity > singleLayerDINCapacity && !isDINStackable) {
+    //   setIsDINStackable(true);
+    // }
   }, [eupQuantity, dinQuantity, selectedTruck, isEUPStackable, isDINStackable]);
 
 
+  // Main calculation logic wrapped in useCallback
   const calculateLoading = useCallback(() => {
+    // --- Initialization ---
     const initialTruckConfigMaster = JSON.parse(JSON.stringify(TRUCK_TYPES[selectedTruck]));
     let tempWarnings = [];
-    let finalTotalEuroVisualPalletsPlaced = 0;
-    let finalTotalDinVisualPalletsPlaced = 0;
-    let finalActualPlacedEUPBase = 0;
-    let finalActualPlacedDINBase = 0;
-    let finalTotalAreaUsedByBasePallets = 0;
-    let currentTotalWeightKg = 0;
+    let finalTotalEuroVisual = 0;
+    let finalTotalDinVisual = 0;
+    let finalActualEUPBase = 0;
+    let finalActualDINBase = 0;
+    let finalTotalAreaBase = 0;
+    let currentTotalWeight = 0;
+    // *** Initialize finalPalletArrangement here to ensure it's always defined ***
+    let finalPalletArrangement = [];
 
-    const eupPalletWeight = parseFloat(eupWeightPerPallet) || 0;
-    const dinPalletWeight = parseFloat(dinWeightPerPallet) || 0;
+    // Safely parse weights
+    const eupWeight = parseFloat(eupWeightPerPallet);
+    const dinWeight = parseFloat(dinWeightPerPallet);
+    const safeEupWeight = !isNaN(eupWeight) && eupWeight > 0 ? eupWeight : 0;
+    const safeDinWeight = !isNaN(dinWeight) && dinWeight > 0 ? dinWeight : 0;
 
-    // Initialize state for each truck unit for calculations
+    // Initialize state for each truck unit
     let unitsState = initialTruckConfigMaster.units.map(u => ({
         ...u,
-        occupiedRects: [], // Tracks placed pallet footprints
-        currentX: 0,       // Current position along the truck length
-        currentY: 0,       // Current position across the truck width
-        palletsVisual: [], // Array to store visual representation of pallets
-        dinEndX: 0,        // X position after last DIN pallet placed in this unit
-        dinEndY: 0,        // Y position after last DIN pallet placed in this unit
-        dinLastRowIncomplete: false // Flag if the last DIN row had only one pallet
+        occupiedRects: [],
+        currentX: 0,
+        currentY: 0,
+        palletsVisual: [],
+        dinEndX: 0,
+        dinEndY: 0,
+        dinLastRowIncomplete: false,
+        eupStartX: 0,
     }));
 
-    // --- DIN PALLET PLACEMENT ---
-    let dinPlacedCount = 0;
+    // --- DIN Pallet Placement ---
+    let dinPlacedCountTotal = 0;
     if (dinQuantity > 0) {
         for (const unit of unitsState) {
-            if (dinPlacedCount >= dinQuantity) break;
-
+            if (dinPlacedCountTotal >= dinQuantity) break;
             while (unit.currentX < unit.length) {
-                if (dinPlacedCount >= dinQuantity) break;
+                if (dinPlacedCountTotal >= dinQuantity) break;
+                let rowPalletsPlaced = 0;
+                const dinDef = PALLET_TYPES.industrial;
+                const dinLength = dinDef.width;
+                const dinWidth = dinDef.length;
+                let rowHeight = 0;
+                unit.currentY = 0;
 
-                let rowPalletsPlacedThisAttempt = 0;
-                const dinPalletDef = PALLET_TYPES.industrial;
-                const dinLengthAlongTruck = dinPalletDef.width; // 100cm
-                const dinWidthAcrossTruck = dinPalletDef.length; // 120cm
-                let maxHeightInRow = 0;
-                unit.currentY = 0; // Reset Y for each new row attempt
-
-                // Try placing two DIN pallets across the width
-                for (let i = 0; i < 2; i++) {
-                    if (dinPlacedCount >= dinQuantity) break;
-
-                    // Check weight limit before placing base pallet
-                    if (dinPalletWeight > 0 && currentTotalWeightKg + dinPalletWeight > MAX_GROSS_WEIGHT_KG) {
+                for (let i = 0; i < 2; i++) { // Try placing two DINs across
+                    if (dinPlacedCountTotal >= dinQuantity) break;
+                    if (safeDinWeight > 0 && currentTotalWeight + safeDinWeight > MAX_GROSS_WEIGHT_KG) {
                         if (!tempWarnings.some(w => w.includes("Weight limit reached for DIN"))) {
                             tempWarnings.push(`Weight limit reached for DIN pallets. Max ${MAX_GROSS_WEIGHT_KG/1000}t.`);
                         }
-                        unit.currentX = unit.length; // Mark unit as full due to weight
-                        break; // Stop placing DINs in this unit
+                        unit.currentX = unit.length; break;
                     }
-
-                    // Check space for the pallet
-                    if (unit.currentX + dinLengthAlongTruck <= unit.length && unit.currentY + dinWidthAcrossTruck <= unit.width) {
-                        const palletKeyBase = `din_base_${unit.id}_${finalActualPlacedDINBase}_${i}`;
+                    if (unit.currentX + dinLength <= unit.length && unit.currentY + dinWidth <= unit.width) {
+                        const baseKey = `din_base_${unit.id}_${finalActualDINBase}_${i}`;
                         unit.palletsVisual.push({
-                            x: unit.currentX, y: unit.currentY, width: dinLengthAlongTruck, height: dinWidthAcrossTruck,
-                            type: 'industrial', isStacked: false, key: palletKeyBase, unitId: unit.id,
+                            x: unit.currentX, y: unit.currentY, width: dinLength, height: dinWidth,
+                            type: 'industrial', isStacked: false, key: baseKey, unitId: unit.id,
                         });
-                        unit.occupiedRects.push({ x: unit.currentX, y: unit.currentY, width: dinLengthAlongTruck, height: dinWidthAcrossTruck });
-                        finalTotalAreaUsedByBasePallets += dinPalletDef.area;
-                        finalActualPlacedDINBase++;
-                        finalTotalDinVisualPalletsPlaced++;
-                        currentTotalWeightKg += dinPalletWeight;
-                        dinPlacedCount++;
-                        rowPalletsPlacedThisAttempt++;
-                        maxHeightInRow = Math.max(maxHeightInRow, dinLengthAlongTruck);
+                        unit.occupiedRects.push({ x: unit.currentX, y: unit.currentY, width: dinLength, height: dinWidth });
+                        finalTotalAreaBase += dinDef.area;
+                        finalActualDINBase++;
+                        finalTotalDinVisual++;
+                        currentTotalWeight += safeDinWeight;
+                        dinPlacedCountTotal++;
+                        rowPalletsPlaced++;
+                        rowHeight = Math.max(rowHeight, dinLength);
 
-                        // Handle Stacking for DIN
-                        if (isDINStackable && dinPlacedCount < dinQuantity) {
-                            // Check weight limit for stacked pallet
-                            if (dinPalletWeight > 0 && currentTotalWeightKg + dinPalletWeight > MAX_GROSS_WEIGHT_KG) {
-                                if (!tempWarnings.some(w => w.includes("Weight limit reached stacking DIN"))) {
-                                    tempWarnings.push(`Weight limit reached. Cannot stack more DIN pallets. Max ${MAX_GROSS_WEIGHT_KG/1000}t.`);
-                                }
-                                // Don't mark unit full, just stop stacking more DINs
-                                // Allow EUPs to potentially be placed later
-                            } else {
+                        // Stacking DIN
+                        if (isDINStackable && dinPlacedCountTotal < dinQuantity) {
+                            if (!(safeDinWeight > 0 && currentTotalWeight + safeDinWeight > MAX_GROSS_WEIGHT_KG)) {
                                 unit.palletsVisual.push({
-                                    x: unit.currentX, y: unit.currentY, width: dinLengthAlongTruck, height: dinWidthAcrossTruck,
-                                    type: 'industrial', isStacked: true, key: `din_stack_${unit.id}_${finalActualPlacedDINBase -1}_${i}`, unitId: unit.id,
+                                    x: unit.currentX, y: unit.currentY, width: dinLength, height: dinWidth,
+                                    type: 'industrial', isStacked: true, key: `din_stack_${unit.id}_${finalActualDINBase -1}_${i}`, unitId: unit.id,
                                 });
-                                finalTotalDinVisualPalletsPlaced++;
-                                currentTotalWeightKg += dinPalletWeight;
-                                dinPlacedCount++;
-                            }
+                                finalTotalDinVisual++;
+                                currentTotalWeight += safeDinWeight;
+                                dinPlacedCountTotal++;
+                            } else { if (!tempWarnings.some(w => w.includes("Weight limit stacking DIN"))) tempWarnings.push(`Weight limit reached. Cannot stack more DIN pallets. Max ${MAX_GROSS_WEIGHT_KG/1000}t.`); }
                         }
-                        unit.currentY += dinWidthAcrossTruck; // Move Y for the next pallet in the row
-                    } else {
-                        break; // Cannot fit this pallet in the current width position
-                    }
-                } // End loop for placing 2 DINs across
-
-                if (unit.currentX >= unit.length) break; // Break if unit marked full by weight
-
-                // Update unit state after attempting to fill the row
-                if (rowPalletsPlacedThisAttempt > 0) {
-                    unit.currentX += maxHeightInRow; // Advance X by the length of the row just placed
-                    unit.dinEndX = unit.currentX;    // Record X position after this row
-                    unit.dinEndY = unit.currentY;    // Record Y position (will be 240 if full row, 120 if single)
-                    unit.dinLastRowIncomplete = (rowPalletsPlacedThisAttempt === 1); // Check if only one was placed
-                } else {
-                    // Could not place any DIN pallet at this currentX, stop placing DINs in this unit
-                    unit.currentX = unit.length;
+                        unit.currentY += dinWidth;
+                    } else { break; }
                 }
-            } // End while loop for unit (DINs)
-            if (unit.currentX >= unit.length && dinPlacedCount < dinQuantity && !tempWarnings.some(w => w.includes("Weight limit reached"))) {
-                 // If unit filled by space before all DINs placed
-                 // This warning might be redundant if the later check catches it
+                if (unit.currentX >= unit.length) break;
+                if (rowPalletsPlaced > 0) {
+                    unit.currentX += rowHeight;
+                    unit.dinEndX = unit.currentX;
+                    unit.dinEndY = unit.currentY;
+                    unit.dinLastRowIncomplete = (rowPalletsPlaced === 1);
+                } else { unit.currentX = unit.length; }
             }
-        } // End loop through units for DINs
-    } // End if (dinQuantity > 0)
-
-    if (finalTotalDinVisualPalletsPlaced < dinQuantity && !tempWarnings.some(w => w.includes("Weight limit reached"))) {
-        tempWarnings.push(`Could not fit all ${dinQuantity} Industrial pallets due to space. Only ${finalTotalDinVisualPalletsPlaced} (visual) placed.`);
+            unit.eupStartX = unit.dinEndX; // Set initial EUP start X for this unit
+        }
     }
 
-    // Store the state after DIN placement to reset for EUP pattern testing
+    if (finalTotalDinVisual < dinQuantity && !tempWarnings.some(w => w.includes("Weight limit"))) {
+        tempWarnings.push(`Could not fit all ${dinQuantity} Industrial pallets due to space. Only ${finalTotalDinVisual} (visual) placed.`);
+    }
+
     const initialUnitsStateAfterDIN = JSON.parse(JSON.stringify(unitsState));
-    const weightAfterDINs = currentTotalWeightKg;
+    const weightAfterDINs = currentTotalWeight;
 
     // --- EUP PALLET PLACEMENT ---
-    let bestOverallEUPPlacement = {
-        unitsConfiguration: JSON.parse(JSON.stringify(initialUnitsStateAfterDIN)), // Start with DIN state
-        totalVisualEUPs: 0,
-        baseEUPs: 0,
-        areaEUPs: 0,
-        tempWarnings: [],
+    let bestEUPResult = {
+        unitsConfiguration: JSON.parse(JSON.stringify(initialUnitsStateAfterDIN)),
+        totalVisualEUPs: 0, baseEUPs: 0, areaEUPs: 0, tempWarnings: [],
         currentWeightAfterEUPs: weightAfterDINs,
-        chosenPattern: eupLoadingPattern === 'auto' ? 'none' : eupLoadingPattern, // Track best pattern
+        chosenPattern: eupLoadingPattern === 'auto' ? 'none' : eupLoadingPattern,
     };
 
     if (eupQuantity > 0) {
         const patternsToTry = eupLoadingPattern === 'auto' ? ['long', 'broad'] : [eupLoadingPattern];
-
         for (const pattern of patternsToTry) {
-            // Reset state for this pattern trial
-            let currentPatternUnitsState = JSON.parse(JSON.stringify(initialUnitsStateAfterDIN));
-            let patternTotalEuroVisual = 0;
-            let patternActualEUPBase = 0;
-            let patternAreaUsedByEUPs = 0;
-            let patternTempCurrentWeightKg = weightAfterDINs;
-            let patternSpecificWarnings = [];
-            let patternRemainingEupQ = eupQuantity;
+            let currentUnits = JSON.parse(JSON.stringify(initialUnitsStateAfterDIN));
+            let patternVisualEUP = 0, patternBaseEUP = 0, patternAreaEUP = 0;
+            let patternWeight = weightAfterDINs;
+            let patternWarn = [];
+            let patternRemainingEupNeeded = eupQuantity;
 
-            // --- GAP FILLING LOGIC ( intégré dans la boucle de pattern ) ---
-            for (const unit of currentPatternUnitsState) {
-                if (patternRemainingEupQ <= 0) break;
-
+            // GAP FILLING
+            for (const unit of currentUnits) {
+                if (patternRemainingEupNeeded <= 0) break;
                 if (unit.dinLastRowIncomplete) {
-                    const gapX = unit.dinEndX - PALLET_TYPES.industrial.width; // X where the single DIN started
-                    const gapY = PALLET_TYPES.industrial.length; // Gap starts after the DIN's width (120cm)
-                    const gapWidth = unit.width - gapY; // Remaining width (125cm)
-                    const gapLength = unit.length - gapX; // Remaining length from gap start
-                    const dinLengthInGap = PALLET_TYPES.industrial.width; // The DIN occupies 100cm length here
-                    const eupPalletDef = PALLET_TYPES.euro;
-                    let placedInGap = false;
-                    let eupLengthInGap = 0;
+                    const gapX = unit.dinEndX - PALLET_TYPES.industrial.width;
+                    const gapY = PALLET_TYPES.industrial.length;
+                    const gapWidth = unit.width - gapY;
+                    const gapLength = unit.length - gapX;
+                    const dinLengthInRow = PALLET_TYPES.industrial.width;
+                    const eupDef = PALLET_TYPES.euro;
+                    let placedInGap = false, eupLengthPlacedInGap = 0;
                     let palletVisualGap = null;
+                    const tryBroadFirst = (pattern === 'broad' || pattern === 'auto');
+                    const tryLongFirst = (pattern === 'long' || pattern === 'auto');
 
-                    // Determine which EUP orientation to try based on the current pattern loop
-                    // Try Broad first if pattern allows, as it fills width better (120cm)
-                    if ((pattern === 'broad' || pattern === 'auto') && gapWidth >= eupPalletDef.length && gapLength >= eupPalletDef.width && patternRemainingEupQ > 0) {
-                        // Try placing Broad (80L x 120W)
-                        if (!(eupPalletWeight > 0 && patternTempCurrentWeightKg + eupPalletWeight > MAX_GROSS_WEIGHT_KG)) {
-                            palletVisualGap = {
-                                x: gapX, y: gapY, width: eupPalletDef.width, height: eupPalletDef.length, // 80L x 120W
-                                type: 'euro', isStacked: false, key: `eup_gap_${unit.id}_${pattern}_broad`, unitId: unit.id,
-                            };
-                            placedInGap = true;
-                            eupLengthInGap = eupPalletDef.width; // 80
-                        } else { if (!patternSpecificWarnings.some(w=>w.includes("Weight limit for EUP gap"))) patternSpecificWarnings.push("Weight limit for EUP gap"); }
+                    // Try Broad in Gap
+                    if (tryBroadFirst && gapWidth >= eupDef.length && gapLength >= eupDef.width && patternRemainingEupNeeded > 0) {
+                        if (!(safeEupWeight > 0 && patternWeight + safeEupWeight > MAX_GROSS_WEIGHT_KG)) {
+                            palletVisualGap = { x: gapX, y: gapY, width: eupDef.width, height: eupDef.length, type: 'euro', isStacked: false, key: `eup_gap_${unit.id}_${pattern}_broad`, unitId: unit.id };
+                            placedInGap = true; eupLengthPlacedInGap = eupDef.width;
+                        } else { if (!patternWarn.some(w=>w.includes("EUP gap"))) patternWarn.push("Weight limit for EUP gap"); }
+                    }
+                    // Try Long in Gap
+                    if (!placedInGap && tryLongFirst && gapWidth >= eupDef.width && gapLength >= eupDef.length && patternRemainingEupNeeded > 0) {
+                         if (!(safeEupWeight > 0 && patternWeight + safeEupWeight > MAX_GROSS_WEIGHT_KG)) {
+                            palletVisualGap = { x: gapX, y: gapY, width: eupDef.length, height: eupDef.width, type: 'euro', isStacked: false, key: `eup_gap_${unit.id}_${pattern}_long`, unitId: unit.id };
+                            placedInGap = true; eupLengthPlacedInGap = eupDef.length;
+                         } else { if (!patternWarn.some(w=>w.includes("EUP gap"))) patternWarn.push("Weight limit for EUP gap"); }
                     }
 
-                    // Try Long if broad didn't fit/place and pattern allows
-                    if (!placedInGap && (pattern === 'long' || pattern === 'auto') && gapWidth >= eupPalletDef.width && gapLength >= eupPalletDef.length && patternRemainingEupQ > 0) {
-                        // Try placing Long (120L x 80W)
-                         if (!(eupPalletWeight > 0 && patternTempCurrentWeightKg + eupPalletWeight > MAX_GROSS_WEIGHT_KG)) {
-                            palletVisualGap = {
-                                x: gapX, y: gapY, width: eupPalletDef.length, height: eupPalletDef.width, // 120L x 80W
-                                type: 'euro', isStacked: false, key: `eup_gap_${unit.id}_${pattern}_long`, unitId: unit.id,
-                            };
-                            placedInGap = true;
-                            eupLengthInGap = eupPalletDef.length; // 120
-                         } else { if (!patternSpecificWarnings.some(w=>w.includes("Weight limit for EUP gap"))) patternSpecificWarnings.push("Weight limit for EUP gap"); }
-                    }
-
-                    // If an EUP was placed in the gap, update counts and unit state
                     if (placedInGap && palletVisualGap) {
                         unit.palletsVisual.push(palletVisualGap);
                         unit.occupiedRects.push({ x: palletVisualGap.x, y: palletVisualGap.y, width: palletVisualGap.width, height: palletVisualGap.height });
-                        patternAreaUsedByEUPs += eupPalletDef.area;
-                        patternActualEUPBase++;
-                        patternTotalEuroVisual++;
-                        patternTempCurrentWeightKg += eupPalletWeight;
-                        patternRemainingEupQ--;
-
-                        // Handle stacking for gap pallet
-                        if (isEUPStackable && patternRemainingEupQ > 0) {
-                            if (!(eupPalletWeight > 0 && patternTempCurrentWeightKg + eupPalletWeight > MAX_GROSS_WEIGHT_KG)) {
-                                unit.palletsVisual.push({ ...palletVisualGap, isStacked: true, key: palletVisualGap.key.replace('gap', 'gap_stack') });
-                                patternTotalEuroVisual++;
-                                patternTempCurrentWeightKg += eupPalletWeight;
-                                patternRemainingEupQ--;
-                            } else { if (!patternSpecificWarnings.some(w=>w.includes("Weight limit stacking EUP gap"))) patternSpecificWarnings.push("Weight limit stacking EUP gap"); }
+                        patternAreaEUP += eupDef.area; patternBaseEUP++; patternVisualEUP++;
+                        patternWeight += safeEupWeight; patternRemainingEupNeeded--;
+                        // Stacking in Gap
+                        if (isEUPStackable && patternRemainingEupNeeded > 0) {
+                            if (!(safeEupWeight > 0 && patternWeight + safeEupWeight > MAX_GROSS_WEIGHT_KG)) {
+                                unit.palletsVisual.push({ ...palletVisualGap, isStacked: true, key: palletVisualGap.key.replace('_gap_', '_gap_stack_') });
+                                patternVisualEUP++; patternWeight += safeEupWeight; patternRemainingEupNeeded--;
+                            } else { if (!patternWarn.some(w=>w.includes("stacking EUP gap"))) patternWarn.push("Weight limit stacking EUP gap"); }
                         }
-                        // Update starting X for the main EUP loop *for this unit*
-                        unit.currentX = gapX + Math.max(dinLengthInGap, eupLengthInGap);
-                    } else {
-                        // No EUP fit in gap, start after the single DIN
-                        unit.currentX = unit.dinEndX;
+                        unit.eupStartX = gapX + Math.max(dinLengthInRow, eupLengthPlacedInGap); // Adjust start for next row
                     }
-                    unit.currentY = 0; // Reset Y for next row
-
-                } else {
-                    // No gap, start EUPs normally after the last DIN
-                    unit.currentX = unit.dinEndX;
-                    unit.currentY = 0;
                 }
-            } // End gap filling loop for this pattern
-
-            // --- MAIN EUP PLACEMENT LOOP (using current pattern) ---
-            for (const unit of currentPatternUnitsState) {
-                if (patternRemainingEupQ <= 0) break;
-
-                while (unit.currentX < unit.length) {
-                    if (patternRemainingEupQ <= 0) break;
-
-                    let rowPalletsPlacedThisAttempt = 0;
-                    const eupPalletDef = PALLET_TYPES.euro;
-                    // Determine pallet dimensions based on the current pattern
-                    const palletsPerRow = pattern === 'long' ? 3 : 2;
-                    const palletLengthForVisual = pattern === 'long' ? eupPalletDef.length : eupPalletDef.width; // Length along truck X
-                    const palletWidthForVisual = pattern === 'long' ? eupPalletDef.width : eupPalletDef.length; // Width across truck Y
-                    let maxHeightInRow = 0;
-                    unit.currentY = 0; // Reset Y for each new row attempt
-
-                    for (let i = 0; i < palletsPerRow; i++) {
-                        if (patternRemainingEupQ <= 0) break;
-
-                        // Check weight limit
-                        if (eupPalletWeight > 0 && patternTempCurrentWeightKg + eupPalletWeight > MAX_GROSS_WEIGHT_KG) {
-                            if (!patternSpecificWarnings.some(w => w.includes("Weight limit reached for EUP"))) {
-                                patternSpecificWarnings.push(`Weight limit reached for EUP pallets. Max ${MAX_GROSS_WEIGHT_KG/1000}t.`);
-                            }
-                            unit.currentX = unit.length; // Mark unit full due to weight
-                            break;
-                        }
-
-                        // Check space
-                        if (unit.currentX + palletLengthForVisual <= unit.length && unit.currentY + palletWidthForVisual <= unit.width) {
-                            const palletKeyBase = `eup_base_${unit.id}_${patternActualEUPBase}_${pattern}_${i}`;
-                            unit.palletsVisual.push({
-                                x: unit.currentX, y: unit.currentY, width: palletLengthForVisual, height: palletWidthForVisual,
-                                type: 'euro', isStacked: false, key: palletKeyBase, unitId: unit.id,
-                            });
-                            unit.occupiedRects.push({ x: unit.currentX, y: unit.currentY, width: palletLengthForVisual, height: palletWidthForVisual });
-                            patternAreaUsedByEUPs += eupPalletDef.area;
-                            patternActualEUPBase++;
-                            patternTotalEuroVisual++;
-                            patternTempCurrentWeightKg += eupPalletWeight;
-                            patternRemainingEupQ--;
-                            rowPalletsPlacedThisAttempt++;
-                            maxHeightInRow = Math.max(maxHeightInRow, palletLengthForVisual);
-
-                            // Handle Stacking
-                            if (isEUPStackable && patternRemainingEupQ > 0) {
-                                if (!(eupPalletWeight > 0 && patternTempCurrentWeightKg + eupPalletWeight > MAX_GROSS_WEIGHT_KG)) {
-                                    unit.palletsVisual.push({
-                                        x: unit.currentX, y: unit.currentY, width: palletLengthForVisual, height: palletWidthForVisual,
-                                        type: 'euro', isStacked: true, key: `eup_stack_${unit.id}_${patternActualEUPBase - 1}_${pattern}_${i}`, unitId: unit.id,
-                                    });
-                                    patternTotalEuroVisual++;
-                                    patternTempCurrentWeightKg += eupPalletWeight;
-                                    patternRemainingEupQ--;
-                                } else { if (!patternSpecificWarnings.some(w=>w.includes("Weight limit stacking EUP"))) patternSpecificWarnings.push("Weight limit stacking EUP"); }
-                            }
-                             unit.currentY += palletWidthForVisual; // Move Y for next pallet
-                        } else {
-                            break; // Cannot fit this pallet in width
-                        }
-                    } // End loop for placing pallets across width
-
-                    if (unit.currentX >= unit.length) break; // Break if unit marked full by weight
-
-                    if (rowPalletsPlacedThisAttempt > 0) {
-                        unit.currentX += maxHeightInRow; // Advance X
-                    } else {
-                        // Cannot place any more EUPs in this pattern/unit
-                        unit.currentX = unit.length;
-                    }
-                } // End while loop for unit (EUPs)
-            } // End main EUP loop for this pattern
-
-            // --- Compare results for this pattern ---
-            // Prioritize placing more pallets. If equal, maybe prioritize less area? (Tighter pack)
-            // Or prioritize the user's chosen pattern if not 'auto'.
-            const isBetter = (
-                patternTotalEuroVisual > bestOverallEUPPlacement.totalVisualEUPs ||
-                (patternTotalEuroVisual === bestOverallEUPPlacement.totalVisualEUPs && patternAreaUsedByEUPs < bestOverallEUPPlacement.areaEUPs) ||
-                (eupLoadingPattern !== 'auto' && pattern === eupLoadingPattern && bestOverallEUPPlacement.chosenPattern !== pattern) // Prefer user choice if counts are equal
-            );
-
-            if (isBetter) {
-                bestOverallEUPPlacement = {
-                    unitsConfiguration: JSON.parse(JSON.stringify(currentPatternUnitsState)),
-                    totalVisualEUPs: patternTotalEuroVisual,
-                    baseEUPs: patternActualEUPBase,
-                    areaEUPs: patternAreaUsedByEUPs,
-                    tempWarnings: patternSpecificWarnings,
-                    currentWeightAfterEUPs: patternTempCurrentWeightKg,
-                    chosenPattern: pattern // Record the pattern used for this best result
-                };
-            } else if (patternTotalEuroVisual === bestOverallEUPPlacement.totalVisualEUPs && bestOverallEUPPlacement.chosenPattern === 'none') {
-                 // If auto resulted in a tie, just pick the first one tried (long)
-                 bestOverallEUPPlacement.chosenPattern = pattern;
             }
 
+            // MAIN EUP PLACEMENT
+            for (const unit of currentUnits) {
+                if (patternRemainingEupNeeded <= 0) break;
+                unit.currentX = unit.eupStartX; unit.currentY = 0;
+                while (unit.currentX < unit.length) {
+                    if (patternRemainingEupNeeded <= 0) break;
+                    let rowPalletsPlaced = 0;
+                    const eupDef = PALLET_TYPES.euro;
+                    const palletsPerRow = pattern === 'long' ? 3 : 2;
+                    const eupLength = pattern === 'long' ? eupDef.length : eupDef.width;
+                    const eupWidth = pattern === 'long' ? eupDef.width : eupDef.length;
+                    let rowHeight = 0; unit.currentY = 0;
 
+                    for (let i = 0; i < palletsPerRow; i++) {
+                        if (patternRemainingEupNeeded <= 0) break;
+                        if (safeEupWeight > 0 && patternWeight + safeEupWeight > MAX_GROSS_WEIGHT_KG) {
+                            if (!patternWarn.some(w => w.includes("Weight limit reached for EUP"))) patternWarn.push(`Weight limit reached for EUP pallets. Max ${MAX_GROSS_WEIGHT_KG/1000}t.`);
+                            unit.currentX = unit.length; break;
+                        }
+                        if (unit.currentX + eupLength <= unit.length && unit.currentY + eupWidth <= unit.width) {
+                            const baseKey = `eup_base_${unit.id}_${patternBaseEUP}_${pattern}_${i}`;
+                            unit.palletsVisual.push({ x: unit.currentX, y: unit.currentY, width: eupLength, height: eupWidth, type: 'euro', isStacked: false, key: baseKey, unitId: unit.id });
+                            unit.occupiedRects.push({ x: unit.currentX, y: unit.currentY, width: eupLength, height: eupWidth });
+                            patternAreaEUP += eupDef.area; patternBaseEUP++; patternVisualEUP++;
+                            patternWeight += safeEupWeight; patternRemainingEupNeeded--;
+                            rowPalletsPlaced++; rowHeight = Math.max(rowHeight, eupLength);
+                            // Stacking EUP
+                            if (isEUPStackable && patternRemainingEupNeeded > 0) {
+                                if (!(safeEupWeight > 0 && patternWeight + safeEupWeight > MAX_GROSS_WEIGHT_KG)) {
+                                     unit.palletsVisual.push({ x: unit.currentX, y: unit.currentY, width: eupLength, height: eupWidth, type: 'euro', isStacked: true, key: `eup_stack_${unit.id}_${patternBaseEUP - 1}_${pattern}_${i}`, unitId: unit.id });
+                                    patternVisualEUP++; patternWeight += safeEupWeight; patternRemainingEupNeeded--;
+                                } else { if (!patternWarn.some(w=>w.includes("stacking EUP"))) patternWarn.push("Weight limit stacking EUP"); }
+                            }
+                             unit.currentY += eupWidth;
+                        } else { break; }
+                    }
+                    if (unit.currentX >= unit.length) break;
+                    if (rowPalletsPlaced > 0) { unit.currentX += rowHeight; }
+                    else { unit.currentX = unit.length; }
+                }
+            }
+
+            // Compare pattern results
+            const currentBestVisuals = bestEUPResult.totalVisualEUPs;
+            const isUserPreference = (eupLoadingPattern !== 'auto' && pattern === eupLoadingPattern);
+            let better = false;
+            if (patternVisualEUP > currentBestVisuals) { better = true; }
+            else if (patternVisualEUP === currentBestVisuals) {
+                 if (isUserPreference && bestEUPResult.chosenPattern !== pattern) { better = true; }
+                 // else if (patternAreaEUP < bestEUPResult.areaEUPs) { better = true; } // Optional secondary criteria
+            }
+            if (better) {
+                bestEUPResult = {
+                    unitsConfiguration: JSON.parse(JSON.stringify(currentUnits)),
+                    totalVisualEUPs: patternVisualEUP, baseEUPs: patternBaseEUP, areaEUPs: patternAreaEUP,
+                    tempWarnings: patternWarn, currentWeightAfterEUPs: patternWeight, chosenPattern: pattern
+                };
+            } else if (patternVisualEUP === currentBestVisuals && bestEUPResult.chosenPattern === 'none' && eupLoadingPattern === 'auto') {
+                 bestEUPResult.chosenPattern = pattern; // Default to first tried if tied in auto mode
+            }
         } // End patternsToTry loop
 
-        // --- Finalize EUP Placement ---
-        finalPalletArrangement = bestOverallEUPPlacement.unitsConfiguration.map(unit => ({
-            unitId: unit.id, unitLength: unit.length, unitWidth: unit.width, pallets: unit.palletsVisual
-        }));
-        finalActualPlacedEUPBase = bestOverallEUPPlacement.baseEUPs;
-        finalTotalEuroVisualPalletsPlaced = bestOverallEUPPlacement.totalVisualEUPs;
-        finalTotalAreaUsedByBasePallets += bestOverallEUPPlacement.areaEUPs;
-        currentTotalWeightKg = bestOverallEUPPlacement.currentWeightAfterEUPs;
-        tempWarnings.push(...bestOverallEUPPlacement.tempWarnings.filter(w => !tempWarnings.includes(w)));
+        // Finalize EUP based on best result
+        // *** Add defensive check before mapping ***
+        finalPalletArrangement = Array.isArray(bestEUPResult?.unitsConfiguration)
+            ? bestEUPResult.unitsConfiguration.map(unit => ({
+                unitId: unit.id, unitLength: unit.length, unitWidth: unit.width,
+                // *** Add defensive check for palletsVisual ***
+                pallets: Array.isArray(unit.palletsVisual) ? unit.palletsVisual : []
+            }))
+            : []; // Default to empty array if source is invalid
 
-        if (finalTotalEuroVisualPalletsPlaced < eupQuantity && !tempWarnings.some(w => w.includes("Weight limit reached for EUP"))) {
-            tempWarnings.push(`Could not fit all ${eupQuantity} Euro pallets due to space. Only ${finalTotalEuroVisualPalletsPlaced} (visual) placed.`);
+        finalActualEUPBase = bestEUPResult.baseEUPs;
+        finalTotalEuroVisual = bestEUPResult.totalVisualEUPs;
+        finalTotalAreaBase += bestEUPResult.areaEUPs;
+        currentTotalWeight = bestEUPResult.currentWeightAfterEUPs;
+        tempWarnings.push(...bestEUPResult.tempWarnings.filter(w => !tempWarnings.some(existing => existing === w)));
+
+        if (finalTotalEuroVisual < eupQuantity && !tempWarnings.some(w => w.includes("Weight limit"))) {
+            tempWarnings.push(`Could not fit all ${eupQuantity} Euro pallets due to space. Only ${finalTotalEuroVisual} (visual) placed.`);
         }
 
     } else { // No EUPs requested
-        finalPalletArrangement = initialUnitsStateAfterDIN.map(unit => ({
-            unitId: unit.id, unitLength: unit.length, unitWidth: unit.width, pallets: unit.palletsVisual
-        }));
-        // Use counts and weight only from DIN placement
-        finalActualPlacedEUPBase = 0;
-        finalTotalEuroVisualPalletsPlaced = 0;
-        // finalTotalAreaUsedByBasePallets already calculated during DIN phase
-        currentTotalWeightKg = weightAfterDINs;
+        // *** Add defensive check before mapping ***
+        finalPalletArrangement = Array.isArray(initialUnitsStateAfterDIN)
+            ? initialUnitsStateAfterDIN.map(unit => ({
+                unitId: unit.id, unitLength: unit.length, unitWidth: unit.width,
+                 // *** Add defensive check for palletsVisual ***
+                pallets: Array.isArray(unit.palletsVisual) ? unit.palletsVisual : []
+            }))
+            : []; // Default to empty array if source is invalid
+
+        finalActualEUPBase = 0;
+        finalTotalEuroVisual = 0;
+        currentTotalWeight = weightAfterDINs;
     }
 
-    // --- Final Calculations & State Updates ---
-    setPalletArrangement(finalPalletArrangement);
-    setLoadedEuroPalletsBase(finalActualPlacedEUPBase);
-    setLoadedIndustrialPalletsBase(finalActualPlacedDINBase);
-    setTotalEuroPalletsVisual(finalTotalEuroVisualPalletsPlaced);
-    setTotalDinPalletsVisual(finalTotalDinVisualPalletsPlaced);
-    setTotalWeightKg(currentTotalWeightKg);
+    // --- Set Final State ---
+    // *** Ensure finalPalletArrangement is an array before setting state ***
+    setPalletArrangement(Array.isArray(finalPalletArrangement) ? finalPalletArrangement : []);
+    setLoadedEuroPalletsBase(finalActualEUPBase);
+    setLoadedIndustrialPalletsBase(finalActualDINBase);
+    setTotalEuroPalletsVisual(finalTotalEuroVisual);
+    setTotalDinPalletsVisual(finalTotalDinVisual);
+    setTotalWeightKg(currentTotalWeight);
 
-    // Utilization Calculation (Simplified: based on area for mixed loads)
+    // Utilization
     const totalTruckArea = initialTruckConfigMaster.units.reduce((sum, u) => sum + (u.length * u.width), 0);
-    let newUtilizationPercentage = totalTruckArea > 0 ? (finalTotalAreaUsedByBasePallets / totalTruckArea) * 100 : 0;
-    setUtilizationPercentage(parseFloat(newUtilizationPercentage.toFixed(1)));
+    let newUtilization = totalTruckArea > 0 ? (finalTotalAreaBase / totalTruckArea) * 100 : 0;
+    setUtilizationPercentage(parseFloat(newUtilization.toFixed(1)));
 
     // Final Warnings
-    const totalActualLoadedBasePallets = finalActualPlacedEUPBase + finalActualPlacedDINBase;
-    if (eupPalletWeight > 0 || dinPalletWeight > 0) {
-        if (currentTotalWeightKg > MAX_GROSS_WEIGHT_KG && !tempWarnings.some(w => w.includes("Gross vehicle weight"))) {
-            tempWarnings.push(`Potential gross vehicle weight overload (${(currentTotalWeightKg / 1000).toFixed(1)}t > ${(MAX_GROSS_WEIGHT_KG / 1000)}t).`);
+    const totalActualLoadedBase = finalActualEUPBase + finalActualDINBase;
+    if (safeEupWeight > 0 || safeDinWeight > 0) {
+        if (currentTotalWeight > MAX_GROSS_WEIGHT_KG && !tempWarnings.some(w => w.includes("Gross vehicle weight"))) {
+            tempWarnings.push(`Potential gross vehicle weight overload (${(currentTotalWeight / 1000).toFixed(1)}t > ${(MAX_GROSS_WEIGHT_KG / 1000)}t).`);
         }
-        // Basic Axle Load Check Placeholder (very simplified)
-        if (totalActualLoadedBasePallets > 0 && currentTotalWeightKg > 0 && (currentTotalWeightKg / totalActualLoadedBasePallets) > 1500) { // Avg > 1.5t per footprint
+        if (totalActualLoadedBase > 0 && currentTotalWeight > 0 && (currentTotalWeight / totalActualLoadedBase) > 1500) {
              if (!tempWarnings.some(w => w.includes("axle load"))) {
                 tempWarnings.push('High average weight per pallet footprint. Check axle load distribution.');
              }
         }
     }
 
-    const allEUPRequestedPlaced = finalTotalEuroVisualPalletsPlaced >= eupQuantity;
-    const allDINRequestedPlaced = finalTotalDinVisualPalletsPlaced >= dinQuantity;
-
+    const allEUPRequestedPlaced = finalTotalEuroVisual >= eupQuantity;
+    const allDINRequestedPlaced = finalTotalDinVisual >= dinQuantity;
     if (tempWarnings.length === 0 && (eupQuantity > 0 || dinQuantity > 0) && allEUPRequestedPlaced && allDINRequestedPlaced) {
       tempWarnings.push('All requested pallets placed successfully.');
     } else if (tempWarnings.length === 0 && eupQuantity === 0 && dinQuantity === 0) {
       tempWarnings.push('No pallets requested.');
     }
-    setWarnings(Array.from(new Set(tempWarnings))); // Remove duplicates
+    setWarnings(Array.from(new Set(tempWarnings)));
 
   }, [selectedTruck, eupQuantity, dinQuantity, isEUPStackable, isDINStackable, eupWeightPerPallet, dinWeightPerPallet, eupLoadingPattern]);
 
   useEffect(() => {
-    calculateLoading();
-  }, [calculateLoading]);
+    // Initial calculation on mount and when dependencies change
+    try {
+        calculateLoading();
+    } catch (error) {
+        console.error("Error during calculateLoading execution:", error);
+        // Optionally set a generic error state to display to the user
+        setWarnings(prev => [...prev, "An unexpected error occurred during calculation."]);
+    }
+  }, [calculateLoading]); // Dependency array includes calculateLoading
 
   // --- Event Handlers ---
   const handleQuantityChange = (type, amount) => {
@@ -499,42 +419,39 @@ export default function HomePage() {
     }
   };
 
-  // --- Rendering Functions ---
-  const renderPallet = (pallet, displayScale = 0.3) => { // Increased scale slightly
-    const palletDetails = PALLET_TYPES[pallet.type];
-    // IMPORTANT: Visual dimensions are swapped vs internal logic
-    // Internal: width = dimension along truck X, height = dimension across truck Y
-    // Visual: width = dimension across truck Y (scaled), height = dimension along truck X (scaled)
-    const displayWidth = pallet.height * displayScale;
-    const displayHeight = pallet.width * displayScale;
-    const displayX = pallet.y * displayScale; // Visual X corresponds to internal Y
-    const displayY = pallet.x * displayScale; // Visual Y corresponds to internal X
+   // --- Rendering Functions ---
+   const renderPallet = (pallet, displayScale = 0.3) => {
+     if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) {
+        console.error("Invalid pallet data passed to renderPallet:", pallet);
+        return null; // Don't render if pallet data is invalid
+     }
+     const palletDetails = PALLET_TYPES[pallet.type];
+     const displayWidth = pallet.height * displayScale;
+     const displayHeight = pallet.width * displayScale;
+     const displayX = pallet.y * displayScale;
+     const displayY = pallet.x * displayScale;
 
-    return (
-      <div
-        key={pallet.key}
-        className={`absolute ${palletDetails.color} ${palletDetails.borderColor} border flex items-center justify-center rounded-sm shadow-sm`} // Added rounded/shadow
-        style={{
-          left: `${displayX}px`,
-          top: `${displayY}px`,
-          width: `${displayWidth}px`,
-          height: `${displayHeight}px`,
-          opacity: pallet.isStacked ? 0.7 : 1, // Slightly more transparent stack
-          zIndex: pallet.isStacked ? 10 : 5,
-          fontSize: '10px', // Smaller text
-        }}
-        title={`${palletDetails.name}${pallet.isStacked ? ' (Stacked)' : ''}`} // Tooltip
-      >
-        <span className="text-black font-semibold select-none">{palletDetails.label}</span>
-        {/* Stacked indicator (optional subtle line) */}
-        {pallet.isStacked && (
-          <div className="absolute top-0 left-0 w-full h-full border-t-2 border-black opacity-30 pointer-events-none"></div>
-        )}
-      </div>
-    );
-  };
+     return (
+       <div
+         key={pallet.key}
+         className={`absolute ${palletDetails.color} ${palletDetails.borderColor} border flex items-center justify-center rounded-sm shadow-sm`}
+         style={{
+           left: `${displayX}px`, top: `${displayY}px`,
+           width: `${displayWidth}px`, height: `${displayHeight}px`,
+           opacity: pallet.isStacked ? 0.7 : 1,
+           zIndex: pallet.isStacked ? 10 : 5, fontSize: '10px',
+         }}
+         title={`${palletDetails.name}${pallet.isStacked ? ' (Stacked)' : ''}`}
+       >
+         <span className="text-black font-semibold select-none">{palletDetails.label}</span>
+         {pallet.isStacked && (
+           <div className="absolute top-0 left-0 w-full h-full border-t-2 border-black opacity-30 pointer-events-none"></div>
+         )}
+       </div>
+     );
+   };
 
-  const truckVisualizationScale = 0.3; // Scale factor for visualization
+  const truckVisualizationScale = 0.3;
 
   // --- JSX Return ---
   return (
@@ -622,34 +539,32 @@ export default function HomePage() {
           {/* Visualization Column */}
           <div className="lg:col-span-2 bg-gray-100 p-5 rounded-lg border border-gray-200 shadow-sm min-h-[450px] flex flex-col items-center">
             <p className="text-gray-700 text-lg mb-3 font-semibold">Truck Loading Area Visualization</p>
-            {currentTruckDef.units.map((unit, index) => (
+            {/* Defensive check for palletArrangement before mapping */}
+            {Array.isArray(palletArrangement) && currentTruckDef.units.map((unit, index) => (
               <div key={unit.id} className="mb-4 last:mb-0 w-full flex flex-col items-center">
                 {currentTruckDef.units.length > 1 && <p className="text-sm text-center font-medium text-gray-700 mb-1">Unit {index + 1} ({unit.length/100}m x {unit.width/100}m)</p>}
                 <div
                   id={`truckVisualization-${unit.id}`}
-                  className="relative bg-gray-300 border-2 border-gray-500 overflow-hidden rounded-md shadow-inner" // Added rounded/shadow
+                  className="relative bg-gray-300 border-2 border-gray-500 overflow-hidden rounded-md shadow-inner"
                   style={{
-                    // Visual Width = Truck Width, Visual Height = Truck Length
                     width: `${unit.width * truckVisualizationScale}px`,
                     height: `${unit.length * truckVisualizationScale}px`,
                   }}
                 >
-                  {/* Render unusable space for Curtain Sider */}
+                  {/* Render unusable space */}
                   {selectedTruck === 'curtainSider' && currentTruckDef.trueLength && currentTruckDef.usableLength < currentTruckDef.trueLength && (
                     <>
-                      {/* Shaded area at the 'back' (top of visual) */}
                        <div className="absolute top-0 left-0 w-full bg-red-300 opacity-30 pointer-events-none"
                             style={{ height: `${((currentTruckDef.trueLength - currentTruckDef.usableLength)) * truckVisualizationScale}px` }}
                             title={`Unusable Space: ${(currentTruckDef.trueLength - currentTruckDef.usableLength)/100}m`}
                        />
-                       {/* Text indicating usable length - Adjusted position */}
                        <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 text-[8px] text-red-800 bg-white px-1 py-0.5 rounded opacity-80 pointer-events-none whitespace-nowrap">
                            Usable: {currentTruckDef.usableLength/100}m
                        </div>
                     </>
                   )}
-                  {/* Render Pallets */}
-                  {palletArrangement.find(pa => pa.unitId === unit.id)?.pallets.map(p => renderPallet(p, truckVisualizationScale))}
+                  {/* Render Pallets - Find the correct unit's data */}
+                  {palletArrangement.find(pa => pa && pa.unitId === unit.id)?.pallets?.map(p => renderPallet(p, truckVisualizationScale))}
                 </div>
               </div>
             ))}
@@ -687,15 +602,15 @@ export default function HomePage() {
            </div>
         </div>
 
-        {/* Side View Visualization (Conceptual) - Only show if stacking is enabled and pallets loaded */}
+        {/* Side View Visualization */}
         {((isEUPStackable && totalEuroPalletsVisual > loadedEuroPalletsBase) || (isDINStackable && totalDinPalletsVisual > loadedIndustrialPalletsBase)) && (loadedIndustrialPalletsBase > 0 || loadedEuroPalletsBase > 0) && (
           <div className="mb-8 bg-gray-100 p-4 rounded-lg border border-gray-200 shadow-sm flex flex-col justify-center items-center">
               <p className="text-gray-600 text-md mb-3 font-semibold">Side View (Conceptual)</p>
               <div id="sideViewVisualization" className="w-full h-auto bg-gray-200 rounded flex justify-center items-end p-4 min-h-[100px] space-x-2">
-                  {/* Show conceptual stacks: DIN first, then EUP */}
-                  {Array.from({ length: loadedIndustrialPalletsBase }).slice(0, 3).map((_, idx) => { // Show up to 3 DIN base
+                  {/* DIN Stacks */}
+                  {Array.from({ length: loadedIndustrialPalletsBase }).slice(0, 3).map((_, idx) => {
                       const palletDetails = PALLET_TYPES.industrial;
-                      const showStacked = isDINStackable && totalDinPalletsVisual > loadedIndustrialPalletsBase; // Check if any DINs are actually stacked
+                      const showStacked = isDINStackable && totalDinPalletsVisual > loadedIndustrialPalletsBase;
                       return (
                           <div key={`sideview-din-${idx}`} className="flex flex-col items-center" title="Industrial Pallet (Side View)">
                               {showStacked && <div className={`w-10 h-8 ${palletDetails.color} border ${palletDetails.borderColor} opacity-60 flex justify-center items-center text-xs font-bold rounded-t-sm`}>{palletDetails.label}</div>}
@@ -703,9 +618,10 @@ export default function HomePage() {
                           </div>
                       );
                   })}
-                   {Array.from({ length: loadedEuroPalletsBase }).slice(0, 3).map((_, idx) => { // Show up to 3 EUP base
+                  {/* EUP Stacks */}
+                   {Array.from({ length: loadedEuroPalletsBase }).slice(0, 3).map((_, idx) => {
                       const palletDetails = PALLET_TYPES.euro;
-                      const showStacked = isEUPStackable && totalEuroPalletsVisual > loadedEuroPalletsBase; // Check if any EUPs are actually stacked
+                      const showStacked = isEUPStackable && totalEuroPalletsVisual > loadedEuroPalletsBase;
                       return (
                           <div key={`sideview-eup-${idx}`} className="flex flex-col items-center" title="Euro Pallet (Side View)">
                                {showStacked && <div className={`w-8 h-8 ${palletDetails.color} border ${palletDetails.borderColor} opacity-60 flex justify-center items-center text-xs font-bold rounded-t-sm`}>{palletDetails.label}</div>}
@@ -718,13 +634,11 @@ export default function HomePage() {
               <p className="text-xs text-gray-500 mt-2 text-center">Shows conceptual side view of first few base pallets. Stacked layer shown if enabled and applicable.</p>
           </div>
         )}
-
       </main>
 
       {/* Footer */}
       <footer className="text-center py-4 mt-8 text-sm text-gray-500 border-t border-gray-200">
         <p>Loading Space Calculator &copy; {new Date().getFullYear()}</p>
-         {/* Add your name or attribution if desired */}
          <p>Original concept by Andreas Steiner</p>
       </footer>
     </div>
