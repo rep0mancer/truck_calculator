@@ -5,20 +5,20 @@ import React, { useState, useEffect, useCallback } from 'react';
 // Constants for truck types, including single-layer capacities
 const TRUCK_TYPES = {
   roadTrain: {
-    name: 'Road Train (2x 7m)',
+    name: 'Haengerzug (2x 7,2m)',
     units: [
-      { id: 'unit1', length: 700, width: 245, occupiedRects: [] },
-      { id: 'unit2', length: 700, width: 245, occupiedRects: [] },
+      { id: 'unit1', length: 720, width: 245, occupiedRects: [] },
+      { id: 'unit2', length: 720, width: 245, occupiedRects: [] },
     ],
-    totalLength: 1400,
-    usableLength: 1400,
+    totalLength: 1440,
+    usableLength: 1440,
     maxWidth: 245,
-    singleLayerEUPCapacityLongPerUnit: 15, 
-    singleLayerEUPCapacityBroadPerUnit: 16, 
+    singleLayerEUPCapacityLongPerUnit: 18, 
+    singleLayerEUPCapacityBroadPerUnit: 18, 
     singleLayerDINCapacityPerUnit: 14,   
   },
   curtainSider: {
-    name: 'Curtain-Sider Semi-trailer (13.2m)',
+    name: 'Planensattel Standard (13.2m)',
     units: [{ id: 'main', length: 1320, width: 245, occupiedRects: [] }],
     totalLength: 1320,
     usableLength: 1320,
