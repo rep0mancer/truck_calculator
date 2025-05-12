@@ -126,18 +126,23 @@ if (dinPalletsToPlace > 0) {
                     unit.currentY += dinDimensionAcrossTruckWidth;
 
                     // Place stacked pallet if applicable (ensure stacked logic uses correct base pallet count)
-                    if (isStackable && (actualPlacedDINBase * stackFactor > unitDinPalletsPlacedBase) ) { // Simplified check
-                         unit.palletsVisual.push({
-                             x: unit.currentX,
-                             y: unit.currentY - dinDimensionAcrossTruckWidth, // Same position as base
-                             width: dinDimensionAlongTruckLength,
-                             height: dinDimensionAcrossTruckWidth,
-                             type: 'industrial',
-                             isStacked: true,
-                             key: `din_stack_${unit.id}_${actualPlacedDINBase-1}`
-                         });
-                    }
-                } else {
+                    if (isStackable) {
+    const currentTotalDinVisuals = unit.palletsVisual.filter(p => p.type === 'industrial' && p.unitId === unit.id).length +
+                                   truckConfig.units.filter(u => u.id !== unit.id)
+                                                 .reduce((sum, u) => sum + u.palletsVisual.filter(p => p.type === 'industrial').length, 0);
+
+    if (currentTotalDinVisuals < dinQuantity) {
+        unit.palletsVisual.push({
+            x: unit.currentX, // Same X as the base pallet
+            y: unit.currentY - dinDimensionAcrossTruckWidth, // Same Y as the base pallet (before Y was advanced for next base)
+            width: dinDimensionAlongTruckLength,
+            height: dinDimensionAcrossTruckWidth,
+            type: 'industrial',
+            isStacked: true,
+            key: `din_stack_${unit.id}_${actualPlacedDINBase-1}`
+        });
+    }
+} else {
                     // Cannot fit this pallet in the current row position
                     break;
                 }
@@ -204,19 +209,29 @@ if (dinPalletsToPlace > 0) {
                         rowHeight = Math.max(rowHeight, palletLength);
                         unit.currentY += palletWidth;
 
-                        if (isStackable && unitEupPalletsPlacedBase < eupQuantity * stackFactor && (unitEupPalletsPlacedBase % stackFactor !== 0 || stackFactor === 1)) {
-                            if (actualPlacedEUPBase * stackFactor - (actualPlacedEUPBase-1)*stackFactor > 1 ) {
-                                unit.palletsVisual.push({
-                                    x: unit.currentX,
-                                    y: unit.currentY - palletWidth,
-                                    width: palletLength,
-                                    height: palletWidth,
-                                    type: 'euro',
-                                    isStacked: true,
-                                    key: `eup_stack_${unit.id}_${actualPlacedEUPBase-1}`
-                                });
-                            }
-                        }
+// New logic for adding a STACKED EUP on top of the base one just placed:
+if (isStackable) {
+    // Check if adding a stacked pallet would exceed the total requested EUP quantity.
+    // `actualPlacedEUPBase` is the count of footprints.
+    // `palletsVisual.filter(p => p.type === 'euro').length` is total visual EUPs (base+stacked) so far.
+    const currentTotalEuroVisuals = unit.palletsVisual.filter(p => p.type === 'euro' && p.unitId === unit.id).length + 
+                                   truckConfig.units.filter(u => u.id !== unit.id)
+                                                 .reduce((sum, u) => sum + u.palletsVisual.filter(p => p.type === 'euro').length, 0);
+
+    if (currentTotalEuroVisuals < eupQuantity) {
+        unit.palletsVisual.push({
+            x: unit.currentX, // Same X as the base pallet
+            y: unit.currentY - palletWidth, // Same Y as the base pallet (before Y was advanced for next base)
+            width: palletLength,
+            height: palletWidth,
+            type: 'euro',
+            isStacked: true, // This is the top pallet of a stack
+            key: `eup_stack_${unit.id}_${actualPlacedEUPBase-1}` // Links to the base pallet
+        });
+        // Note: We don't decrement eupPalletsToPlace here again, as it was for base footprints.
+        // The total quantity check (currentTotalEuroVisuals < eupQuantity) manages overall count.
+    }
+}
                     } else {
                         break;
                     }
@@ -275,6 +290,41 @@ if (dinPalletsToPlace > 0) {
         newWarnings.push('No pallets requested.');
     }
     setWarnings(newWarnings);
+
+// Add this useEffect hook inside your HomePage component
+useEffect(() => {
+    const currentTruck = TRUCK_TYPES[selectedTruck];
+    let singleLayerEUPCapacity = 0;
+    let singleLayerDINCapacity = 0;
+
+    // Calculate single layer capacities (example for curtain-sider)
+    // This should be made more generic if you have many truck types with different capacities
+    if (currentTruck.name === 'Curtain-Sider Semi-trailer (13.2m)') {
+        // Assuming EUP long (3-across) for the 33 threshold
+        // (1320 / 120) * 3 = 11 * 3 = 33
+        singleLayerEUPCapacity = (eupLoadingPattern === 'long') ? 33 : 32; // 32 for broad (1320/80 * 2 = 16 * 2)
+
+        // DIN (100cm along length, 120cm across width, 2-across)
+        // (1320 / 100) * 2 = 13 * 2 = 26
+        singleLayerDINCapacity = 26;
+    }
+    // Add more capacity calculations for other truck types if needed
+
+    let shouldForceStackable = false;
+    if (eupQuantity > 0 && singleLayerEUPCapacity > 0 && eupQuantity > singleLayerEUPCapacity) {
+        shouldForceStackable = true;
+    }
+    if (dinQuantity > 0 && singleLayerDINCapacity > 0 && dinQuantity > singleLayerDINCapacity) {
+        shouldForceStackable = true;
+    }
+
+    if (shouldForceStackable && !isStackable) {
+        setIsStackable(true);
+    }
+    // Consider if you want to automatically uncheck it if quantities drop below threshold.
+    // The current logic only forces it on, it doesn't force it off.
+
+
 
   }, [selectedTruck, eupQuantity, dinQuantity, isStackable, cargoWeight, eupLoadingPattern]);
 
