@@ -20,6 +20,10 @@ const TRUCK_TYPES = {
     usableLength: 1320,
     trueLength: 1360,
     maxWidth: 245,
+    // Example capacities (pallets) for single layer
+    singleLayerEUPCapacityLong: 33,
+    singleLayerEUPCapacityBroad: 32,
+    singleLayerDINCapacity: 26,
   },
   rigidTruck: {
     name: 'Rigid Truck (7m)',
@@ -27,6 +31,10 @@ const TRUCK_TYPES = {
     totalLength: 700,
     usableLength: 700,
     maxWidth: 245,
+    // Example capacities for rigid truck
+    singleLayerEUPCapacityLong: 15, // (700/120)*3 = 5*3 = 15
+    singleLayerEUPCapacityBroad: 10, // (700/80)*2 = 8*2 = 16, but width might limit, (700/120)*2 = 10
+    singleLayerDINCapacity: 14,  // (700/100)*2 = 7*2 = 14
   },
 };
 
@@ -37,25 +45,11 @@ const PALLET_TYPES = {
 
 const MAX_GROSS_WEIGHT_KG = 40000;
 
-// This checkOverlap function might not be needed with strict grid placement
-// but can be kept for safety or future flexible placement options.
-function checkOverlap(rect1, rects) {
-  for (const rect2 of rects) {
-    if (rect1.x < rect2.x + rect2.width &&
-        rect1.x + rect1.width > rect2.x &&
-        rect1.y < rect2.y + rect2.height &&
-        rect1.y + rect1.height > rect2.y) {
-      return true;
-    }
-  }
-  return false;
-}
-
 export default function HomePage() {
   const [selectedTruck, setSelectedTruck] = useState('curtainSider');
   const [eupQuantity, setEupQuantity] = useState(0);
   const [dinQuantity, setDinQuantity] = useState(0);
-  const [eupLoadingPattern, setEupLoadingPattern] = useState('long'); // 'long' (3-across) or 'broad' (2-across)
+  const [eupLoadingPattern, setEupLoadingPattern] = useState('long');
   const [isStackable, setIsStackable] = useState(false);
   const [cargoWeight, setCargoWeight] = useState('');
 
@@ -67,178 +61,206 @@ export default function HomePage() {
 
   const currentTruckDef = TRUCK_TYPES[selectedTruck];
 
+  // Effect for automatic stacking logic
+  useEffect(() => {
+    const currentTruck = TRUCK_TYPES[selectedTruck];
+    let singleLayerEUPCapacity = 0;
+    let singleLayerDINCapacity = 0;
+
+    if (currentTruck.name === 'Curtain-Sider Semi-trailer (13.2m)') {
+      singleLayerEUPCapacity = eupLoadingPattern === 'long' ? currentTruck.singleLayerEUPCapacityLong : currentTruck.singleLayerEUPCapacityBroad;
+      singleLayerDINCapacity = currentTruck.singleLayerDINCapacity;
+    } else if (currentTruck.name === 'Rigid Truck (7m)') {
+      singleLayerEUPCapacity = eupLoadingPattern === 'long' ? currentTruck.singleLayerEUPCapacityLong : currentTruck.singleLayerEUPCapacityBroad;
+      singleLayerDINCapacity = currentTruck.singleLayerDINCapacity;
+    }
+    // Add more capacity calculations for other truck types if needed
+
+    let shouldForceStackable = false;
+    if (eupQuantity > 0 && singleLayerEUPCapacity > 0 && eupQuantity > singleLayerEUPCapacity) {
+      shouldForceStackable = true;
+    }
+    if (dinQuantity > 0 && singleLayerDINCapacity > 0 && dinQuantity > singleLayerDINCapacity) {
+      shouldForceStackable = true;
+    }
+
+    if (shouldForceStackable && !isStackable) {
+      setIsStackable(true);
+    }
+    // If quantities drop, user has to manually uncheck. This prevents unchecking if user explicitly set it.
+  }, [eupQuantity, dinQuantity, selectedTruck, eupLoadingPattern, isStackable]);
+
+
   const calculateLoading = useCallback(() => {
     const truckConfig = JSON.parse(JSON.stringify(TRUCK_TYPES[selectedTruck]));
     truckConfig.units.forEach(unit => {
-        unit.occupiedRects = []; // Stores base pallet footprints for overlap check if needed, and for area calculation
-        unit.currentX = 0; // Current lengthwise position for next pallet row
-        unit.currentY = 0; // Current widthwise position in the current row
-        unit.palletsVisual = []; // Stores all pallets (base and stacked) for visualization
+      unit.occupiedRects = [];
+      unit.currentX = 0;
+      unit.currentY = 0;
+      unit.palletsVisual = [];
     });
 
-    const stackFactor = isStackable ? 2 : 1;
     const newWarnings = [];
     let totalAreaUsedByBasePallets = 0;
     let actualPlacedEUPBase = 0;
     let actualPlacedDINBase = 0;
+    let totalEuroVisualPalletsPlaced = 0;
+    let totalDinVisualPalletsPlaced = 0;
 
-    // --- DIN PALLET PLACEMENT (Priority, 2-across) ---
-let dinPalletsToPlace = dinQuantity;
-if (dinPalletsToPlace > 0) {
-    for (const unit of truckConfig.units) {
-        if (dinPalletsToPlace === 0) break;
-        let unitDinPalletsPlacedBase = 0;
+    // --- DIN PALLET PLACEMENT ---
+    let dinPalletsToPlaceBase = dinQuantity; // Tracks base footprints needed
+    if (dinQuantity > 0) {
+        for (const unit of truckConfig.units) {
+            if (actualPlacedDINBase >= dinQuantity && !isStackable) break; // Stop if all base are placed and not stackable
+            if (totalDinVisualPalletsPlaced >= dinQuantity && isStackable) break; // Stop if total requested (incl. stacks) are placed
 
-        while(dinPalletsToPlace > 0) {
-            let rowPallets = 0;
-            // let rowHeight = 0; // Max length of pallets in this row (DIN width is 100 when oriented as desired)
-            const dinPalletDef = PALLET_TYPES.industrial;
+            while (true) {
+                if (actualPlacedDINBase >= dinQuantity && !isStackable) break;
+                if (totalDinVisualPalletsPlaced >= dinQuantity && isStackable) break;
 
-            // Corrected dimensions for desired DIN pallet orientation:
-            // 100cm along the truck's length (X-axis for calculation, pallet.width for visual object)
-            // 120cm across the truck's width (Y-axis for calculation, pallet.height for visual object)
-            const dinDimensionAlongTruckLength = dinPalletDef.width;  // 100cm
-            const dinDimensionAcrossTruckWidth = dinPalletDef.length; // 120cm
-            let rowHeight = 0; // Max dimension along truck length in this row
+                let rowPallets = 0;
+                const dinPalletDef = PALLET_TYPES.industrial;
+                const dinDimensionAlongTruckLength = dinPalletDef.width;  // 100cm
+                const dinDimensionAcrossTruckWidth = dinPalletDef.length; // 120cm
+                let rowHeight = 0;
 
-            // Try to place 2 DIN pallets across the width
-            for (let i = 0; i < 2; i++) { // Assuming you always try to fit 2 DIN pallets side-by-side
-                if (dinPalletsToPlace === 0) break;
+                const originalUnitY = unit.currentY; // Store Y before attempting to fill a row
 
-                if (unit.currentX + dinDimensionAlongTruckLength <= unit.length && unit.currentY + dinDimensionAcrossTruckWidth <= unit.width) {
-                    // Place base pallet
-                    unit.palletsVisual.push({
-                        x: unit.currentX,
-                        y: unit.currentY,
-                        width: dinDimensionAlongTruckLength,  // This will be pallet's length along the truck bed
-                        height: dinDimensionAcrossTruckWidth, // This will be pallet's width across the truck bed
-                        type: 'industrial',
-                        isStacked: false,
-                        key: `din_base_${unit.id}_${actualPlacedDINBase}`
-                    });
-                    unit.occupiedRects.push({ x: unit.currentX, y: unit.currentY, width: dinDimensionAlongTruckLength, height: dinDimensionAcrossTruckWidth });
-                    totalAreaUsedByBasePallets += dinPalletDef.area;
-                    actualPlacedDINBase++;
-                    unitDinPalletsPlacedBase++;
-                    dinPalletsToPlace--;
-                    rowPallets++;
-                    rowHeight = Math.max(rowHeight, dinDimensionAlongTruckLength);
-                    unit.currentY += dinDimensionAcrossTruckWidth;
+                for (let i = 0; i < 2; i++) { // Try to place 2 DIN pallets across
+                    if (actualPlacedDINBase >= dinQuantity && !isStackable) break;
+                    if (totalDinVisualPalletsPlaced >= dinQuantity && isStackable) break;
 
-                    // Place stacked pallet if applicable (ensure stacked logic uses correct base pallet count)
-                    if (isStackable) {
-    const currentTotalDinVisuals = unit.palletsVisual.filter(p => p.type === 'industrial' && p.unitId === unit.id).length +
-                                   truckConfig.units.filter(u => u.id !== unit.id)
-                                                 .reduce((sum, u) => sum + u.palletsVisual.filter(p => p.type === 'industrial').length, 0);
+                    if (unit.currentX + dinDimensionAlongTruckLength <= unit.length && unit.currentY + dinDimensionAcrossTruckWidth <= unit.width) {
+                        if (totalDinVisualPalletsPlaced < dinQuantity) {
+                             unit.palletsVisual.push({
+                                x: unit.currentX,
+                                y: unit.currentY,
+                                width: dinDimensionAlongTruckLength,
+                                height: dinDimensionAcrossTruckWidth,
+                                type: 'industrial',
+                                isStacked: false,
+                                key: `din_base_${unit.id}_${actualPlacedDINBase}`,
+                                unitId: unit.id,
+                            });
+                            if (actualPlacedDINBase < dinQuantity) { // Only count as new base if it's fulfilling a requested base
+                                unit.occupiedRects.push({ x: unit.currentX, y: unit.currentY, width: dinDimensionAlongTruckLength, height: dinDimensionAcrossTruckWidth });
+                                totalAreaUsedByBasePallets += dinPalletDef.area;
+                                actualPlacedDINBase++;
+                            }
+                            totalDinVisualPalletsPlaced++;
+                            rowPallets++;
+                            rowHeight = Math.max(rowHeight, dinDimensionAlongTruckLength);
+                        }
 
-    if (currentTotalDinVisuals < dinQuantity) {
-        unit.palletsVisual.push({
-            x: unit.currentX, // Same X as the base pallet
-            y: unit.currentY - dinDimensionAcrossTruckWidth, // Same Y as the base pallet (before Y was advanced for next base)
-            width: dinDimensionAlongTruckLength,
-            height: dinDimensionAcrossTruckWidth,
-            type: 'industrial',
-            isStacked: true,
-            key: `din_stack_${unit.id}_${actualPlacedDINBase-1}`
-        });
-    }
-} else {
-                    // Cannot fit this pallet in the current row position
-                    break;
+                        // Add stacked pallet if applicable and needed
+                        if (isStackable && totalDinVisualPalletsPlaced < dinQuantity) {
+                            unit.palletsVisual.push({
+                                x: unit.currentX,
+                                y: unit.currentY, // Same position as base
+                                width: dinDimensionAlongTruckLength,
+                                height: dinDimensionAcrossTruckWidth,
+                                type: 'industrial',
+                                isStacked: true,
+                                key: `din_stack_${unit.id}_${actualPlacedDINBase -1 }`, // or a unique key for stack
+                                unitId: unit.id,
+                            });
+                            totalDinVisualPalletsPlaced++;
+                        }
+                        unit.currentY += dinDimensionAcrossTruckWidth;
+                    } else {
+                        // Cannot fit this pallet in the current row position
+                        break; 
+                    }
                 }
-            }
 
-            if (rowPallets === 0) {
-                unit.currentY = 0;
-                unit.currentX = unit.length; // Mark as full for DINs for this orientation attempt
-                break;
+                if (rowPallets === 0) { // Cannot fit any more DIN pallets in this unit at current X
+                    unit.currentY = 0; // Reset Y for next row attempt or EUPs
+                    if (originalUnitY === 0) { // If we couldn't even start a row at currentX
+                        unit.currentX = unit.length; // Mark as full for DINs
+                    }
+                    break; // Break from while loop for this unit
+                }
+                unit.currentY = 0; // Reset Y for next row
+                unit.currentX += rowHeight; // Move to next row start
+                if (unit.currentX >= unit.length) break; // Unit full lengthwise
             }
-            unit.currentY = 0;
-            unit.currentX += rowHeight; // Move to next row start based on length used
-            if (unit.currentX >= unit.length) break; // Unit full lengthwise
         }
     }
-}
-if (dinPalletsToPlace > 0) {
-    newWarnings.push(`Could not fit all ${dinQuantity} Industrial pallets. Only ${actualPlacedDINBase} base pallets placed.`);
-}
+    if (actualPlacedDINBase < dinQuantity && totalDinVisualPalletsPlaced < dinQuantity) {
+        newWarnings.push(`Could not fit all ${dinQuantity} Industrial pallets. Only ${actualPlacedDINBase} base (${totalDinVisualPalletsPlaced} total visual) placed.`);
+    }
 
-    // --- EUP PALLET PLACEMENT (After DINs) ---
-    let eupPalletsToPlace = eupQuantity;
-    if (eupPalletsToPlace > 0) {
+
+    // --- EUP PALLET PLACEMENT ---
+    let eupPalletsToPlaceBase = eupQuantity; // Tracks base footprints
+    if (eupQuantity > 0) {
         for (const unit of truckConfig.units) {
-            if (eupPalletsToPlace === 0) break;
-            let unitEupPalletsPlacedBase = 0;
+            if (actualPlacedEUPBase >= eupQuantity && !isStackable) break;
+            if (totalEuroVisualPalletsPlaced >= eupQuantity && isStackable) break;
+            
+            while(true) {
+                if (actualPlacedEUPBase >= eupQuantity && !isStackable) break;
+                if (totalEuroVisualPalletsPlaced >= eupQuantity && isStackable) break;
 
-            // Reset currentX/Y if DINs filled the unit, or continue if DINs left space
-            // This needs more robust state tracking from DIN placement per unit.
-            // For now, assume EUPs start fresh in each unit if DINs were placed, or use remaining space.
-            // A better approach: track remaining rectangular spaces after DINs.
-            // Simplified: if unit.currentX was advanced by DINs, continue from there.
-            // If unit.currentY is not 0, it means DINs partially filled a row.
-            // This part is complex and needs careful state management from DIN phase.
-            // For this iteration, let's assume EUPs try to fill from unit.currentX, unit.currentY
-            // If unit.currentY != 0, it means a DIN row was partial. EUPs might fit next to it.
-
-            while(eupPalletsToPlace > 0) {
                 let rowPallets = 0;
                 let rowHeight = 0;
                 const eupPalletDef = PALLET_TYPES.euro;
                 const palletsPerRow = eupLoadingPattern === 'long' ? 3 : 2;
-                const palletWidth = eupLoadingPattern === 'long' ? eupPalletDef.width : eupPalletDef.length; // 80 for long, 120 for broad
-                const palletLength = eupLoadingPattern === 'long' ? eupPalletDef.length : eupPalletDef.width; // 120 for long, 80 for broad
+                const palletWidthForVisual = eupLoadingPattern === 'long' ? eupPalletDef.width : eupPalletDef.length;
+                const palletLengthForVisual = eupLoadingPattern === 'long' ? eupPalletDef.length : eupPalletDef.width;
+                
+                const originalUnitY = unit.currentY;
 
                 for (let i = 0; i < palletsPerRow; i++) {
-                    if (eupPalletsToPlace === 0) break;
-                    if (unit.currentX + palletLength <= unit.length && unit.currentY + palletWidth <= unit.width) {
-                        unit.palletsVisual.push({
-                            x: unit.currentX,
-                            y: unit.currentY,
-                            width: palletLength,
-                            height: palletWidth,
-                            type: 'euro',
-                            isStacked: false,
-                            key: `eup_base_${unit.id}_${actualPlacedEUPBase}`
-                        });
-                        unit.occupiedRects.push({ x: unit.currentX, y: unit.currentY, width: palletLength, height: palletWidth });
-                        totalAreaUsedByBasePallets += eupPalletDef.area;
-                        actualPlacedEUPBase++;
-                        unitEupPalletsPlacedBase++;
-                        eupPalletsToPlace--;
-                        rowPallets++;
-                        rowHeight = Math.max(rowHeight, palletLength);
-                        unit.currentY += palletWidth;
+                    if (actualPlacedEUPBase >= eupQuantity && !isStackable) break;
+                    if (totalEuroVisualPalletsPlaced >= eupQuantity && isStackable) break;
 
-// New logic for adding a STACKED EUP on top of the base one just placed:
-if (isStackable) {
-    // Check if adding a stacked pallet would exceed the total requested EUP quantity.
-    // `actualPlacedEUPBase` is the count of footprints.
-    // `palletsVisual.filter(p => p.type === 'euro').length` is total visual EUPs (base+stacked) so far.
-    const currentTotalEuroVisuals = unit.palletsVisual.filter(p => p.type === 'euro' && p.unitId === unit.id).length + 
-                                   truckConfig.units.filter(u => u.id !== unit.id)
-                                                 .reduce((sum, u) => sum + u.palletsVisual.filter(p => p.type === 'euro').length, 0);
-
-    if (currentTotalEuroVisuals < eupQuantity) {
-        unit.palletsVisual.push({
-            x: unit.currentX, // Same X as the base pallet
-            y: unit.currentY - palletWidth, // Same Y as the base pallet (before Y was advanced for next base)
-            width: palletLength,
-            height: palletWidth,
-            type: 'euro',
-            isStacked: true, // This is the top pallet of a stack
-            key: `eup_stack_${unit.id}_${actualPlacedEUPBase-1}` // Links to the base pallet
-        });
-        // Note: We don't decrement eupPalletsToPlace here again, as it was for base footprints.
-        // The total quantity check (currentTotalEuroVisuals < eupQuantity) manages overall count.
-    }
-}
+                    if (unit.currentX + palletLengthForVisual <= unit.length && unit.currentY + palletWidthForVisual <= unit.width) {
+                        if (totalEuroVisualPalletsPlaced < eupQuantity) {
+                            unit.palletsVisual.push({
+                                x: unit.currentX,
+                                y: unit.currentY,
+                                width: palletLengthForVisual,
+                                height: palletWidthForVisual,
+                                type: 'euro',
+                                isStacked: false,
+                                key: `eup_base_${unit.id}_${actualPlacedEUPBase}`,
+                                unitId: unit.id,
+                            });
+                             if (actualPlacedEUPBase < eupQuantity) {
+                                unit.occupiedRects.push({ x: unit.currentX, y: unit.currentY, width: palletLengthForVisual, height: palletWidthForVisual });
+                                totalAreaUsedByBasePallets += eupPalletDef.area;
+                                actualPlacedEUPBase++;
+                            }
+                            totalEuroVisualPalletsPlaced++;
+                            rowPallets++;
+                            rowHeight = Math.max(rowHeight, palletLengthForVisual);
+                        }
+                        
+                        // Add stacked pallet
+                        if (isStackable && totalEuroVisualPalletsPlaced < eupQuantity) {
+                           unit.palletsVisual.push({
+                                x: unit.currentX,
+                                y: unit.currentY,
+                                width: palletLengthForVisual,
+                                height: palletWidthForVisual,
+                                type: 'euro',
+                                isStacked: true,
+                                key: `eup_stack_${unit.id}_${actualPlacedEUPBase - 1}`,
+                                unitId: unit.id,
+                            });
+                            totalEuroVisualPalletsPlaced++;
+                        }
+                        unit.currentY += palletWidthForVisual;
                     } else {
                         break;
                     }
                 }
                 if (rowPallets === 0) {
                     unit.currentY = 0;
-                    unit.currentX = unit.length; // Mark as full for EUPs
+                     if (originalUnitY === 0) {
+                        unit.currentX = unit.length;
+                    }
                     break;
                 }
                 unit.currentY = 0;
@@ -247,28 +269,58 @@ if (isStackable) {
             }
         }
     }
-    if (eupPalletsToPlace > 0) {
-        newWarnings.push(`Could not fit all ${eupQuantity} Euro pallets. Only ${actualPlacedEUPBase} base pallets placed.`);
+    if (actualPlacedEUPBase < eupQuantity && totalEuroVisualPalletsPlaced < eupQuantity) {
+        newWarnings.push(`Could not fit all ${eupQuantity} Euro pallets. Only ${actualPlacedEUPBase} base (${totalEuroVisualPalletsPlaced} total visual) placed.`);
     }
 
-    // Consolidate visual arrangements from all units
+
     let consolidatedPalletArrangement = [];
     truckConfig.units.forEach(unit => {
-        consolidatedPalletArrangement.push({ 
-            unitId: unit.id, 
-            unitLength: unit.length, 
-            unitWidth: unit.width, 
-            pallets: unit.palletsVisual 
-        });
+      consolidatedPalletArrangement.push({
+        unitId: unit.id,
+        unitLength: unit.length,
+        unitWidth: unit.width,
+        pallets: unit.palletsVisual
+      });
     });
     setPalletArrangement(consolidatedPalletArrangement);
 
-    setLoadedEuroPallets(actualPlacedEUPBase);
-    setLoadedIndustrialPallets(actualPlacedDINBase);
+    setLoadedEuroPallets(actualPlacedEUPBase); // This remains count of base footprints
+    setLoadedIndustrialPallets(actualPlacedDINBase); // This remains count of base footprints
 
+    // Utilization Calculation
     const totalTruckArea = truckConfig.units.reduce((sum, u) => sum + (u.length * u.width), 0);
-    const calculatedUtilization = totalTruckArea > 0 ? (totalAreaUsedByBasePallets / totalTruckArea) * 100 : 0;
-    setUtilizationPercentage(parseFloat(calculatedUtilization.toFixed(1)));
+    let newUtilizationPercentage = 0;
+
+    const currentTruckInfo = TRUCK_TYPES[selectedTruck];
+    let singleLayerCapacity = 0;
+    if (eupQuantity > 0 && dinQuantity === 0) { // Only EUPs
+        singleLayerCapacity = eupLoadingPattern === 'long' ? currentTruckInfo.singleLayerEUPCapacityLong : currentTruckInfo.singleLayerEUPCapacityBroad;
+    } else if (dinQuantity > 0 && eupQuantity === 0) { // Only DINs
+        singleLayerCapacity = currentTruckInfo.singleLayerDINCapacity;
+    }
+
+    if (singleLayerCapacity > 0) { // Calculation for single pallet type loads
+        const maxPalletCapacityForConfig = singleLayerCapacity * (isStackable ? 2 : 1);
+        const totalVisuallyLoaded = eupQuantity > 0 ? totalEuroVisualPalletsPlaced : totalDinVisualPalletsPlaced;
+
+        if (totalVisuallyLoaded >= maxPalletCapacityForConfig) {
+            newUtilizationPercentage = 100;
+        } else if (maxPalletCapacityForConfig > 0) {
+            newUtilizationPercentage = (totalVisuallyLoaded / maxPalletCapacityForConfig) * 100;
+        }
+        // If requested is less than capacity but all requested are loaded
+        const requestedQty = eupQuantity > 0 ? eupQuantity : dinQuantity;
+        if (totalVisuallyLoaded === requestedQty && requestedQty < maxPalletCapacityForConfig) {
+             newUtilizationPercentage = (totalVisuallyLoaded / maxPalletCapacityForConfig) * 100;
+        }
+
+
+    } else { // Fallback for mixed loads or unconfigured trucks
+        newUtilizationPercentage = totalTruckArea > 0 ? (totalAreaUsedByBasePallets / totalTruckArea) * 100 : 0;
+    }
+    setUtilizationPercentage(parseFloat(newUtilizationPercentage.toFixed(1)));
+
 
     const weightInput = parseFloat(cargoWeight);
     const totalActualLoadedBasePallets = actualPlacedEUPBase + actualPlacedDINBase;
@@ -284,47 +336,15 @@ if (isStackable) {
       newWarnings.push('Invalid weight input. Please enter a number.');
     }
 
-    if (newWarnings.length === 0 && (eupQuantity > 0 || dinQuantity > 0) && (actualPlacedEUPBase === eupQuantity && actualPlacedDINBase === dinQuantity) ) {
+    const allEUPRequestedPlaced = totalEuroVisualPalletsPlaced >= eupQuantity;
+    const allDINRequestedPlaced = totalDinVisualPalletsPlaced >= dinQuantity;
+
+    if (newWarnings.length === 0 && (eupQuantity > 0 || dinQuantity > 0) && allEUPRequestedPlaced && allDINRequestedPlaced) {
       newWarnings.push('All requested pallets placed successfully.');
     } else if (newWarnings.length === 0 && eupQuantity === 0 && dinQuantity === 0) {
-        newWarnings.push('No pallets requested.');
+      newWarnings.push('No pallets requested.');
     }
     setWarnings(newWarnings);
-
-// Add this useEffect hook inside your HomePage component
-useEffect(() => {
-    const currentTruck = TRUCK_TYPES[selectedTruck];
-    let singleLayerEUPCapacity = 0;
-    let singleLayerDINCapacity = 0;
-
-    // Calculate single layer capacities (example for curtain-sider)
-    // This should be made more generic if you have many truck types with different capacities
-    if (currentTruck.name === 'Curtain-Sider Semi-trailer (13.2m)') {
-        // Assuming EUP long (3-across) for the 33 threshold
-        // (1320 / 120) * 3 = 11 * 3 = 33
-        singleLayerEUPCapacity = (eupLoadingPattern === 'long') ? 33 : 32; // 32 for broad (1320/80 * 2 = 16 * 2)
-
-        // DIN (100cm along length, 120cm across width, 2-across)
-        // (1320 / 100) * 2 = 13 * 2 = 26
-        singleLayerDINCapacity = 26;
-    }
-    // Add more capacity calculations for other truck types if needed
-
-    let shouldForceStackable = false;
-    if (eupQuantity > 0 && singleLayerEUPCapacity > 0 && eupQuantity > singleLayerEUPCapacity) {
-        shouldForceStackable = true;
-    }
-    if (dinQuantity > 0 && singleLayerDINCapacity > 0 && dinQuantity > singleLayerDINCapacity) {
-        shouldForceStackable = true;
-    }
-
-    if (shouldForceStackable && !isStackable) {
-        setIsStackable(true);
-    }
-    // Consider if you want to automatically uncheck it if quantities drop below threshold.
-    // The current logic only forces it on, it doesn't force it off.
-
-
 
   }, [selectedTruck, eupQuantity, dinQuantity, isStackable, cargoWeight, eupLoadingPattern]);
 
@@ -334,16 +354,17 @@ useEffect(() => {
 
   const handleQuantityChange = (type, amount) => {
     if (type === 'eup') {
-      setEupQuantity(prev => Math.max(0, (parseInt(prev, 10) || 0) + amount));
+      setEupQuantity(prev => Math.max(0, (parseInt(String(prev), 10) || 0) + amount));
     } else if (type === 'din') {
-      setDinQuantity(prev => Math.max(0, (parseInt(prev, 10) || 0) + amount));
+      setDinQuantity(prev => Math.max(0, (parseInt(String(prev), 10) || 0) + amount));
     }
   };
-  
-const renderPallet = (pallet, displayScale = 0.2) => {
+
+  const renderPallet = (pallet, displayScale = 0.2) => {
     const palletDetails = PALLET_TYPES[pallet.type];
-    const displayWidth = pallet.height * displayScale; // Pallet's physical 'height' (Y-dim) is visual width
-    const displayHeight = pallet.width * displayScale;  // Pallet's physical 'width' (X-dim) is visual height
+    // pallet.width and pallet.height are now the oriented dimensions for visualization
+    const displayWidth = pallet.height * displayScale; 
+    const displayHeight = pallet.width * displayScale; 
 
     return (
       <div
@@ -354,37 +375,21 @@ const renderPallet = (pallet, displayScale = 0.2) => {
           top: `${pallet.x * displayScale}px`,
           width: `${displayWidth}px`,
           height: `${displayHeight}px`,
-          opacity: pallet.isStacked ? 0.75 : 1, // Slightly adjusted opacity for stacked
-          zIndex: pallet.isStacked ? 10 : 5,
+          opacity: pallet.isStacked ? 0.75 : 1,
+          zIndex: pallet.isStacked ? 10 : 5, 
         }}
       >
-        {/* Label for the pallet */}
-        <span className="text-xs text-black p-0.5 font-bold select-none">
-          {palletDetails.label}
-          {/* You could add numbering here if desired, e.g., based on pallet.key or a passed index */}
-        </span>
-
-        {/* Diagonal line for STACKED pallets */}
+        <span className="text-xs text-black p-0.5 font-bold select-none">{palletDetails.label}</span>
         {pallet.isStacked && (
           <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
             <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg"
                  preserveAspectRatio="none"
-                 viewBox={`0 0 ${pallet.height} ${pallet.width}`} // Use raw pallet dimensions for viewBox
-                                                                  // to make stroke-width more consistent
+                 viewBox={`0 0 ${pallet.height} ${pallet.width}`} 
             >
-              {/* Diagonal line from top-left to bottom-right */}
               <line x1="0" y1="0" x2={pallet.height} y2={pallet.width} stroke="rgba(0,0,0,0.5)" strokeWidth="2" />
-              {/* Alternatively, for top-right to bottom-left:
-              <line x1={pallet.height} y1="0" x2="0" y2={pallet.width} stroke="rgba(0,0,0,0.5)" strokeWidth="2" />
-              */}
             </svg>
           </div>
         )}
-        {/* If it's a base pallet that IS part of a stack (but this pallet object is the base one)
-            you might want a different indicator or to combine rendering.
-            The current logic renders base and stacked pallets as separate visual items.
-            So, the diagonal line will appear on the semi-transparent top pallet.
-        */}
       </div>
     );
   };
@@ -468,7 +473,7 @@ const renderPallet = (pallet, displayScale = 0.2) => {
                         height: `${unit.length * truckVisualizationScale}px`,
                     }}
                 >
-                  {selectedTruck === 'curtainSider' && (
+                  {selectedTruck === 'curtainSider' && currentTruckDef.trueLength && (
                     <>
                         <div className="absolute top-0 left-0 h-full bg-red-300 opacity-30"
                              style={{ width: `${((currentTruckDef.trueLength - currentTruckDef.usableLength)/2) * truckVisualizationScale}px` }} />
@@ -484,7 +489,7 @@ const renderPallet = (pallet, displayScale = 0.2) => {
                 </div>
               </div>
             ))}
-            {selectedTruck === 'curtainSider' && <p className="text-xs text-gray-500 mt-2">Note: Shaded areas indicate unusable space on a 13.6m trailer, resulting in ~13.2m effective loading length.</p>}
+            {selectedTruck === 'curtainSider' && currentTruckDef.trueLength && <p className="text-xs text-gray-500 mt-2">Note: Shaded areas indicate unusable space on a 13.6m trailer, resulting in ~13.2m effective loading length.</p>}
           </div>
         </div>
 
@@ -535,4 +540,3 @@ const renderPallet = (pallet, displayScale = 0.2) => {
     </div>
   );
 }
-
