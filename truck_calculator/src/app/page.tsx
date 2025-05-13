@@ -491,9 +491,9 @@ const calculateLoadingLogic = (
   const utilizationPercentage = parseFloat(util.toFixed(1));
 
   if (tempWarnings.length === 0 && (eupQuantityToPlace > 0 || dinQuantityToPlace > 0)) {
-    tempWarnings.push('All requested pallets placed successfully.');
+    tempWarnings.push('Alle Paletten erfolgreich platziert.');
   } else if (tempWarnings.length === 0 && eupQuantityToPlace === 0 && dinQuantityToPlace === 0) {
-    tempWarnings.push('No pallets requested.');
+    tempWarnings.push('Es liegen keine Fehlermeldungen vor.');
   }
   
   const uniqueWarnings = Array.from(new Set(tempWarnings));
@@ -826,7 +826,7 @@ export default function HomePage() {
       </main>
       <footer className="text-center py-4 mt-8 text-sm text-gray-500 border-t border-gray-200">
         <p>Laderaumrechner © {new Date().getFullYear()}</p>
-         <p>Erstellt von Andreas Steiner (Modifiziert durch Gemini)</p>
+         <p>by Andreas Steiner </p>
       </footer>
     </div>
   );
