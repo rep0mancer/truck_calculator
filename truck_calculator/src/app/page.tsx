@@ -119,7 +119,7 @@ export default function HomePage() {
 
     if (selectedTruck === 'Waggon' && truckConfig.maxDinPallets !== undefined) {
       if (dinQuantity > truckConfig.maxDinPallets) {
-        tempWarnings.push(`Waggon DIN capacity is ${truckConfig.maxDinPallets}. Requested ${dinQuantity}, placing ${truckConfig.maxDinPallets}.`);
+        tempWarnings.push(`Waggon maximum DIN capacity is ${truckConfig.maxDinPallets} due to door placement inside. Requested ${dinQuantity}, placing ${truckConfig.maxDinPallets}.`);
         dinQuantityToPlace = truckConfig.maxDinPallets;
       }
     }
