@@ -81,10 +81,10 @@ export default function HomePage() {
   const [palletArrangement, setPalletArrangement] = useState([]);
   const [totalWeightKg, setTotalWeightKg] = useState(0);
   
-  // State to manage the maximization action
-  const [maximizationAction, setMaximizationAction] = useState(null); // { type: 'euro' | 'industrial', originalStackState: boolean }
+  const [maximizationAction, setMaximizationAction] = useState(null); 
   
   const calculateLoading = useCallback(() => {
+    // console.log("calculateLoading triggered. Action:", maximizationAction, "EUP Q:", eupQuantity, "DIN Q:", dinQuantity);
     const truckConfig = JSON.parse(JSON.stringify(TRUCK_TYPES[selectedTruck]));
     let tempWarnings = [];
     let finalTotalEuroVisual = 0;
@@ -105,42 +105,48 @@ export default function HomePage() {
 
     let unitsState = truckConfig.units.map(u => ({
       ...u,
-      occupiedRects: [],
-      currentX: 0,
-      currentY: 0,
-      palletsVisual: [],
-      dinEndX: 0,
-      dinEndY: 0,
-      dinLastRowIncomplete: false,
-      eupStartX: 0,
+      occupiedRects: [], currentX: 0, currentY: 0, palletsVisual: [],
+      dinEndX: 0, dinEndY: 0, dinLastRowIncomplete: false, eupStartX: 0,
     }));
 
-    // Determine actual stackability for this run (could be overridden by maximization)
-    const currentRunIsEUPStackable = maximizationAction?.type === 'euro' ? false : isEUPStackable;
-    const currentRunIsDINStackable = maximizationAction?.type === 'industrial' ? false : isDINStackable;
-    
+    let currentRunIsEUPStackable = isEUPStackable;
+    let currentRunIsDINStackable = isDINStackable;
     let dinQuantityToPlace = dinQuantity;
-    if (maximizationAction?.type === 'industrial') {
-        dinQuantityToPlace = MAX_PALLET_SIMULATION_QUANTITY;
-    }
+    let eupQuantityToPlace = eupQuantity;
 
-    if (selectedTruck === 'Waggon' && truckConfig.maxDinPallets !== undefined) {
-      if (!(maximizationAction?.type === 'industrial') && dinQuantity > truckConfig.maxDinPallets) {
-        tempWarnings.push(`Waggon DIN capacity is ${truckConfig.maxDinPallets}. Requested ${dinQuantity}, placing ${truckConfig.maxDinPallets}.`);
-        dinQuantityToPlace = truckConfig.maxDinPallets;
+    if (maximizationAction) {
+      if (maximizationAction.type === 'euro') {
+        eupQuantityToPlace = MAX_PALLET_SIMULATION_QUANTITY;
+        dinQuantityToPlace = 0; // For "Max EUP", simulate with no DINs
+        currentRunIsEUPStackable = false; // Maximize single layer
+        currentRunIsDINStackable = isDINStackable; // Original stackability for the (zero) DINs
+      } else if (maximizationAction.type === 'industrial') {
+        dinQuantityToPlace = MAX_PALLET_SIMULATION_QUANTITY;
+        eupQuantityToPlace = 0; // For "Max DIN", simulate with no EUPs
+        currentRunIsDINStackable = false; // Maximize single layer
+        currentRunIsEUPStackable = isEUPStackable; // Original stackability for the (zero) EUPs
+
+        // Special handling for Waggon's fixed DIN capacity during maximization
+        if (selectedTruck === 'Waggon' && truckConfig.maxDinPallets !== undefined) {
+            dinQuantityToPlace = Math.min(dinQuantityToPlace, truckConfig.maxDinPallets);
+        }
       }
+    } else {
+        // Normal run or Pass 2 of maximization: Apply Waggon's DIN limit if applicable
+        if (selectedTruck === 'Waggon' && truckConfig.maxDinPallets !== undefined) {
+            if (dinQuantity > truckConfig.maxDinPallets) {
+                tempWarnings.push(`Waggon DIN capacity is ${truckConfig.maxDinPallets}. Requested ${dinQuantity}, placing ${truckConfig.maxDinPallets}.`);
+                dinQuantityToPlace = truckConfig.maxDinPallets;
+            }
+        }
     }
     
-    let eupQuantityToPlace = eupQuantity;
-    if (maximizationAction?.type === 'euro') {
-        eupQuantityToPlace = MAX_PALLET_SIMULATION_QUANTITY;
-    }
-
     // --- DIN Pallet Placement ---
     let dinPlacedCountTotal = 0;
     if (dinQuantityToPlace > 0) {
       for (const unit of unitsState) {
         if (dinPlacedCountTotal >= dinQuantityToPlace) break;
+        // ... (rest of DIN placement logic as before, using dinQuantityToPlace and currentRunIsDINStackable)
         while (unit.currentX < unit.length) {
           if (dinPlacedCountTotal >= dinQuantityToPlace) break;
           let rowPalletsPlaced = 0;
@@ -218,9 +224,11 @@ export default function HomePage() {
         unit.eupStartX = unit.dinEndX;
       }
     }
-    if (!maximizationAction && dinPlacedCountTotal < dinQuantity && !tempWarnings.some(w => w.includes("Weight limit") || w.includes("Waggon DIN capacity"))) {
-        tempWarnings.push(`Could not fit all ${dinQuantity} Industrial pallets due to space. Only ${dinPlacedCountTotal} (visual) placed.`);
+    // Warning for not fitting all DINs (only if not maximizing and if requested quantity was non-zero)
+    if (!maximizationAction && dinQuantity > 0 && dinPlacedCountTotal < dinQuantityToPlace && !tempWarnings.some(w => w.includes("Weight limit") || w.includes("Waggon DIN capacity"))) {
+        tempWarnings.push(`Could not fit all ${dinQuantityToPlace} Industrial pallets due to space. Only ${dinPlacedCountTotal} (visual) placed.`);
     }
+
 
     const initialUnitsStateAfterDIN = JSON.parse(JSON.stringify(unitsState));
     const weightAfterDINs = currentTotalWeight;
@@ -234,6 +242,7 @@ export default function HomePage() {
     };
 
     if (eupQuantityToPlace > 0) {
+      // ... (rest of EUP placement logic as before, using eupQuantityToPlace and currentRunIsEUPStackable)
         const patternsToTry = eupLoadingPattern === 'auto' ? ['long', 'broad'] : [eupLoadingPattern];
         let aPatternHasBeenSetAsBest = (eupLoadingPattern !== 'auto');
 
@@ -381,6 +390,7 @@ export default function HomePage() {
         eupLabelGlobalCounter = bestEUPResult.finalEupLabelCounter;
     }
 
+
     finalPalletArrangement = Array.isArray(bestEUPResult?.unitsConfiguration)
         ? bestEUPResult.unitsConfiguration.map(unit => ({
           unitId: unit.id, 
@@ -395,8 +405,9 @@ export default function HomePage() {
     currentTotalWeight = bestEUPResult.currentWeightAfterEUPs; 
     tempWarnings.push(...bestEUPResult.tempWarnings.filter(w => !tempWarnings.some(existing => existing === w)));
 
-    if (!maximizationAction && eupQuantity > 0 && finalTotalEuroVisual < eupQuantity && !tempWarnings.some(w => w.includes("Weight limit"))) {
-        tempWarnings.push(`Could not fit all ${eupQuantity} Euro pallets due to space. Only ${finalTotalEuroVisual} (visual) placed.`);
+    // Warning for not fitting all EUPs (only if not maximizing and if requested quantity was non-zero)
+    if (!maximizationAction && eupQuantity > 0 && finalTotalEuroVisual < eupQuantityToPlace && !tempWarnings.some(w => w.includes("Weight limit"))) {
+        tempWarnings.push(`Could not fit all ${eupQuantityToPlace} Euro pallets due to space. Only ${finalTotalEuroVisual} (visual) placed.`);
     }
     
     setPalletArrangement(Array.isArray(finalPalletArrangement) ? finalPalletArrangement : []);
@@ -422,16 +433,22 @@ export default function HomePage() {
       }
     }
     if (!maximizationAction) { 
-        const allEUPRequestedPlaced = finalTotalEuroVisual >= eupQuantity;
-        const allDINRequestedPlaced = finalTotalDinVisual >= (selectedTruck === 'Waggon' && truckConfig.maxDinPallets !== undefined ? Math.min(dinQuantity, truckConfig.maxDinPallets) : dinQuantity);
+        // In normal run or Pass 2 of maximization, check if all *original user requested* pallets were placed.
+        const allEUPRequestedPlaced = finalTotalEuroVisual >= eupQuantity; // Compare against original eupQuantity
+        const originalDinQuantityForCheck = (selectedTruck === 'Waggon' && truckConfig.maxDinPallets !== undefined)
+                                            ? Math.min(dinQuantity, truckConfig.maxDinPallets)
+                                            : dinQuantity;
+        const allDINRequestedPlaced = finalTotalDinVisual >= originalDinQuantityForCheck;
+
 
         if (tempWarnings.length === 0 && (eupQuantity > 0 || dinQuantity > 0) && allEUPRequestedPlaced && allDINRequestedPlaced) {
-        tempWarnings.push('All requested pallets placed successfully.');
+            tempWarnings.push('All requested pallets placed successfully.');
         } else if (tempWarnings.length === 0 && eupQuantity === 0 && dinQuantity === 0) {
-        tempWarnings.push('No pallets requested.');
+            tempWarnings.push('No pallets requested.');
         }
     }
     setWarnings(Array.from(new Set(tempWarnings)));
+    // console.log("calculateLoading finished. finalTotalEuroVisual:", finalTotalEuroVisual, "finalTotalDinVisual:", finalTotalDinVisual);
 
   }, [selectedTruck, eupQuantity, dinQuantity, isEUPStackable, isDINStackable, eupWeightPerPallet, dinWeightPerPallet, eupLoadingPattern, maximizationAction]);
 
@@ -441,41 +458,29 @@ export default function HomePage() {
 
   // Effect to finalize EUP maximization
   useEffect(() => {
-    // Only run if maximizationAction is for 'euro' and is currently active
+    // console.log("EUP Finalize Effect Check. Action:", maximizationAction, "TotalVisualEUP:", totalEuroPalletsVisual);
     if (maximizationAction && maximizationAction.type === 'euro') {
-      // Pass 1 of calculateLoading has finished and updated totalEuroPalletsVisual.
-      // Now, update the eupQuantity input with this calculated maximum.
+    //   console.log("EUP Finalizing: Setting eupQuantity to", totalEuroPalletsVisual, "Restoring stack to", maximizationAction.originalStackState);
       setEupQuantity(totalEuroPalletsVisual);
-      
-      // Restore the original stackability state for EUP.
       if (isEUPStackable !== maximizationAction.originalStackState) {
         setIsEUPStackable(maximizationAction.originalStackState);
       }
-      
-      // Reset maximizationAction to null. This is crucial.
-      // This signals the end of the maximization process for EUP and
-      // will trigger calculateLoading again (Pass 2) with the new eupQuantity
-      // and original stackability, displaying the final result.
       setMaximizationAction(null);
     }
-    // Dependencies:
-    // - maximizationAction: Trigger when this changes (specifically when it's set for 'euro').
-    // - totalEuroPalletsVisual: Use the newly calculated visual total from Pass 1.
-    // - isEUPStackable: Compare with original state for restoration.
-    // - Setter functions (setEupQuantity, setIsEUPStackable, setMaximizationAction) are stable
-    //   and don't strictly need to be in the dependency array but are often included by linters.
-  }, [maximizationAction, totalEuroPalletsVisual, isEUPStackable, setEupQuantity, setIsEUPStackable, setMaximizationAction]);
+  }, [maximizationAction, totalEuroPalletsVisual, isEUPStackable, setIsEUPStackable, setEupQuantity, setMaximizationAction]);
 
   // Effect to finalize DIN maximization
   useEffect(() => {
+    // console.log("DIN Finalize Effect Check. Action:", maximizationAction, "TotalVisualDIN:", totalDinPalletsVisual);
     if (maximizationAction && maximizationAction.type === 'industrial') {
+    //   console.log("DIN Finalizing: Setting dinQuantity to", totalDinPalletsVisual, "Restoring stack to", maximizationAction.originalStackState);
       setDinQuantity(totalDinPalletsVisual);
       if (isDINStackable !== maximizationAction.originalStackState) {
         setIsDINStackable(maximizationAction.originalStackState);
       }
       setMaximizationAction(null);
     }
-  }, [maximizationAction, totalDinPalletsVisual, isDINStackable, setDinQuantity, setIsDINStackable, setMaximizationAction]);
+  }, [maximizationAction, totalDinPalletsVisual, isDINStackable, setIsDINStackable, setDinQuantity, setMaximizationAction]);
 
 
   const handleQuantityChange = (type, amount) => {
@@ -494,20 +499,19 @@ export default function HomePage() {
     setIsEUPStackable(false);
     setIsDINStackable(false);
     setEupLoadingPattern('auto');
-    // Reset maximizationAction if it was active, though calculateLoading handles it.
     if (maximizationAction) setMaximizationAction(null); 
   };
 
   const handleMaximizePallets = (palletTypeToMax) => {
+    // console.log("handleMaximizePallets called for:", palletTypeToMax);
     if (palletTypeToMax === 'euro') {
-        // This will trigger Pass 1 of calculateLoading for EUP
         setMaximizationAction({ type: 'euro', originalStackState: isEUPStackable });
     } else if (palletTypeToMax === 'industrial') {
-        // This will trigger Pass 1 of calculateLoading for DIN
         setMaximizationAction({ type: 'industrial', originalStackState: isDINStackable });
     }
   };
 
+  // ... (renderPallet and JSX remain the same as your original)
   const renderPallet = (pallet, displayScale = 0.3) => {
     if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) {
       console.error("Invalid pallet data passed to renderPallet:", pallet);
@@ -555,7 +559,7 @@ export default function HomePage() {
 
   const truckVisualizationScale = 0.3;
   // eslint-disable-next-line no-unused-vars
-  const currentTruckDef = TRUCK_TYPES[selectedTruck]; // Keep for curtainSider unusable space logic if re-enabled elsewhere
+  const currentTruckDef = TRUCK_TYPES[selectedTruck]; 
 
   return (
     <div className="container mx-auto p-4 font-sans bg-gray-50 min-h-screen">
