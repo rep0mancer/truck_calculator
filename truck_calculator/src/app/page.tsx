@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { CONTAINER_SLOT_DEFINITIONS } from './containerSlots';
+
 
 // Constants for truck types, including single-layer capacities
 const TRUCK_TYPES = {
