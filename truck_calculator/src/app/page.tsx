@@ -43,7 +43,7 @@ const TRUCK_TYPES = {
 
     Waggon: {
     name: 'Waggon Hbbils (15,2m)',
-    units: [{ id: 'main', length: 720, width: 245, occupiedRects: [] }],
+    units: [{ id: 'main', length: 1360, width: 290, occupiedRects: [] }],
     totalLength: 1368,
     usableLength: 1360,
     maxWidth: 290,
