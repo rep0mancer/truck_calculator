@@ -20,7 +20,7 @@ const TRUCK_TYPES = {
     singleLayerDINCapacityPerUnit: 14, // Assuming 2x7 fit
   },
   curtainSider: {
-    name: 'Curtain-Sider Semi-trailer (13.2m)',
+    name: 'Planensattel Standard (13.2m)',
     units: [{ id: 'main', length: 1320, width: 245, occupiedRects: [] }],
     totalLength: 1320,
     usableLength: 1320,
@@ -31,7 +31,7 @@ const TRUCK_TYPES = {
     singleLayerDINCapacity: 26, // 13 rows * 2
   },
   smallTruck: {
-    name: 'Small Truck (7.2m)',
+    name: 'Motorwagen (7.2m)',
     units: [{ id: 'main', length: 720, width: 245, occupiedRects: [] }],
     totalLength: 720,
     usableLength: 720,
@@ -39,6 +39,17 @@ const TRUCK_TYPES = {
     singleLayerEUPCapacityLong: 18, // 6 rows * 3
     singleLayerEUPCapacityBroad: 18, // 9 rows * 2
     singleLayerDINCapacity: 14, // 7 rows * 2
+  },
+
+    Waggon: {
+    name: 'Waggon Hbbils (15,2m)',
+    units: [{ id: 'main', length: 720, width: 245, occupiedRects: [] }],
+    totalLength: 1368,
+    usableLength: 1360,
+    maxWidth: 290,
+    singleLayerEUPCapacityLong: 38, // 6 rows * 3
+    singleLayerEUPCapacityBroad: 38, // 9 rows * 2
+    singleLayerDINCapacity: 26, // 7 rows * 2
   },
 };
 
@@ -641,7 +652,7 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="text-center py-4 mt-8 text-sm text-gray-500 border-t border-gray-200">
         <p>Loading Space Calculator &copy; {new Date().getFullYear()}</p>
-         <p>Original concept by Andreas Steiner</p>
+         <p>Created by Andreas Steiner</p>
       </footer>
     </div>
   );
