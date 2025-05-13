@@ -7,8 +7,8 @@ const TRUCK_TYPES = {
   roadTrain: {
     name: 'Hängerzug (2x 7,2m)',
     units: [
-      { id: 'unit1', length: 720, width: 245 },
-      { id: 'unit2', length: 720, width: 245 },
+      { id: 'unit1', length: 720, width: 245, occupiedRects: [] },
+      { id: 'unit2', length: 720, width: 245, occupiedRects: [] },
     ],
     totalLength: 1440,
     usableLength: 1440,
@@ -19,10 +19,10 @@ const TRUCK_TYPES = {
   },
   curtainSider: {
     name: 'Planensattel Standard (13.2m)',
-    units: [{ id: 'main', length: 1320, width: 245 }],
+    units: [{ id: 'main', length: 1320, width: 245, occupiedRects: [] }],
     totalLength: 1320,
     usableLength: 1320,
-    trueLength: 1360, 
+    trueLength: 1360,
     maxWidth: 245,
     singleLayerEUPCapacityLong: 33,
     singleLayerEUPCapacityBroad: 32,
@@ -30,7 +30,7 @@ const TRUCK_TYPES = {
   },
   smallTruck: {
     name: 'Motorwagen (7.2m)',
-    units: [{ id: 'main', length: 720, width: 245 }],
+    units: [{ id: 'main', length: 720, width: 245, occupiedRects: [] }],
     totalLength: 720,
     usableLength: 720,
     maxWidth: 245,
@@ -40,14 +40,14 @@ const TRUCK_TYPES = {
   },
   Waggon: {
     name: 'Waggon Hbbils (15,2m)',
-    units: [{ id: 'main', length: 1520, width: 290 }], 
-    totalLength: 1520, 
-    usableLength: 1520, 
+    units: [{ id: 'main', length: 1520, width: 290, occupiedRects: [] }],
+    totalLength: 1520,
+    usableLength: 1520,
     maxWidth: 290,
-    singleLayerEUPCapacityLong: 38, 
-    singleLayerEUPCapacityBroad: 38, 
-    singleLayerDINCapacity: 26,   
-    maxDinPallets: 26, 
+    singleLayerEUPCapacityLong: 38,
+    singleLayerEUPCapacityBroad: 38,
+    singleLayerDINCapacity: 26,
+    maxDinPallets: 26,
   },
 };
 
@@ -57,17 +57,460 @@ const PALLET_TYPES = {
   industrial: { name: 'Industrial Pallet (1.2m x 1.0m)', type: 'industrial', length: 120, width: 100, area: 120 * 100, color: 'bg-green-500', borderColor: 'border-green-700' },
 };
 
-const MAX_GROSS_WEIGHT_KG = 24000; 
-const MAX_PALLET_SIMULATION_QUANTITY = 300; 
+// Maximum gross weight for the truck (payload capacity)
+const MAX_GROSS_WEIGHT_KG = 24000;
+const MAX_PALLET_SIMULATION_QUANTITY = 300; // Used for simulation purposes
 
-const checkOverlap = (rect1, rect2) => {
-  return (
-    rect1.x < rect2.x + rect2.width &&
-    rect1.x + rect1.width > rect2.x &&
-    rect1.y < rect2.y + rect2.height &&
-    rect1.y + rect1.height > rect2.y
-  );
+// *** NEU: Reine Berechnungslogik ***
+// Diese Funktion enthält die Kernlogik von calculateLoading, gibt aber nur Daten zurück und setzt keinen State.
+const calculateLoadingLogic = (
+  truckKey,
+  currentEupQuantity,
+  currentDinQuantity,
+  currentIsEUPStackable,
+  currentIsDINStackable,
+  eupWeightStr,
+  dinWeightStr,
+  currentEupLoadingPattern
+) => {
+  const truckConfig = JSON.parse(JSON.stringify(TRUCK_TYPES[truckKey]));
+  let tempWarnings = [];
+  let finalTotalEuroVisual = 0;
+  let finalTotalDinVisual = 0;
+  let finalActualEUPBase = 0;
+  let finalActualDINBase = 0;
+  let finalTotalAreaBase = 0;
+  let currentTotalWeight = 0;
+  // let finalPalletArrangement = []; // Wird innerhalb der Funktion aufgebaut
+
+  let dinLabelGlobalCounter = 0;
+  let eupLabelGlobalCounter = 0;
+
+  const eupWeight = parseFloat(eupWeightStr);
+  const dinWeight = parseFloat(dinWeightStr);
+  const safeEupWeight = !isNaN(eupWeight) && eupWeight > 0 ? eupWeight : 0;
+  const safeDinWeight = !isNaN(dinWeight) && dinWeight > 0 ? dinWeight : 0;
+
+  let unitsState = truckConfig.units.map(u => ({
+    ...u,
+    occupiedRects: [],
+    currentX: 0,
+    currentY: 0,
+    palletsVisual: [],
+    dinEndX: 0,
+    dinEndY: 0,
+    dinLastRowIncomplete: false,
+    eupStartX: 0,
+  }));
+
+  let dinQuantityToPlace = currentDinQuantity;
+  if (truckKey === 'Waggon' && truckConfig.maxDinPallets !== undefined) {
+    if (currentDinQuantity > truckConfig.maxDinPallets) {
+      tempWarnings.push(`Waggon DIN capacity is ${truckConfig.maxDinPallets}. Requested ${currentDinQuantity}, placing ${truckConfig.maxDinPallets}.`);
+      dinQuantityToPlace = truckConfig.maxDinPallets;
+    }
+  }
+  let eupQuantityToPlace = currentEupQuantity;
+
+  // --- DIN Pallet Placement ---
+  let dinPlacedCountTotal = 0;
+  if (dinQuantityToPlace > 0) {
+    for (const unit of unitsState) {
+      if (dinPlacedCountTotal >= dinQuantityToPlace) break;
+      while (unit.currentX < unit.length) {
+        if (dinPlacedCountTotal >= dinQuantityToPlace) break;
+        let rowPalletsPlaced = 0;
+        const dinDef = PALLET_TYPES.industrial;
+        const dinLength = dinDef.width; // DIN wird gedreht geladen (1.0m in Ladebreite, 1.2m in Ladetiefe)
+        const dinWidth = dinDef.length;
+        let rowHeight = 0;
+        unit.currentY = 0;
+
+        for (let i = 0; i < 2; i++) { // Max 2 DIN nebeneinander
+          if (dinPlacedCountTotal >= dinQuantityToPlace) break;
+          if (safeDinWeight > 0 && currentTotalWeight + safeDinWeight > MAX_GROSS_WEIGHT_KG) {
+            if (!tempWarnings.some(w => w.includes("Weight limit reached for DIN"))) {
+              tempWarnings.push(`Weight limit reached for DIN pallets. Max ${MAX_GROSS_WEIGHT_KG / 1000}t.`);
+            }
+            unit.currentX = unit.length; // Stop placing in this unit
+            break;
+          }
+          if (unit.currentX + dinLength <= unit.length && unit.currentY + dinWidth <= unit.width) {
+            const baseDinLabelId = ++dinLabelGlobalCounter;
+            let stackedDinLabelId = null;
+
+            const baseDinPallet = {
+              x: unit.currentX,
+              y: unit.currentY,
+              width: dinLength,
+              height: dinWidth,
+              type: 'industrial',
+              isStackedTier: null,
+              key: `din_base_${unit.id}_${finalActualDINBase}_${i}`,
+              unitId: unit.id,
+              labelId: baseDinLabelId,
+              displayBaseLabelId: baseDinLabelId,
+              displayStackedLabelId: null,
+              showAsFraction: false,
+            };
+            unit.palletsVisual.push(baseDinPallet);
+            unit.occupiedRects.push({ x: unit.currentX, y: unit.currentY, width: dinLength, height: dinWidth });
+            finalTotalAreaBase += dinDef.area;
+            finalActualDINBase++;
+            finalTotalDinVisual++;
+            currentTotalWeight += safeDinWeight;
+            dinPlacedCountTotal++;
+            rowPalletsPlaced++;
+            rowHeight = Math.max(rowHeight, dinLength);
+
+            if (currentIsDINStackable && dinPlacedCountTotal < dinQuantityToPlace) {
+              if (!(safeDinWeight > 0 && currentTotalWeight + safeDinWeight > MAX_GROSS_WEIGHT_KG)) {
+                stackedDinLabelId = ++dinLabelGlobalCounter;
+                baseDinPallet.showAsFraction = true;
+                baseDinPallet.displayStackedLabelId = stackedDinLabelId;
+                baseDinPallet.isStackedTier = 'base';
+
+                unit.palletsVisual.push({
+                  x: unit.currentX,
+                  y: unit.currentY,
+                  width: dinLength,
+                  height: dinWidth,
+                  type: 'industrial',
+                  isStackedTier: 'top',
+                  key: `din_stack_${unit.id}_${finalActualDINBase - 1}_${i}`,
+                  unitId: unit.id,
+                  labelId: stackedDinLabelId,
+                  displayBaseLabelId: baseDinLabelId,
+                  displayStackedLabelId: stackedDinLabelId,
+                  showAsFraction: true,
+                });
+                finalTotalDinVisual++;
+                currentTotalWeight += safeDinWeight;
+                dinPlacedCountTotal++;
+              } else {
+                 if (!tempWarnings.some(w => w.includes("Weight limit stacking DIN")))
+                  tempWarnings.push(`Weight limit reached. Cannot stack more DIN pallets. Max ${MAX_GROSS_WEIGHT_KG / 1000}t.`);
+              }
+            }
+            unit.currentY += dinWidth;
+          } else {
+            break; // No more space in this row for DIN
+          }
+        }
+        if (unit.currentX >= unit.length) break; // Unit full
+        if (rowPalletsPlaced > 0) {
+          unit.currentX += rowHeight;
+          unit.dinEndX = unit.currentX;
+          unit.dinEndY = unit.currentY; // Y position after last DIN row
+          unit.dinLastRowIncomplete = (rowPalletsPlaced === 1); // If only one DIN pallet fit in the last row (width-wise)
+        } else {
+          // No DIN pallets could be placed in this new column, so unit is full for DINs
+          unit.currentX = unit.length;
+        }
+      }
+      unit.eupStartX = unit.dinEndX; // EUPs start where DINs ended in length
+    }
+  }
+  if (dinPlacedCountTotal < currentDinQuantity && !tempWarnings.some(w => w.includes("Weight limit") || w.includes("Waggon DIN capacity"))) {
+    tempWarnings.push(`Could not fit all ${currentDinQuantity} Industrial pallets due to space. Only ${dinPlacedCountTotal} placed.`);
+  }
+
+  const initialUnitsAfterDIN = JSON.parse(JSON.stringify(unitsState));
+  const weightAfterDINs = currentTotalWeight;
+
+  // --- EUP Pallet Placement ---
+  let bestEUPResult = {
+    unitsConfiguration: initialUnitsAfterDIN, // Start with DINs placed
+    totalVisualEUPs: 0,
+    baseEUPs: 0,
+    areaEUPs: 0,
+    tempWarnings: [],
+    currentWeightAfterEUPs: weightAfterDINs,
+    chosenPattern: (currentEupLoadingPattern !== 'auto' ? currentEupLoadingPattern : 'none'), // Default to none if auto and no EUPs placed
+    finalEupLabelCounter: eupLabelGlobalCounter,
+  };
+
+  if (eupQuantityToPlace > 0) {
+    const patternsToTry = currentEupLoadingPattern === 'auto' ? ['long', 'broad'] : [currentEupLoadingPattern];
+    let aPatternHasBeenSetAsBest = (currentEupLoadingPattern !== 'auto'); // If a specific pattern is chosen, it's initially the "best"
+
+    for (const pattern of patternsToTry) {
+      let currentUnits = JSON.parse(JSON.stringify(initialUnitsAfterDIN)); // Reset units for each pattern attempt
+      let patternVisualEUP = 0, patternBaseEUP = 0, patternAreaEUP = 0;
+      let patternWeight = weightAfterDINs;
+      let patternWarn = [];
+      let patternRemainingEup = eupQuantityToPlace;
+      let currentPatternEupCounter = eupLabelGlobalCounter; // Start EUP counter after DINs for this pattern
+
+      // Attempt to fill gaps left by incomplete DIN rows first
+      for (const unit of currentUnits) {
+        if (patternRemainingEup <= 0) break;
+        if (unit.dinLastRowIncomplete) { // If the last DIN row had only one pallet
+          const gapX = unit.dinEndX - PALLET_TYPES.industrial.width; // X where the single DIN pallet ended
+          const gapY = PALLET_TYPES.industrial.length; // Y position next to the single DIN pallet
+          const gapWidth = unit.width - gapY; // Remaining width in the truck
+          const dinLenInRow = PALLET_TYPES.industrial.width; // Length of the DIN pallet in that row
+          const eupDef = PALLET_TYPES.euro;
+          let placedInGap = false, eupLenPlaced = 0, gapConfig = null;
+
+          // Determine which EUP orientation to try first in the gap
+          const tryBroadFirst = (pattern === 'broad'); // Default or if broad is chosen
+          const tryLongFirst = (pattern === 'long');   // If long is chosen
+
+          // Try placing EUP broad (0.8m width, 1.2m length)
+          if (tryBroadFirst && gapWidth >= eupDef.length && dinLenInRow >= eupDef.width && patternRemainingEup > 0) {
+             if (!(safeEupWeight > 0 && patternWeight + safeEupWeight > MAX_GROSS_WEIGHT_KG)) {
+                gapConfig = { x: gapX, y: gapY, width: eupDef.width, height: eupDef.length, type: 'euro', keySuffix: `_gap_broad` };
+                placedInGap = true; eupLenPlaced = eupDef.width;
+             } else if (!patternWarn.some(w => w.includes('EUP gap'))) patternWarn.push('Weight limit for EUP gap');
+          }
+          // Try placing EUP long (1.2m width, 0.8m length) if broad didn't fit or wasn't tried first
+          if (!placedInGap && tryLongFirst && gapWidth >= eupDef.width && dinLenInRow >= eupDef.length && patternRemainingEup > 0) {
+             if (!(safeEupWeight > 0 && patternWeight + safeEupWeight > MAX_GROSS_WEIGHT_KG)) {
+                gapConfig = { x: gapX, y: gapY, width: eupDef.length, height: eupDef.width, type: 'euro', keySuffix: `_gap_long` };
+                placedInGap = true; eupLenPlaced = eupDef.length;
+             } else if (!patternWarn.some(w => w.includes('EUP gap'))) patternWarn.push('Weight limit for EUP gap');
+          }
+           // Fallback if specific pattern didn't fit, try the other for auto
+          if (!placedInGap && currentEupLoadingPattern === 'auto') {
+            if (!tryBroadFirst && gapWidth >= eupDef.length && dinLenInRow >= eupDef.width && patternRemainingEup > 0) { // try broad if long was first
+                 if (!(safeEupWeight > 0 && patternWeight + safeEupWeight > MAX_GROSS_WEIGHT_KG)) {
+                    gapConfig = { x: gapX, y: gapY, width: eupDef.width, height: eupDef.length, type: 'euro', keySuffix: `_gap_broad_fallback` };
+                    placedInGap = true; eupLenPlaced = eupDef.width;
+                 } else if (!patternWarn.some(w => w.includes('EUP gap'))) patternWarn.push('Weight limit for EUP gap');
+            } else if (!tryLongFirst && gapWidth >= eupDef.width && dinLenInRow >= eupDef.length && patternRemainingEup > 0) { // try long if broad was first
+                 if (!(safeEupWeight > 0 && patternWeight + safeEupWeight > MAX_GROSS_WEIGHT_KG)) {
+                    gapConfig = { x: gapX, y: gapY, width: eupDef.length, height: eupDef.width, type: 'euro', keySuffix: `_gap_long_fallback` };
+                    placedInGap = true; eupLenPlaced = eupDef.length;
+                 } else if (!patternWarn.some(w => w.includes('EUP gap'))) patternWarn.push('Weight limit for EUP gap');
+            }
+          }
+
+
+          if (placedInGap && gapConfig) {
+            const baseEupLabelId = ++currentPatternEupCounter;
+            let stackedEupLabelId = null;
+            const baseGapPallet = {
+              ...gapConfig,
+              isStackedTier: null,
+              key: `eup_gap_base_${patternBaseEUP}${gapConfig.keySuffix}`,
+              unitId: unit.id,
+              labelId: baseEupLabelId,
+              displayBaseLabelId: baseEupLabelId,
+              displayStackedLabelId: null,
+              showAsFraction: false,
+            };
+            unit.palletsVisual.push(baseGapPallet);
+            unit.occupiedRects.push({ x: gapConfig.x, y: gapConfig.y, width: gapConfig.width, height: gapConfig.height });
+            patternAreaEUP += eupDef.area;
+            patternBaseEUP++;
+            patternVisualEUP++;
+            patternWeight += safeEupWeight;
+            patternRemainingEup--;
+
+            if (currentIsEUPStackable && patternRemainingEup > 0) {
+              if (!(safeEupWeight > 0 && patternWeight + safeEupWeight > MAX_GROSS_WEIGHT_KG)) {
+                stackedEupLabelId = ++currentPatternEupCounter;
+                baseGapPallet.showAsFraction = true;
+                baseGapPallet.displayStackedLabelId = stackedEupLabelId;
+                baseGapPallet.isStackedTier = 'base';
+                unit.palletsVisual.push({
+                  ...baseGapPallet, // spread the original gap pallet properties
+                  isStackedTier: 'top',
+                  key: `eup_gap_stack_${patternBaseEUP - 1}${gapConfig.keySuffix}`,
+                  labelId: stackedEupLabelId, // Unique ID for the stacked pallet
+                  displayBaseLabelId: baseEupLabelId, // Reference to base
+                  displayStackedLabelId: stackedEupLabelId, // Self-reference for top
+                  showAsFraction: true,
+                });
+                patternVisualEUP++;
+                patternWeight += safeEupWeight;
+                patternRemainingEup--;
+              } else if (!patternWarn.some(w => w.includes('stacking EUP gap'))) patternWarn.push('Weight limit stacking EUP gap');
+            }
+            // Adjust eupStartX for this unit if a gap pallet was placed.
+            // It should be the end of the DIN row (dinEndX) or the end of the gap pallet, whichever is greater.
+            unit.eupStartX = unit.dinEndX; //Math.max(unit.dinEndX, gapX + eupLenPlaced); // This was causing issues, EUPs should start after the full DIN row.
+          }
+        }
+      }
+
+      // Fill remaining area with EUPs
+      for (const unit of currentUnits) {
+        if (patternRemainingEup <= 0) break;
+        unit.currentX = unit.eupStartX; // Start EUPs after DINs (or after gap fill if it extended further)
+        unit.currentY = 0;
+        const effectiveLength = unit.length;
+
+        while (unit.currentX < effectiveLength) {
+          if (patternRemainingEup <= 0) break;
+          let rowCount = 0; // Pallets placed in this column
+          const eupDef = PALLET_TYPES.euro;
+          // Pallet dimensions based on loading pattern
+          const palletsPerRow = (pattern === 'long' ? 3 : 2); // How many fit width-wise
+          const eupLen = pattern === 'long' ? eupDef.length : eupDef.width; // Dimension along truck length
+          const eupWid = pattern === 'long' ? eupDef.width : eupDef.length; // Dimension along truck width
+          let rowHeight = 0; // Actual length consumed by this row of EUPs
+          unit.currentY = 0; // Reset Y for each new column of EUPs
+
+          for (let i = 0; i < palletsPerRow; i++) {
+            if (patternRemainingEup <= 0) break;
+            if (safeEupWeight > 0 && patternWeight + safeEupWeight > MAX_GROSS_WEIGHT_KG) {
+              if (!patternWarn.some(w => w.includes('Weight limit reached for EUP'))) patternWarn.push(`Weight limit reached for EUP pallets. Max ${MAX_GROSS_WEIGHT_KG / 1000}t.`);
+              unit.currentX = effectiveLength; break; // Stop placing in this unit
+            }
+
+            if (unit.currentX + eupLen <= effectiveLength && unit.currentY + eupWid <= unit.width) {
+              const baseEupLabelId = ++currentPatternEupCounter;
+              let stackedEupLabelId = null;
+
+              const baseEupPallet = {
+                x: unit.currentX,
+                y: unit.currentY,
+                width: eupLen,
+                height: eupWid,
+                type: 'euro',
+                isStackedTier: null,
+                key: `eup_base_${unit.id}_${patternBaseEUP}_${pattern}_${i}`,
+                unitId: unit.id,
+                labelId: baseEupLabelId,
+                displayBaseLabelId: baseEupLabelId,
+                displayStackedLabelId: null,
+                showAsFraction: false,
+              };
+              unit.palletsVisual.push(baseEupPallet);
+              unit.occupiedRects.push({ x: unit.currentX, y: unit.currentY, width: eupLen, height: eupWid });
+              patternAreaEUP += eupDef.area;
+              patternBaseEUP++;
+              patternVisualEUP++;
+              patternWeight += safeEupWeight;
+              patternRemainingEup--;
+              rowCount++;
+              rowHeight = Math.max(rowHeight, eupLen); // All pallets in a column take same length
+
+              if (currentIsEUPStackable && patternRemainingEup > 0) {
+                if (!(safeEupWeight > 0 && patternWeight + safeEupWeight > MAX_GROSS_WEIGHT_KG)) {
+                  stackedEupLabelId = ++currentPatternEupCounter;
+                  baseEupPallet.showAsFraction = true;
+                  baseEupPallet.displayStackedLabelId = stackedEupLabelId;
+                  baseEupPallet.isStackedTier = 'base';
+
+                  unit.palletsVisual.push({
+                    x: unit.currentX,
+                    y: unit.currentY,
+                    width: eupLen,
+                    height: eupWid,
+                    type: 'euro',
+                    isStackedTier: 'top',
+                    key: `eup_stack_${unit.id}_${patternBaseEUP - 1}_${pattern}_${i}`,
+                    unitId: unit.id,
+                    labelId: stackedEupLabelId,
+                    displayBaseLabelId: baseEupLabelId,
+                    displayStackedLabelId: stackedEupLabelId,
+                    showAsFraction: true,
+                  });
+                  patternVisualEUP++;
+                  patternWeight += safeEupWeight;
+                  patternRemainingEup--;
+                } else if (!patternWarn.some(w => w.includes('stacking EUP'))) patternWarn.push('Weight limit stacking EUP');
+              }
+              unit.currentY += eupWid;
+            } else {
+              break; // No more space in this row for EUP
+            }
+          }
+          if (unit.currentX >= effectiveLength) break; // Unit full
+          if (rowCount > 0) {
+            unit.currentX += rowHeight; // Advance by the length of the EUPs placed
+          } else {
+            // No EUPs could be placed in this new column, so unit is full for EUPs
+            unit.currentX = effectiveLength;
+          }
+        }
+      }
+
+      // Compare this pattern's result with the best so far (only if auto-optimizing)
+      let updateBestResult = false;
+      if (currentEupLoadingPattern === 'auto') {
+        if (!aPatternHasBeenSetAsBest) { // First pattern tried in auto mode is initially best
+          updateBestResult = true;
+          aPatternHasBeenSetAsBest = true;
+        } else if (patternVisualEUP > bestEUPResult.totalVisualEUPs) {
+          updateBestResult = true;
+        } else if (patternVisualEUP === bestEUPResult.totalVisualEUPs) {
+          // Prefer 'broad' if counts are equal, as it often leaves more contiguous space
+          // This is a heuristic and can be adjusted.
+          // Or, if the current best is 'long' and this is 'broad' with same count, prefer 'broad'.
+          if (pattern === 'broad' && bestEUPResult.chosenPattern === 'long') {
+             updateBestResult = true;
+          }
+        }
+      } else { // If a specific pattern was chosen, that's the only one we evaluate
+        updateBestResult = true; // So it will become the bestEUPResult
+      }
+
+
+      if (updateBestResult) {
+        bestEUPResult = {
+          unitsConfiguration: JSON.parse(JSON.stringify(currentUnits)),
+          totalVisualEUPs: patternVisualEUP,
+          baseEUPs: patternBaseEUP,
+          areaEUPs: patternAreaEUP,
+          tempWarnings: patternWarn, // Capture warnings specific to this pattern
+          currentWeightAfterEUPs: patternWeight,
+          chosenPattern: pattern, // Store which pattern was chosen as best
+          finalEupLabelCounter: currentPatternEupCounter,
+        };
+      }
+    } // End of patternsToTry loop
+
+    // Apply the best EUP result found
+    unitsState = bestEUPResult.unitsConfiguration;
+    finalActualEUPBase = bestEUPResult.baseEUPs;
+    finalTotalEuroVisual = bestEUPResult.totalVisualEUPs;
+    finalTotalAreaBase += bestEUPResult.areaEUPs; // Add EUP area to total
+    currentTotalWeight = bestEUPResult.currentWeightAfterEUPs;
+    tempWarnings.push(...bestEUPResult.tempWarnings.filter(w => !tempWarnings.includes(w))); // Add unique warnings from EUP placement
+    eupLabelGlobalCounter = bestEUPResult.finalEupLabelCounter; // Update global counter
+
+    if (finalTotalEuroVisual < currentEupQuantity && !tempWarnings.some(w => w.includes('Weight limit'))) {
+      tempWarnings.push(`Could not fit all ${currentEupQuantity} Euro pallets. Only ${finalTotalEuroVisual} (visual) placed with pattern '${bestEUPResult.chosenPattern}'.`);
+    }
+  } // End if eupQuantityToPlace > 0
+
+
+  const finalPalletArrangement = unitsState.map(u => ({
+    unitId: u.id,
+    unitLength: u.length,
+    unitWidth: u.width,
+    pallets: u.palletsVisual
+  }));
+
+  const totalArea = truckConfig.units.reduce((sum, u) => sum + u.length * u.width, 0);
+  const util = totalArea > 0 ? (finalTotalAreaBase / totalArea) * 100 : 0;
+  const utilizationPercentage = parseFloat(util.toFixed(1));
+
+  if (tempWarnings.length === 0 && (eupQuantityToPlace > 0 || dinQuantityToPlace > 0)) {
+    tempWarnings.push('All requested pallets placed successfully.');
+  } else if (tempWarnings.length === 0 && eupQuantityToPlace === 0 && dinQuantityToPlace === 0) {
+    tempWarnings.push('No pallets requested.');
+  }
+  
+  const uniqueWarnings = Array.from(new Set(tempWarnings));
+
+  return {
+    palletArrangement: finalPalletArrangement,
+    loadedIndustrialPalletsBase: finalActualDINBase,
+    loadedEuroPalletsBase: finalActualEUPBase,
+    totalDinPalletsVisual: finalTotalDinVisual,
+    totalEuroPalletsVisual: finalTotalEuroVisual,
+    utilizationPercentage: utilizationPercentage,
+    warnings: uniqueWarnings,
+    totalWeightKg: currentTotalWeight,
+    eupLoadingPatternUsed: bestEUPResult.chosenPattern // Return the pattern used if EUPs were placed
+  };
 };
+
 
 export default function HomePage() {
   const [selectedTruck, setSelectedTruck] = useState('curtainSider');
@@ -88,559 +531,303 @@ export default function HomePage() {
   const [warnings, setWarnings] = useState([]);
   const [palletArrangement, setPalletArrangement] = useState([]);
   const [totalWeightKg, setTotalWeightKg] = useState(0);
-  
-  const [maximizationAction, setMaximizationAction] = useState(null); 
-  
-  const calculateLoading = useCallback(() => {
-    const truckConfig = JSON.parse(JSON.stringify(TRUCK_TYPES[selectedTruck]));
-    let tempWarnings = [];
-    let finalTotalAreaBase = 0;
-    let currentTotalWeight = 0;
-    let dinLabelGlobalCounter = 0; 
-    let eupLabelGlobalCounter = 0; 
+  const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
 
-    const eupWeight = parseFloat(eupWeightPerPallet);
-    const dinWeight = parseFloat(dinWeightPerPallet);
-    const safeEupWeight = !isNaN(eupWeight) && eupWeight > 0 ? eupWeight : 0;
-    const safeDinWeight = !isNaN(dinWeight) && dinWeight > 0 ? dinWeight : 0;
 
-    let unitsState = truckConfig.units.map(u => ({
-      ...u, occupiedRects: [], palletsVisual: [],
-    }));
+  const calculateAndSetState = useCallback(() => {
+    const results = calculateLoadingLogic(
+      selectedTruck,
+      eupQuantity,
+      dinQuantity,
+      isEUPStackable,
+      isDINStackable,
+      eupWeightPerPallet,
+      dinWeightPerPallet,
+      eupLoadingPattern
+    );
 
-    let currentActualEUPBase = 0;
-    let currentActualDINBase = 0;
-    let currentTotalEuroVisual = 0;
-    let currentTotalDinVisual = 0;
-
-    let palletsToProcessConf = [];
-
-    if (maximizationAction) {
-      if (maximizationAction.mode === 'fill_din_after_eup') {
-        palletsToProcessConf.push({ type: 'euro', quantity: eupQuantity, stackable: isEUPStackable, isFill: false, loadingPattern: eupLoadingPattern });
-        palletsToProcessConf.push({ type: 'industrial', quantity: MAX_PALLET_SIMULATION_QUANTITY, stackable: false, isFill: true });
-      } else if (maximizationAction.mode === 'fill_eup_after_din') {
-        palletsToProcessConf.push({ type: 'industrial', quantity: dinQuantity, stackable: isDINStackable, isFill: false });
-        palletsToProcessConf.push({ type: 'euro', quantity: MAX_PALLET_SIMULATION_QUANTITY, stackable: false, isFill: true, loadingPattern: 'auto' }); // Fill EUPs with auto pattern
-      } else if (maximizationAction.type === 'euro') { // Original Max EUP
-        palletsToProcessConf.push({ type: 'euro', quantity: MAX_PALLET_SIMULATION_QUANTITY, stackable: false, isFill: false, loadingPattern: eupLoadingPattern });
-      } else if (maximizationAction.type === 'industrial') { // Original Max DIN
-        let qty = MAX_PALLET_SIMULATION_QUANTITY;
-        if (selectedTruck === 'Waggon' && truckConfig.maxDinPallets !== undefined) qty = Math.min(qty, truckConfig.maxDinPallets);
-        palletsToProcessConf.push({ type: 'industrial', quantity: qty, stackable: false, isFill: false });
-      }
-    } else {
-      let currentDinQtyForNormalRun = dinQuantity;
-      if (selectedTruck === 'Waggon' && truckConfig.maxDinPallets !== undefined && dinQuantity > truckConfig.maxDinPallets) {
-        tempWarnings.push(`Waggon DIN capacity is ${truckConfig.maxDinPallets}. Requested ${dinQuantity}, placing ${truckConfig.maxDinPallets}.`);
-        currentDinQtyForNormalRun = truckConfig.maxDinPallets;
-      }
-      palletsToProcessConf.push({ type: 'industrial', quantity: currentDinQtyForNormalRun, stackable: isDINStackable, isFill: false });
-      palletsToProcessConf.push({ type: 'euro', quantity: eupQuantity, stackable: isEUPStackable, isFill: false, loadingPattern: eupLoadingPattern });
+    setPalletArrangement(results.palletArrangement);
+    setLoadedIndustrialPalletsBase(results.loadedIndustrialPalletsBase);
+    setLoadedEuroPalletsBase(results.loadedEuroPalletsBase);
+    setTotalDinPalletsVisual(results.totalDinPalletsVisual);
+    setTotalEuroPalletsVisual(results.totalEuroPalletsVisual);
+    setUtilizationPercentage(results.utilizationPercentage);
+    setWarnings(results.warnings);
+    setTotalWeightKg(results.totalWeightKg);
+    if (eupQuantity > 0 && results.eupLoadingPatternUsed) {
+        setActualEupLoadingPattern(results.eupLoadingPatternUsed);
+    } else if (eupQuantity === 0) {
+        setActualEupLoadingPattern(eupLoadingPattern); // Reset or keep user choice if no EUPs
     }
 
-    for (const config of palletsToProcessConf) {
-      let { type: palletType, quantity: quantityToPlaceCurrent, stackable: isStackableForRun, isFill, loadingPattern: eupPatternForRun } = config;
-      if (quantityToPlaceCurrent <= 0 && !isFill) continue;
-
-      let placedCountForThisTypeVisual = 0;
-
-      if (palletType === 'industrial') {
-        for (const unit of unitsState) {
-          if (!isFill && placedCountForThisTypeVisual >= quantityToPlaceCurrent) break;
-          let unitCurrentX = 0;
-          while (unitCurrentX < unit.length) {
-            if (!isFill && placedCountForThisTypeVisual >= quantityToPlaceCurrent) break;
-            if (isFill && placedCountForThisTypeVisual >= MAX_PALLET_SIMULATION_QUANTITY) break; // Cap fill attempts
-
-            const dinDef = PALLET_TYPES.industrial;
-            const orientations = [
-                { L: dinDef.length, W: dinDef.width, name: '120L_100W' }, // Length 120 along truck, Width 100 across
-                { L: dinDef.width, W: dinDef.length, name: '100L_120W' }  // Length 100 along truck, Width 120 across
-            ];
-            let bestFitForColumn = { count: 0, palletsRects: [], advanceX: 0, chosenL: 0, chosenW: 0 };
-
-            for (const orient of orientations) {
-                let tempPalletsInSpotRects = []; let numInSpot = 0; let currentUnitY = 0;
-                const rect1 = { x: unitCurrentX, y: currentUnitY, width: orient.L, height: orient.W };
-                if (unitCurrentX + orient.L <= unit.length && currentUnitY + orient.W <= unit.width && !unit.occupiedRects.some(r => checkOverlap(rect1, r))) {
-                    tempPalletsInSpotRects.push(rect1); numInSpot++; currentUnitY += orient.W;
-                    const rect2 = { x: unitCurrentX, y: currentUnitY, width: orient.L, height: orient.W };
-                    if (unitCurrentX + orient.L <= unit.length && currentUnitY + orient.W <= unit.width && !unit.occupiedRects.some(r => checkOverlap(rect2, r))) {
-                        tempPalletsInSpotRects.push(rect2); numInSpot++;
-                    }
-                }
-                if (numInSpot > bestFitForColumn.count || (numInSpot === bestFitForColumn.count && numInSpot > 0 && orient.L < bestFitForColumn.advanceX)) {
-                    bestFitForColumn = { count: numInSpot, palletsRects: tempPalletsInSpotRects, advanceX: orient.L, chosenL: orient.L, chosenW: orient.W };
-                }
-            }
-
-            if (bestFitForColumn.count > 0) {
-                for (const p_rect of bestFitForColumn.palletsRects) {
-                    if (!isFill && placedCountForThisTypeVisual >= quantityToPlaceCurrent) break;
-                    if (isFill && placedCountForThisTypeVisual >= MAX_PALLET_SIMULATION_QUANTITY) break;
-                    if (safeDinWeight > 0 && currentTotalWeight + safeDinWeight > MAX_GROSS_WEIGHT_KG) {
-                        if (!tempWarnings.some(w => w.includes("Weight limit DIN"))) tempWarnings.push(`Weight limit DIN. Max ${MAX_GROSS_WEIGHT_KG / 1000}t.`);
-                        unitCurrentX = unit.length; break;
-                    }
-                    const baseLabelId = ++dinLabelGlobalCounter;
-                    const basePallet = { ...p_rect, type: 'industrial', isStackedTier: null, key: `din_base_${unit.id}_${currentActualDINBase}_${p_rect.y}`, unitId: unit.id, labelId: baseLabelId, displayBaseLabelId: baseLabelId, displayStackedLabelId: null, showAsFraction: false, isFillPallet: isFill };
-                    unit.palletsVisual.push(basePallet); unit.occupiedRects.push({x: p_rect.x, y: p_rect.y, width: basePallet.width, height: basePallet.height });
-                    finalTotalAreaBase += dinDef.area; currentActualDINBase++; currentTotalDinVisual++; placedCountForThisTypeVisual++; currentTotalWeight += safeDinWeight;
-                    if (isStackableForRun && !isFill && placedCountForThisTypeVisual < quantityToPlaceCurrent) {
-                        if (!(safeDinWeight > 0 && currentTotalWeight + safeDinWeight > MAX_GROSS_WEIGHT_KG)) {
-                            const stackedId = ++dinLabelGlobalCounter;
-                            basePallet.showAsFraction = true; basePallet.displayStackedLabelId = stackedId; basePallet.isStackedTier = 'base';
-                            unit.palletsVisual.push({ ...basePallet, isStackedTier: 'top', key: `din_stack_${unit.id}_${currentActualDINBase - 1}_${p_rect.y}`, labelId: stackedId, displayBaseLabelId: baseLabelId, displayStackedLabelId: stackedId });
-                            currentTotalDinVisual++; placedCountForThisTypeVisual++; currentTotalWeight += safeDinWeight;
-                        } else { if (!tempWarnings.some(w => w.includes("stacking DIN"))) tempWarnings.push("Weight limit stacking DIN"); }
-                    }
-                }
-                if (unitCurrentX >= unit.length) break;
-                unitCurrentX += bestFitForColumn.advanceX;
-            } else { unitCurrentX++; }
-          }
-        }
-        if (!isFill && quantityToPlaceCurrent > 0 && currentTotalDinVisual < quantityToPlaceCurrent && !tempWarnings.some(w => w.includes("Weight limit") || w.includes("Waggon DIN capacity"))) {
-             const actualBaseDinForInput = unitsState.reduce((sum, u) => sum + u.palletsVisual.filter(p => p.type === 'industrial' && !p.isFillPallet && p.isStackedTier !== 'top').length, 0);
-             if (actualBaseDinForInput < quantityToPlaceCurrent) tempWarnings.push(`Could not fit all ${quantityToPlaceCurrent} requested DINs. Placed ${actualBaseDinForInput} (base).`);
-        }
-      } else if (palletType === 'euro') {
-        const currentEupPattern = eupPatternForRun || eupLoadingPattern;
-        const patternsToTry = currentEupPattern === 'auto' ? ['long', 'broad'] : [currentEupPattern];
-        let bestEUPPatternOverallResult = { visual: 0, base: 0, area: 0, weight: currentTotalWeight, tempWarningsLocal: [], unitsConfig: JSON.parse(JSON.stringify(unitsState)), labelCounter: eupLabelGlobalCounter, placedThisTypeTotal: 0 };
-        let aPatternWasChosen = false;
-
-        for (const pattern of patternsToTry) {
-            let tempUnitsStateForPattern = JSON.parse(JSON.stringify(unitsState));
-            let patternVisualEUP = 0, patternBaseEUP = 0, patternAreaEUP = 0;
-            let patternWeight = currentTotalWeight; 
-            let patternWarningsLocal = [];
-            let patternEupLabelCounter = eupLabelGlobalCounter;
-            let eupPlacedThisPatternAndBlock = 0;
-
-            for (const unit of tempUnitsStateForPattern) {
-                if (!isFill && eupPlacedThisPatternAndBlock >= quantityToPlaceCurrent) break;
-                let unitCurrentX = 0;
-                while (unitCurrentX < unit.length) {
-                    if (!isFill && eupPlacedThisPatternAndBlock >= quantityToPlaceCurrent) break;
-                    if (isFill && eupPlacedThisPatternAndBlock >= MAX_PALLET_SIMULATION_QUANTITY) break;
-                    
-                    const eupDef = PALLET_TYPES.euro;
-                    const palletsPerRow = pattern === 'long' ? 3 : 2;
-                    const eupLength = pattern === 'long' ? eupDef.length : eupDef.width;
-                    const eupWidth = pattern === 'long' ? eupDef.width : eupDef.length;
-                    let currentUnitY = 0; let placedInColumn = 0;
-
-                    for (let i = 0; i < palletsPerRow; i++) {
-                        if (!isFill && eupPlacedThisPatternAndBlock >= quantityToPlaceCurrent) break;
-                        if (isFill && eupPlacedThisPatternAndBlock >= MAX_PALLET_SIMULATION_QUANTITY) break;
-                        const potentialRect = { x: unitCurrentX, y: currentUnitY, width: eupLength, height: eupWidth };
-                        if (unitCurrentX + eupLength <= unit.length && currentUnitY + eupWidth <= unit.width && !unit.occupiedRects.some(r => checkOverlap(potentialRect, r)) && !tempUnitsStateForPattern.find(u => u.id === unit.id).occupiedRects.some(r => checkOverlap(potentialRect, r)) ) {
-                            if (safeEupWeight > 0 && patternWeight + safeEupWeight > MAX_GROSS_WEIGHT_KG) {
-                                if (!patternWarningsLocal.some(w => w.includes("Weight limit EUP"))) patternWarningsLocal.push(`Weight limit EUP. Max ${MAX_GROSS_WEIGHT_KG/1000}t.`);
-                                unitCurrentX = unit.length; break;
-                            }
-                            const baseLabelId = ++patternEupLabelCounter;
-                            const basePallet = { ...potentialRect, type: 'euro', isStackedTier: null, key: `eup_base_${unit.id}_${currentActualEUPBase + patternBaseEUP}_${pattern}_${i}`, unitId: unit.id, labelId: baseLabelId, displayBaseLabelId: baseLabelId, displayStackedLabelId: null, showAsFraction: false, isFillPallet: isFill };
-                            unit.palletsVisual.push(basePallet); unit.occupiedRects.push({x: basePallet.x, y: basePallet.y, width: basePallet.width, height: basePallet.height});
-                            patternAreaEUP += eupDef.area; patternBaseEUP++; patternVisualEUP++; patternWeight += safeEupWeight; eupPlacedThisPatternAndBlock++; placedInColumn++;
-                            if (isStackableForRun && !isFill && eupPlacedThisPatternAndBlock < quantityToPlaceCurrent) {
-                                if (!(safeEupWeight > 0 && patternWeight + safeEupWeight > MAX_GROSS_WEIGHT_KG)) {
-                                    const stackedId = ++patternEupLabelCounter;
-                                    basePallet.showAsFraction = true; basePallet.displayStackedLabelId = stackedId; basePallet.isStackedTier = 'base';
-                                    unit.palletsVisual.push({ ...basePallet, isStackedTier: 'top', key: `eup_stack_${unit.id}_${currentActualEUPBase + patternBaseEUP -1}_${pattern}_${i}`, labelId: stackedId, displayBaseLabelId: baseLabelId, displayStackedLabelId: stackedId });
-                                    patternVisualEUP++; patternWeight += safeEupWeight; eupPlacedThisPatternAndBlock++;
-                                } else { if (!patternWarningsLocal.some(w=>w.includes("stacking EUP"))) patternWarningsLocal.push("Weight limit stacking EUP"); }
-                            }
-                            currentUnitY += eupWidth;
-                        } else { break; }
-                    }
-                    if (unitCurrentX >= unit.length) break;
-                    if (placedInColumn > 0) { unitCurrentX += eupLength; } 
-                    else { unitCurrentX++; }
-                }
-            }
-            if (!aPatternWasChosen || patternVisualEUP > bestEUPPatternOverallResult.visual) {
-                bestEUPPatternOverallResult = { visual: patternVisualEUP, base: patternBaseEUP, area: patternAreaEUP, weight: patternWeight, tempWarningsLocal: patternWarningsLocal, unitsConfig: tempUnitsStateForPattern, labelCounter: patternEupLabelCounter, placedThisTypeTotal: eupPlacedThisPatternAndBlock };
-                aPatternWasChosen = true;
-            }
-        }
-        currentActualEUPBase += bestEUPPatternOverallResult.base;
-        currentTotalEuroVisual += bestEUPPatternOverallResult.visual;
-        finalTotalAreaBase += bestEUPPatternOverallResult.area;
-        currentTotalWeight = bestEUPPatternOverallResult.weight;
-        tempWarnings.push(...bestEUPPatternOverallResult.tempWarningsLocal.filter(w => !tempWarnings.some(existing => existing === w)));
-        unitsState = JSON.parse(JSON.stringify(bestEUPPatternOverallResult.unitsConfig));
-        eupLabelGlobalCounter = bestEUPPatternOverallResult.labelCounter;
-        placedCountForThisTypeVisual = bestEUPPatternOverallResult.placedThisTypeTotal;
-        
-        if (!isFill && quantityToPlaceCurrent > 0 && placedCountForThisTypeVisual < quantityToPlaceCurrent && !tempWarnings.some(w => w.includes("Weight limit"))) {
-            const actualBaseEupForInput = unitsState.reduce((sum, u) => sum + u.palletsVisual.filter(p => p.type === 'euro' && !p.isFillPallet && p.isStackedTier !== 'top').length, 0);
-            if(actualBaseEupForInput < quantityToPlaceCurrent) tempWarnings.push(`Could not fit all ${quantityToPlaceCurrent} Euro pallets. Placed ${actualBaseEupForInput} (base).`);
-        }
-      }
-    }
-
-    const finalPalletArrangement = unitsState.map(unit => ({
-      unitId: unit.id, 
-      unitLength: truckConfig.units.find(u => u.id === unit.id)?.length || unit.length, 
-      unitWidth: truckConfig.units.find(u => u.id === unit.id)?.width || unit.width,
-      pallets: Array.isArray(unit.palletsVisual) ? unit.palletsVisual : []
-    }));
-    
-    setPalletArrangement(finalPalletArrangement);
-    setLoadedEuroPalletsBase(currentActualEUPBase);
-    setLoadedIndustrialPalletsBase(currentActualDINBase);
-    setTotalEuroPalletsVisual(currentTotalEuroVisual);
-    setTotalDinPalletsVisual(currentTotalDinVisual);
-    setTotalWeightKg(currentTotalWeight);
-
-    const totalTruckArea = truckConfig.units.reduce((sum, u) => sum + (u.length * u.width), 0);
-    let newUtilization = totalTruckArea > 0 ? (finalTotalAreaBase / totalTruckArea) * 100 : 0;
-    setUtilizationPercentage(parseFloat(newUtilization.toFixed(1)));
-
-    if (currentTotalWeight > MAX_GROSS_WEIGHT_KG && !tempWarnings.some(w => w.includes("Gross vehicle weight"))) {
-      tempWarnings.push(`Potential gross vehicle weight overload (${(currentTotalWeight / 1000).toFixed(1)}t > ${(MAX_GROSS_WEIGHT_KG / 1000)}t).`);
-    }
-    if ((currentActualEUPBase + currentActualDINBase) > 0 && currentTotalWeight > 0 && (currentTotalWeight / (currentActualEUPBase + currentActualDINBase)) > 1500 && !tempWarnings.some(w => w.includes("axle load"))) {
-      tempWarnings.push('High average weight per pallet footprint. Check axle load distribution.');
-    }
-    
-    if (maximizationAction) {
-        const originalEUPs = eupQuantity;
-        const originalDINs = dinQuantity;
-        if (maximizationAction.mode === 'fill_din_after_eup') {
-            const filledDinCount = currentTotalDinVisual - palletsToProcessConf.find(p=>p.type === 'industrial' && p.isFill === false)?.quantity || currentTotalDinVisual;
-            if (filledDinCount > 0 && originalEUPs > 0) {
-                tempWarnings.push(`Filled remaining space with ${filledDinCount} DIN pallet(s) after ${originalEUPs} EUP(s).`);
-            } else if (originalEUPs > 0) {
-                 tempWarnings.push(`No additional DIN pallets could be placed after ${originalEUPs} EUP(s).`);
-            } else { // This case implies original Max DIN was effectively called
-                 tempWarnings.push(`Maximized DINs for empty truck: ${currentTotalDinVisual} (single layer).`);
-            }
-        } else if (maximizationAction.mode === 'fill_eup_after_din') {
-            const filledEupCount = currentTotalEuroVisual - palletsToProcessConf.find(p=>p.type === 'euro' && p.isFill === false)?.quantity || currentTotalEuroVisual;
-            if (filledEupCount > 0 && originalDINs > 0) {
-                tempWarnings.push(`Filled remaining space with ${filledEupCount} EUP pallet(s) after ${originalDINs} DIN(s).`);
-            } else if (originalDINs > 0) {
-                tempWarnings.push(`No additional EUP pallets could be placed after ${originalDINs} DIN(s).`);
-            } else {
-                tempWarnings.push(`Maximized EUPs for empty truck: ${currentTotalEuroVisual} (single layer).`);
-            }
-        } else if (maximizationAction.type === 'euro') {
-            tempWarnings.push(`Maximized EUPs: ${currentTotalEuroVisual} (single layer).`);
-        } else if (maximizationAction.type === 'industrial') {
-            tempWarnings.push(`Maximized DINs: ${currentTotalDinVisual} (single layer).`);
-        }
-    } else { 
-        const allEUPRequestedPlaced = currentTotalEuroVisual >= eupQuantity;
-        const dinQtyToCheck = (selectedTruck === 'Waggon' && truckConfig.maxDinPallets !== undefined) ? Math.min(dinQuantity, truckConfig.maxDinPallets) : dinQuantity;
-        const allDINRequestedPlaced = currentTotalDinVisual >= dinQtyToCheck;
-        if (tempWarnings.length === 0 && (eupQuantity > 0 || dinQuantity > 0) && allEUPRequestedPlaced && allDINRequestedPlaced) {
-            tempWarnings.push('All requested pallets placed successfully.');
-        } else if (tempWarnings.length === 0 && eupQuantity === 0 && dinQuantity === 0) {
-            tempWarnings.push('No pallets requested.');
-        }
-    }
-    setWarnings(Array.from(new Set(tempWarnings)));
-
-  }, [selectedTruck, eupQuantity, dinQuantity, isEUPStackable, isDINStackable, eupWeightPerPallet, dinWeightPerPallet, eupLoadingPattern, maximizationAction]);
+  }, [selectedTruck, eupQuantity, dinQuantity, isEUPStackable, isDINStackable, eupWeightPerPallet, dinWeightPerPallet, eupLoadingPattern]);
 
   useEffect(() => {
-    calculateLoading();
-  }, [calculateLoading]); 
-
-  useEffect(() => {
-    if (!maximizationAction) return;
-
-    if (maximizationAction.type === 'euro' && !maximizationAction.mode) { 
-        setEupQuantity(totalEuroPalletsVisual);
-        if (isEUPStackable !== maximizationAction.originalStackState) {
-            setIsEUPStackable(maximizationAction.originalStackState);
-        }
-    } else if (maximizationAction.type === 'industrial' && !maximizationAction.mode) { 
-        setDinQuantity(totalDinPalletsVisual);
-        if (isDINStackable !== maximizationAction.originalStackState) {
-            setIsDINStackable(maximizationAction.originalStackState);
-        }
-    }
-    // For fill modes, input quantities (eupQuantity, dinQuantity) are NOT changed here.
-    // The visualization updates, but the user's original input for the primary pallet type is preserved.
-    setMaximizationAction(null);
-
-  }, [maximizationAction, totalEuroPalletsVisual, totalDinPalletsVisual, isEUPStackable, isDINStackable, setEupQuantity, setDinQuantity, setIsEUPStackable, setIsDINStackable]);
-
+    calculateAndSetState();
+  }, [calculateAndSetState]);
 
   const handleQuantityChange = (type, amount) => {
-    if (type === 'eup') {
-      setEupQuantity(prev => Math.max(0, (parseInt(String(prev), 10) || 0) + amount));
-    } else if (type === 'din') {
-      setDinQuantity(prev => Math.max(0, (parseInt(String(prev), 10) || 0) + amount));
-    }
+    if (type === 'eup') setEupQuantity(prev => Math.max(0, (parseInt(String(prev), 10) || 0) + amount));
+    else if (type === 'din') setDinQuantity(prev => Math.max(0, (parseInt(String(prev), 10) || 0) + amount));
   };
 
   const handleClearAllPallets = () => {
-    setEupQuantity(0); setDinQuantity(0);
-    setEupWeightPerPallet(''); setDinWeightPerPallet('');
-    setIsEUPStackable(false); setIsDINStackable(false);
+    setEupQuantity(0);
+    setDinQuantity(0);
+    setEupWeightPerPallet('');
+    setDinWeightPerPallet('');
+    setIsEUPStackable(false);
+    setIsDINStackable(false);
     setEupLoadingPattern('auto');
-    if (maximizationAction) setMaximizationAction(null); 
+    setActualEupLoadingPattern('auto');
   };
 
   const handleMaximizePallets = (palletTypeToMax) => {
-    if (palletTypeToMax === 'industrial') { // Clicked "Max. DIN"
-        if (eupQuantity > 0) { 
-            setMaximizationAction({ mode: 'fill_din_after_eup' });
-        } else { // No EUPs, just maximize DINs (original behavior)
-            setMaximizationAction({ type: 'industrial', originalStackState: isDINStackable });
-        }
-    } else if (palletTypeToMax === 'euro') { // Clicked "Max. EUP"
-        if (dinQuantity > 0) { 
-            setMaximizationAction({ mode: 'fill_eup_after_din' });
-        } else { // No DINs, just maximize EUPs (original behavior)
-            setMaximizationAction({ type: 'euro', originalStackState: isEUPStackable });
+    const truckConfig = TRUCK_TYPES[selectedTruck];
+    const unitsCount = truckConfig.units.length;
+
+    // Temporarily set the other pallet type to 0 for this calculation
+    // to get the absolute maximum for an empty truck.
+    let tempEupQty = 0;
+    let tempDinQty = 0;
+    let tempEupStack = false;
+    let tempDinStack = false;
+    let tempEupPattern = eupLoadingPattern; // Use current pattern or auto
+
+    if (palletTypeToMax === 'industrial') {
+      tempDinQty = MAX_PALLET_SIMULATION_QUANTITY; // Simulate with many
+      tempDinStack = false; // Single layer for this button
+      tempEupStack = false;
+    } else if (palletTypeToMax === 'euro') {
+      tempEupQty = MAX_PALLET_SIMULATION_QUANTITY; // Simulate with many
+      tempEupStack = false; // Single layer
+      tempDinStack = false;
+    }
+    
+    // Perform a simulation to find out how many actually fit
+    const simResults = calculateLoadingLogic(
+        selectedTruck,
+        tempEupQty,
+        tempDinQty,
+        tempEupStack, // EUP stack false
+        tempDinStack, // DIN stack false
+        eupWeightPerPallet, // Keep weights for potential warnings
+        dinWeightPerPallet,
+        tempEupPattern
+    );
+
+    if (palletTypeToMax === 'industrial') {
+        setDinQuantity(simResults.loadedIndustrialPalletsBase);
+        setEupQuantity(0); // Clear other pallet type
+        setIsDINStackable(false);
+        setIsEUPStackable(false); // Also set other to false
+    } else if (palletTypeToMax === 'euro') {
+        setEupQuantity(simResults.loadedEuroPalletsBase);
+        setDinQuantity(0); // Clear other pallet type
+        setIsEUPStackable(false);
+        setIsDINStackable(false); // Also set other to false
+         if (simResults.eupLoadingPatternUsed) {
+            setActualEupLoadingPattern(simResults.eupLoadingPatternUsed);
+            // If user had 'auto', update the radio button to show what was chosen
+            if (eupLoadingPattern === 'auto') {
+                setEupLoadingPattern(simResults.eupLoadingPatternUsed);
+            }
         }
     }
   };
 
-  const renderPallet = (pallet, displayScale = 0.3) => {
-    if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) {
-      console.error("Invalid pallet data passed to renderPallet:", pallet);
-      return null;
-    }
-    const palletDetails = PALLET_TYPES[pallet.type];
-    const displayWidth = pallet.height * displayScale; 
-    const displayHeight = pallet.width * displayScale;  
-    const displayX = pallet.y * displayScale; // y-coordinate from calculation is x for display
-    const displayY = pallet.x * displayScale; // x-coordinate from calculation is y for display
-
-    let displayText = '';
-    if (pallet.showAsFraction && pallet.displayStackedLabelId) {
-      displayText = `${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId}`;
-    } else {
-      displayText = `${pallet.labelId}`; 
-    }
+  // *** NEUE FUNKTIONEN für Restplatzberechnung ***
+  const handleFillRemainingWithEUP = () => {
+    setIsEUPStackable(false); // Per Anforderung: ohne Doppelstock
+    setIsDINStackable(false); // Auch DINs für diese Berechnung ohne Doppelstock
     
-    let titleText = `${palletDetails.name} #${pallet.labelId}`;
-    if (pallet.showAsFraction) {
-        titleText = `${palletDetails.name} (Stack: ${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId})`;
-    }
-    if (pallet.isStackedTier === 'top') titleText += ' - Top';
-    if (pallet.isStackedTier === 'base') titleText += ' - Base of Stack';
-    if (pallet.isFillPallet) titleText += ' (Filled)';
+    const currentDinQty = dinQuantity; // Behalte aktuelle DIN Anzahl
 
+    // Simuliere, wie viele EUPs zusätzlich zu den aktuellen DINs passen
+    const simResults = calculateLoadingLogic(
+      selectedTruck,
+      MAX_PALLET_SIMULATION_QUANTITY, // Versuche viele EUPs zu laden
+      currentDinQty,
+      false, // isEUPStackable = false
+      false, // isDINStackable = false
+      eupWeightPerPallet,
+      dinWeightPerPallet,
+      eupLoadingPattern // Beachte aktuelles EUP Lade-Pattern
+    );
+    setEupQuantity(simResults.loadedEuroPalletsBase); // Setze EUP Anzahl auf das Ergebnis
+    if (simResults.loadedEuroPalletsBase > 0 && simResults.eupLoadingPatternUsed) {
+        setActualEupLoadingPattern(simResults.eupLoadingPatternUsed);
+         if (eupLoadingPattern === 'auto') { // If user had 'auto', update radio to chosen one
+            setEupLoadingPattern(simResults.eupLoadingPatternUsed);
+        }
+    }
+  };
+
+  const handleFillRemainingWithDIN = () => {
+    setIsDINStackable(false); // Per Anforderung: ohne Doppelstock
+    setIsEUPStackable(false); // Auch EUPs für diese Berechnung ohne Doppelstock
+
+    const currentEupQty = eupQuantity; // Behalte aktuelle EUP Anzahl
+
+    // Simuliere, wie viele DINs zusätzlich zu den aktuellen EUPs passen
+    const simResults = calculateLoadingLogic(
+      selectedTruck,
+      currentEupQty,
+      MAX_PALLET_SIMULATION_QUANTITY, // Versuche viele DINs zu laden
+      false, // isEUPStackable = false
+      false, // isDINStackable = false
+      eupWeightPerPallet,
+      dinWeightPerPallet,
+      eupLoadingPattern // EUP Pattern ist hier weniger relevant, aber für Konsistenz
+    );
+    setDinQuantity(simResults.loadedIndustrialPalletsBase); // Setze DIN Anzahl auf das Ergebnis
+  };
+
+
+  const renderPallet = (pallet, displayScale = 0.3) => {
+    if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) return null;
+    const d = PALLET_TYPES[pallet.type];
+    const w = pallet.height * displayScale; // Höhe der Palette in der Visualisierung ist Breite auf dem LKW
+    const h = pallet.width * displayScale;  // Breite der Palette in der Visualisierung ist Länge auf dem LKW
+    const x = pallet.y * displayScale;      // Y-Position der Palette ist X auf dem LKW
+    const y = pallet.x * displayScale;      // X-Position der Palette ist Y auf dem LKW
+    
+    let txt = pallet.showAsFraction && pallet.displayStackedLabelId ? `${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId}` : `${pallet.labelId}`;
+    if (pallet.labelId === 0) txt = "?"; // Fallback für nicht nummerierte
+
+    let title = `${d.name} #${pallet.labelId}`;
+    if (pallet.showAsFraction) title = `${d.name} (Stack: ${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId})`;
+    if (pallet.isStackedTier === 'top') title += ' - Top';
+    if (pallet.isStackedTier === 'base') title += ' - Base of Stack';
+    
     return (
-      <div
-        key={pallet.key}
-        className={`absolute ${palletDetails.color} ${palletDetails.borderColor} border flex items-center justify-center rounded-sm shadow-sm ${pallet.isFillPallet ? 'opacity-70' : ''}`}
-        style={{
-          left: `${displayX}px`, top: `${displayY}px`,
-          width: `${displayWidth}px`, height: `${displayHeight}px`,
-          opacity: pallet.isStackedTier === 'top' ? 0.7 * (pallet.isFillPallet ? 0.7 : 1) : (pallet.isFillPallet ? 0.7 : 1), 
-          zIndex: pallet.isStackedTier === 'top' ? 10 : 5, fontSize: '10px',
-        }}
-        title={titleText}
-      >
-        <span className="text-black font-semibold select-none">{displayText}</span>
-        {pallet.isStackedTier === 'top' && ( 
-          <div className="absolute top-0 left-0 w-full h-full border-t-2 border-l-2 border-black opacity-30 pointer-events-none rounded-sm"></div>
-        )}
-         {pallet.isFillPallet && (
-            <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-yellow-300 border border-yellow-500 rounded-full" title="Filled Pallet"></div>
-        )}
+      <div key={pallet.key} title={title}
+        className={`absolute ${d.color} ${d.borderColor} border flex items-center justify-center rounded-sm shadow-sm`}
+        style={{ left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px`, opacity: pallet.isStackedTier==='top'?0.7:1, zIndex: pallet.isStackedTier==='top'?10:5,fontSize:'10px' }}>
+        <span className="text-black font-semibold select-none">{txt}</span>
+        {pallet.isStackedTier==='top'&&<div className="absolute top-0 left-0 w-full h-full border-t-2 border-l-2 border-black opacity-30 pointer-events-none rounded-sm"/>}
       </div>
     );
   };
 
   const truckVisualizationScale = 0.3;
-  const currentTruckDef = TRUCK_TYPES[selectedTruck];
 
   return (
     <div className="container mx-auto p-4 font-sans bg-gray-50 min-h-screen">
       <header className="bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
-        <h1 className="text-3xl font-bold text-center tracking-tight">Truck Loading Space Calculator</h1>
-        <p className="text-center text-sm opacity-90">Visualize Pallet Placement (European Standards)</p>
+        <h1 className="text-3xl font-bold text-center tracking-tight">Laderaumrechner</h1>
+        <p className="text-center text-sm opacity-90">Visualisierung der Palettenplatzierung (Europäische Standards)</p>
       </header>
-
       <main className="p-6 bg-white shadow-lg rounded-b-lg">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           {/* Input Column */}
           <div className="lg:col-span-1 space-y-6 bg-slate-50 p-5 rounded-lg border border-slate-200 shadow-sm">
             <div>
-              <label htmlFor="truckType" className="block text-sm font-medium text-gray-700 mb-1">Truck Type:</label>
-              <select id="truckType" name="truckType" value={selectedTruck} onChange={(e) => setSelectedTruck(e.target.value)} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-                {Object.keys(TRUCK_TYPES).map(key => (
-                  <option key={key} value={key}>{TRUCK_TYPES[key].name}</option>
-                ))}
+              <label htmlFor="truckType" className="block text-sm font-medium text-gray-700 mb-1">LKW-Typ:</label>
+              <select id="truckType" value={selectedTruck} onChange={e=>{setSelectedTruck(e.target.value); handleClearAllPallets();}} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                {Object.keys(TRUCK_TYPES).map(key=><option key={key} value={key}>{TRUCK_TYPES[key].name}</option>)}
               </select>
             </div>
             <div className="pt-4">
-                <button 
-                    onClick={handleClearAllPallets} 
-                    className="w-full py-2 px-4 bg-red-500 text-white font-semibold rounded-md shadow-sm hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 transition duration-150 ease-in-out"
-                > Clear All Pallets & Settings </button>
+              <button onClick={handleClearAllPallets} className="w-full py-2 px-4 bg-red-500 text-white font-semibold rounded-md shadow-sm hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 transition duration-150 ease-in-out">Alles zurücksetzen</button>
             </div>
+
+            {/* DIN Paletten Sektion */}
             <div className="border-t pt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Industrial Pallets (DIN - 1.2m x 1.0m)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Industriepaletten (DIN)</label>
               <div className="flex items-center mt-1">
-                <button onClick={() => handleQuantityChange('din', -1)} className="px-3 py-1 bg-red-600 text-white rounded-l-md hover:bg-red-700 transition duration-150 ease-in-out">-</button>
-                <input type="number" min="0" id="dinQuantity" name="dinQuantity" value={dinQuantity} onChange={(e) => setDinQuantity(Math.max(0, parseInt(e.target.value, 10) || 0))} className="w-full text-center py-1.5 border-t border-b border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
-                <button onClick={() => handleQuantityChange('din', 1)} className="px-3 py-1 bg-green-600 text-white rounded-r-md hover:bg-green-700 transition duration-150 ease-in-out">+</button>
+                <button onClick={()=>handleQuantityChange('din',-1)} className="px-3 py-1 bg-red-600 text-white rounded-l-md hover:bg-red-700">-</button>
+                <input type="number" min="0" value={dinQuantity} onChange={e=>setDinQuantity(Math.max(0, parseInt(e.target.value,10)||0))} className="w-full text-center py-1.5 border-t border-b border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"/>
+                <button onClick={()=>handleQuantityChange('din',1)} className="px-3 py-1 bg-green-600 text-white rounded-r-md hover:bg-green-700">+</button>
               </div>
-              <button 
-                onClick={() => handleMaximizePallets('industrial')}
-                className="mt-2 w-full py-1.5 px-3 bg-indigo-500 text-white text-xs font-medium rounded-md shadow-sm hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 transition duration-150 ease-in-out"
-              > Max. DIN (or Fill Remaining) </button>
+              <button onClick={()=>handleMaximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 bg-indigo-500 text-white text-xs font-medium rounded-md shadow-sm hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50">Max. DIN (leer, 1-lagig)</button>
+              {/* NEUER BUTTON für DIN */}
+              <button onClick={handleFillRemainingWithDIN} className="mt-1 w-full py-1.5 px-3 bg-purple-500 text-white text-xs font-medium rounded-md shadow-sm hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50">Rest mit max. DIN füllen (1-lagig)</button>
               <div className="mt-2">
-                <label htmlFor="dinWeightPerPallet" className="text-xs font-medium text-gray-600">Weight/DIN (kg):</label>
-                <input type="number" min="0" id="dinWeightPerPallet" name="dinWeightPerPallet" value={dinWeightPerPallet} onChange={(e) => setDinWeightPerPallet(e.target.value)} placeholder="e.g. 500" className="mt-1 block w-full py-1 px-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs" />
+                <label className="text-xs font-medium text-gray-600">Gewicht/DIN (kg):</label>
+                <input type="number" min="0" value={dinWeightPerPallet} onChange={e=>setDinWeightPerPallet(e.target.value)} placeholder="z.B. 500" className="mt-1 block w-full py-1 px-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs"/>
               </div>
               <div className="flex items-center mt-2">
-                <input id="dinStackable" name="dinStackable" type="checkbox" checked={isDINStackable} onChange={(e) => setIsDINStackable(e.target.checked)} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" />
-                <label htmlFor="dinStackable" className="ml-2 block text-sm text-gray-900">Stackable (2 high)</label>
+                <input type="checkbox" id="dinStackable" checked={isDINStackable} onChange={e=>setIsDINStackable(e.target.checked)} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"/>
+                <label htmlFor="dinStackable" className="ml-2 text-sm text-gray-900">Stapelbar (2-fach)</label>
               </div>
             </div>
 
+            {/* EUP Paletten Sektion */}
             <div className="border-t pt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Euro Pallets (EUP - 1.2m x 0.8m)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Europaletten (EUP)</label>
               <div className="flex items-center mt-1">
-                <button onClick={() => handleQuantityChange('eup', -1)} className="px-3 py-1 bg-red-600 text-white rounded-l-md hover:bg-red-700 transition duration-150 ease-in-out">-</button>
-                <input type="number" min="0" id="eupQuantity" name="eupQuantity" value={eupQuantity} onChange={(e) => setEupQuantity(Math.max(0, parseInt(e.target.value, 10) || 0))} className="w-full text-center py-1.5 border-t border-b border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
-                <button onClick={() => handleQuantityChange('eup', 1)} className="px-3 py-1 bg-green-600 text-white rounded-r-md hover:bg-green-700 transition duration-150 ease-in-out">+</button>
+                <button onClick={()=>handleQuantityChange('eup',-1)} className="px-3 py-1 bg-red-600 text-white rounded-l-md hover:bg-red-700">-</button>
+                <input type="number" min="0" value={eupQuantity} onChange={e=>setEupQuantity(Math.max(0, parseInt(e.target.value,10)||0))} className="w-full text-center py-1.5 border-t border-b border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"/>
+                <button onClick={()=>handleQuantityChange('eup',1)} className="px-3 py-1 bg-green-600 text-white rounded-r-md hover:bg-green-700">+</button>
               </div>
-              <button 
-                onClick={() => handleMaximizePallets('euro')}
-                className="mt-2 w-full py-1.5 px-3 bg-indigo-500 text-white text-xs font-medium rounded-md shadow-sm hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 transition duration-150 ease-in-out"
-              > Max. EUP (or Fill Remaining) </button>
+              <button onClick={()=>handleMaximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 bg-indigo-500 text-white text-xs font-medium rounded-md shadow-sm hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50">Max. EUP (leer, 1-lagig)</button>
+              {/* NEUER BUTTON für EUP */}
+              <button onClick={handleFillRemainingWithEUP} className="mt-1 w-full py-1.5 px-3 bg-teal-500 text-white text-xs font-medium rounded-md shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-opacity-50">Rest mit max. EUP füllen (1-lagig)</button>
               <div className="mt-2">
-                <label htmlFor="eupWeightPerPallet" className="text-xs font-medium text-gray-600">Weight/EUP (kg):</label>
-                <input type="number" min="0" id="eupWeightPerPallet" name="eupWeightPerPallet" value={eupWeightPerPallet} onChange={(e) => setEupWeightPerPallet(e.target.value)} placeholder="e.g. 400" className="mt-1 block w-full py-1 px-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs" />
+                <label className="text-xs font-medium text-gray-600">Gewicht/EUP (kg):</label>
+                <input type="number" min="0" value={eupWeightPerPallet} onChange={e=>setEupWeightPerPallet(e.target.value)} placeholder="z.B. 400" className="mt-1 block w-full py-1 px-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs"/>
               </div>
               <div className="flex items-center mt-2">
-                <input id="eupStackable" name="eupStackable" type="checkbox" checked={isEUPStackable} onChange={(e) => setIsEUPStackable(e.target.checked)} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" />
-                <label htmlFor="eupStackable" className="ml-2 block text-sm text-gray-900">Stackable (2 high)</label>
+                <input type="checkbox" id="eupStackable" checked={isEUPStackable} onChange={e=>setIsEUPStackable(e.target.checked)} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"/>
+                <label htmlFor="eupStackable" className="ml-2 text-sm text-gray-900">Stapelbar (2-fach)</label>
               </div>
             </div>
 
-            {eupQuantity > 0 && (
-              <div className="border-t pt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">EUP Loading Pattern:</label>
-                <div className="flex flex-col space-y-1">
-                  <div className="flex items-center">
-                    <input type="radio" id="eupAuto" name="eupLoadingPatternOption" value="auto" checked={eupLoadingPattern === 'auto'} onChange={(e) => setEupLoadingPattern(e.target.value)} className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300" />
-                    <label htmlFor="eupAuto" className="ml-2 text-sm text-gray-700">Auto-Optimize (Best Fit)</label>
-                  </div>
-                  <div className="flex items-center">
-                    <input type="radio" id="eupLong" name="eupLoadingPatternOption" value="long" checked={eupLoadingPattern === 'long'} onChange={(e) => setEupLoadingPattern(e.target.value)} className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300" />
-                    <label htmlFor="eupLong" className="ml-2 text-sm text-gray-700">Lengthwise (3 across, 0.8m wide each)</label>
-                  </div>
-                  <div className="flex items-center">
-                    <input type="radio" id="eupBroad" name="eupLoadingPatternOption" value="broad" checked={eupLoadingPattern === 'broad'} onChange={(e) => setEupLoadingPattern(e.target.value)} className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300" />
-                    <label htmlFor="eupBroad" className="ml-2 text-sm text-gray-700">Widthwise (2 across, 1.2m wide each)</label>
-                  </div>
-                </div>
+            {(eupQuantity > 0 || actualEupLoadingPattern !== 'auto' || eupLoadingPattern !== 'auto') && ( // Zeige Pattern Auswahl wenn EUPs > 0 ODER ein Pattern manuell gewählt wurde
+            <div className="border-t pt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">EUP Lade-Pattern: <span className="text-xs text-gray-500">(Gewählt: {actualEupLoadingPattern})</span></label>
+              <div className="flex flex-col space-y-1">
+                <label className="flex items-center"><input type="radio" name="eupLoadingPattern" value="auto" checked={eupLoadingPattern==='auto'} onChange={e=>setEupLoadingPattern(e.target.value)} className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"/><span className="ml-2 text-sm text-gray-700">Auto-Optimieren</span></label>
+                <label className="flex items-center"><input type="radio" name="eupLoadingPattern" value="long" checked={eupLoadingPattern==='long'} onChange={e=>setEupLoadingPattern(e.target.value)} className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"/><span className="ml-2 text-sm text-gray-700">Längs (3 nebeneinander)</span></label>
+                <label className="flex items-center"><input type="radio" name="eupLoadingPattern" value="broad" checked={eupLoadingPattern==='broad'} onChange={e=>setEupLoadingPattern(e.target.value)} className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"/><span className="ml-2 text-sm text-gray-700">Quer (2 nebeneinander)</span></label>
               </div>
-            )}
+            </div>)}
           </div>
 
           {/* Visualization Column */}
-          <div className="lg:col-span-2 bg-gray-100 p-5 rounded-lg border border-gray-200 shadow-sm min-h-[450px] flex flex-col items-center">
-            <p className="text-gray-700 text-lg mb-3 font-semibold">Truck Loading Area Visualization</p>
-            {Array.isArray(palletArrangement) && palletArrangement.map((unitData, index) => (
-              <div key={unitData.unitId} className="mb-4 last:mb-0 w-full flex flex-col items-center">
-                {TRUCK_TYPES[selectedTruck].units.length > 1 && <p className="text-sm text-center font-medium text-gray-700 mb-1">Unit {index + 1} ({unitData.unitLength / 100}m x {unitData.unitWidth / 100}m)</p>}
-                <div
-                  id={`truckVisualization-${unitData.unitId}`}
-                  className="relative bg-gray-300 border-2 border-gray-500 overflow-hidden rounded-md shadow-inner"
-                  style={{ width: `${unitData.unitWidth * truckVisualizationScale}px`, height: `${unitData.unitLength * truckVisualizationScale}px` }}
-                >
-                  {selectedTruck === 'curtainSider' && TRUCK_TYPES.curtainSider.trueLength && TRUCK_TYPES.curtainSider.usableLength < TRUCK_TYPES.curtainSider.trueLength && (
-                    <>
-                      <div className="absolute top-0 left-0 w-full bg-red-300 opacity-30 pointer-events-none"
-                        style={{ height: `${((TRUCK_TYPES.curtainSider.trueLength - TRUCK_TYPES.curtainSider.usableLength)) * truckVisualizationScale}px` }}
-                        title={`Unusable Space: ${(TRUCK_TYPES.curtainSider.trueLength - TRUCK_TYPES.curtainSider.usableLength) / 100}m`}
-                      />
-                      <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 text-[8px] text-red-800 bg-white px-1 py-0.5 rounded opacity-80 pointer-events-none whitespace-nowrap">
-                        Usable: {TRUCK_TYPES.curtainSider.usableLength / 100}m
-                      </div>
-                    </>
-                  )}
-                  {unitData.pallets?.map(p => renderPallet(p, truckVisualizationScale))}
+          <div className="lg:col-span-2 bg-gray-100 p-5 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center">
+            <p className="text-gray-700 text-lg mb-3 font-semibold">Ladefläche Visualisierung</p>
+            {palletArrangement.map((unit,index)=>(
+              <div key={unit.unitId} className="mb-4 w-full flex flex-col items-center">
+                {TRUCK_TYPES[selectedTruck].units.length>1&&<p className="text-sm text-gray-700 mb-1">Einheit {index+1} ({unit.unitLength/100}m x {unit.unitWidth/100}m)</p>}
+                <div className="relative bg-gray-300 border-2 border-gray-500 overflow-hidden rounded-md shadow-inner" style={{width:`${unit.unitWidth*truckVisualizationScale}px`,height:`${unit.unitLength*truckVisualizationScale}px`}}>
+                  {unit.pallets.map(p=>renderPallet(p,truckVisualizationScale))}
                 </div>
               </div>
             ))}
-            {selectedTruck === 'curtainSider' && TRUCK_TYPES.curtainSider.trueLength && TRUCK_TYPES.curtainSider.usableLength < TRUCK_TYPES.curtainSider.trueLength && <p className="text-xs text-gray-500 mt-2 text-center">Note: Shaded area indicates unusable space on a 13.6m trailer (~13.2m effective).</p>}
+             {palletArrangement.length === 0 && <p className="text-gray-500">Keine Paletten zum Anzeigen.</p>}
           </div>
         </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 shadow-sm text-center">
-            <h3 className="text-md font-semibold text-blue-800 mb-2">Loaded Pallets (Visual)</h3>
-            <p className="text-sm">Industrial (DIN): <span id="loadedIndustrial" className="font-bold text-lg">{totalDinPalletsVisual}</span></p>
-            <p className="text-sm">Euro (EUP): <span id="loadedEuro" className="font-bold text-lg">{totalEuroPalletsVisual}</span></p>
-            <p className="text-xs mt-1">(Base: {loadedIndustrialPalletsBase} DIN, {loadedEuroPalletsBase} EUP)</p>
+            <h3 className="font-semibold text-blue-800 mb-2">Geladene Paletten (Visuell)</h3>
+            <p>Industrie (DIN): <span className="font-bold text-lg">{totalDinPalletsVisual}</span></p>
+            <p>Euro (EUP): <span className="font-bold text-lg">{totalEuroPalletsVisual}</span></p>
+            <p className="text-xs mt-1">(Basis: {loadedIndustrialPalletsBase} DIN, {loadedEuroPalletsBase} EUP)</p>
           </div>
           <div className="bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm text-center">
-            <h3 className="text-md font-semibold text-green-800 mb-2">Area Utilization</h3>
-            <p><span id="utilizationPercentage" className="font-bold text-3xl text-green-700">{utilizationPercentage}</span>%</p>
-            <p className="text-xs mt-1">(Based on base pallet footprints)</p>
+            <h3 className="font-semibold text-green-800 mb-2">Flächenausnutzung</h3>
+            <p className="font-bold text-3xl text-green-700">{utilizationPercentage}%</p>
+            <p className="text-xs mt-1">(Grundfläche)</p>
           </div>
           <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 shadow-sm text-center">
-            <h3 className="text-md font-semibold text-yellow-800 mb-2">Estimated Weight</h3>
-            <p><span id="totalWeight" className="font-bold text-2xl text-yellow-700">{(totalWeightKg / 1000).toFixed(1)}</span> t</p>
-            <p className="text-xs mt-1">(Max Payload: {MAX_GROSS_WEIGHT_KG / 1000}t)</p>
+            <h3 className="font-semibold text-yellow-800 mb-2">Geschätztes Gewicht</h3>
+            <p className="font-bold text-2xl text-yellow-700">{(totalWeightKg/1000).toFixed(1)} t</p>
+            <p className="text-xs mt-1">(Max: {MAX_GROSS_WEIGHT_KG/1000}t)</p>
           </div>
           <div className="bg-red-50 p-4 rounded-lg border border-red-200 shadow-sm">
-            <h3 className="text-md font-semibold text-red-800 mb-2">Notifications</h3>
-            <ul id="warningsList" className="list-disc list-inside text-sm space-y-1 text-red-700">
-              {warnings.length > 0 ? warnings.map((warning, index) => <li key={index}>{warning}</li>) : <li className="text-gray-500">No issues detected.</li>}
+            <h3 className="font-semibold text-red-800 mb-2">Meldungen</h3>
+            <ul className="list-disc list-inside text-sm space-y-1 text-red-700">
+              {warnings.length>0?warnings.map((w,i)=><li key={i}>{w}</li>):<li className="text-gray-500">Keine Probleme erkannt.</li>}
             </ul>
           </div>
         </div>
-
-        {((isEUPStackable && totalEuroPalletsVisual > loadedEuroPalletsBase) || (isDINStackable && totalDinPalletsVisual > loadedIndustrialPalletsBase)) && (loadedIndustrialPalletsBase > 0 || loadedEuroPalletsBase > 0) && (
-          <div className="mb-8 bg-gray-100 p-4 rounded-lg border border-gray-200 shadow-sm flex flex-col justify-center items-center">
-            <p className="text-gray-600 text-md mb-3 font-semibold">Side View (Conceptual)</p>
-            <div id="sideViewVisualization" className="w-full h-auto bg-gray-200 rounded flex justify-center items-end p-4 min-h-[100px] space-x-2">
-              {Array.from({ length: Math.min(3, loadedIndustrialPalletsBase) }).map((_, idx) => {
-                const palletDetails = PALLET_TYPES.industrial;
-                const showStackedDinConcept = isDINStackable && totalDinPalletsVisual > loadedIndustrialPalletsBase; 
-                const baseDisplayId = idx * 2 + 1; 
-                const stackedDisplayId = baseDisplayId + 1; 
-                const labelText = showStackedDinConcept ? `${baseDisplayId}/${stackedDisplayId}` : `${baseDisplayId}`;
-                return (
-                  <div key={`sideview-din-${idx}`} className="flex flex-col items-center" title={`Industrial Pallet Stack ${baseDisplayId}${showStackedDinConcept ? ` & ${stackedDisplayId}`:''} (Side View)`}>
-                    {showStackedDinConcept && <div className={`w-10 h-8 ${palletDetails.color} border ${palletDetails.borderColor} opacity-60 flex justify-center items-center text-xs font-bold rounded-t-sm`}>{labelText}</div>}
-                    <div className={`w-10 h-8 ${palletDetails.color} border ${palletDetails.borderColor} ${showStackedDinConcept ? 'border-t-0 rounded-b-sm' : 'rounded-sm'} flex justify-center items-center text-xs font-bold`}>{labelText}</div>
-                  </div>
-                );
-              })}
-              {Array.from({ length: Math.min(3, loadedEuroPalletsBase) }).map((_, idx) => {
-                const palletDetails = PALLET_TYPES.euro;
-                const showStackedEupConcept = isEUPStackable && totalEuroPalletsVisual > loadedEuroPalletsBase;
-                const baseDisplayId = idx * 2 + 1; 
-                const stackedDisplayId = baseDisplayId + 1;
-                const labelText = showStackedEupConcept ? `${baseDisplayId}/${stackedDisplayId}` : `${baseDisplayId}`;
-                return (
-                  <div key={`sideview-eup-${idx}`} className="flex flex-col items-center" title={`Euro Pallet Stack ${baseDisplayId}${showStackedEupConcept ? ` & ${stackedDisplayId}`:''} (Side View)`}>
-                    {showStackedEupConcept && <div className={`w-8 h-8 ${palletDetails.color} border ${palletDetails.borderColor} opacity-60 flex justify-center items-center text-xs font-bold rounded-t-sm`}>{labelText}</div>}
-                    <div className={`w-8 h-8 ${palletDetails.color} border ${palletDetails.borderColor} ${showStackedEupConcept ? 'border-t-0 rounded-b-sm' : 'rounded-sm'} flex justify-center items-center text-xs font-bold`}>{labelText}</div>
-                  </div>
-                );
-              })}
-              {(loadedIndustrialPalletsBase + loadedEuroPalletsBase) === 0 && <p className="text-gray-400">[Load pallets to see side view]</p>}
-            </div>
-            <p className="text-xs text-gray-500 mt-2 text-center">Shows conceptual side view of first few base pallets. Stacked layer shown if enabled and applicable for that pallet type. Numbers are illustrative for stacks.</p>
-          </div>
-        )}
       </main>
-
       <footer className="text-center py-4 mt-8 text-sm text-gray-500 border-t border-gray-200">
-        <p>Loading Space Calculator © {new Date().getFullYear()}</p>
-        <p>Created by Andreas Steiner</p>
+        <p>Laderaumrechner © {new Date().getFullYear()}</p>
+         <p>Erstellt von Andreas Steiner (Modifiziert durch Gemini)</p>
       </footer>
     </div>
   );
 }
-
