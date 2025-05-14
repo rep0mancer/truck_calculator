@@ -114,6 +114,9 @@ const calculateLoadingLogic = (
   }));
 
   let dinQuantityToPlace = currentDinQuantity;
+  // *** KORREKTUR: eupQuantityToPlace deklarieren und initialisieren ***
+  let eupQuantityToPlace = currentEupQuantity; 
+
   // *** VERBESSERUNG 1: Strikte Einhaltung der maximalen DIN-Palettenkapazität ***
   // Prüft, ob für den gewählten LKW-Typ eine spezifische maximale DIN-Palettenkapazität definiert ist (z.B. für Waggon KRM).
   if (truckConfig.maxDinPallets !== undefined) {
@@ -135,19 +138,18 @@ const calculateLoadingLogic = (
         if (dinPlacedCountTotal >= dinQuantityToPlace) break;
         let rowPalletsPlaced = 0;
         const dinDef = PALLET_TYPES.industrial;
-        // DIN wird gedreht geladen (1.0m in Ladebreite des LKWs, 1.2m in Ladetiefe des LKWs)
-        const dinLength = dinDef.width; // Länge der Palette in Fahrtrichtung
-        const dinWidth = dinDef.length; // Breite der Palette quer zur Fahrtrichtung
-        let rowHeight = 0; // Tatsächliche Länge, die diese Reihe von DIN-Paletten in Fahrtrichtung einnimmt
-        unit.currentY = 0; // Y-Position für jede neue Spalte zurücksetzen
+        const dinLength = dinDef.width; 
+        const dinWidth = dinDef.length; 
+        let rowHeight = 0; 
+        unit.currentY = 0; 
 
-        for (let i = 0; i < 2; i++) { // Maximal 2 DIN-Paletten nebeneinander (basierend auf Standard LKW-Breite und DIN-Palettenbreite von 1.2m)
+        for (let i = 0; i < 2; i++) { 
           if (dinPlacedCountTotal >= dinQuantityToPlace) break;
           if (safeDinWeight > 0 && currentTotalWeight + safeDinWeight > MAX_GROSS_WEIGHT_KG) {
             if (!tempWarnings.some(w => w.includes("Gewichtslimit für DIN"))) {
               tempWarnings.push(`Gewichtslimit für DIN-Paletten erreicht. Max ${MAX_GROSS_WEIGHT_KG / 1000}t.`);
             }
-            unit.currentX = unit.length; // Platzierung in dieser Einheit stoppen
+            unit.currentX = unit.length; 
             break;
           }
           if (unit.currentX + dinLength <= unit.length && unit.currentY + dinWidth <= unit.width) {
@@ -157,8 +159,8 @@ const calculateLoadingLogic = (
             const baseDinPallet = {
               x: unit.currentX,
               y: unit.currentY,
-              width: dinLength,  // Länge in Fahrtrichtung
-              height: dinWidth, // Breite quer zur Fahrtrichtung
+              width: dinLength,  
+              height: dinWidth, 
               type: 'industrial',
               isStackedTier: null,
               key: `din_base_${unit.id}_${finalActualDINBase}_${i}`,
@@ -176,7 +178,7 @@ const calculateLoadingLogic = (
             currentTotalWeight += safeDinWeight;
             dinPlacedCountTotal++;
             rowPalletsPlaced++;
-            rowHeight = Math.max(rowHeight, dinLength); // Alle Paletten in einer Spalte nehmen dieselbe Länge ein
+            rowHeight = Math.max(rowHeight, dinLength); 
 
             if (currentIsDINStackable && dinPlacedCountTotal < dinQuantityToPlace) {
               if (!(safeDinWeight > 0 && currentTotalWeight + safeDinWeight > MAX_GROSS_WEIGHT_KG)) {
@@ -207,30 +209,29 @@ const calculateLoadingLogic = (
                   tempWarnings.push(`Gewichtslimit erreicht. Weitere DIN-Paletten können nicht gestapelt werden. Max ${MAX_GROSS_WEIGHT_KG / 1000}t.`);
               }
             }
-            unit.currentY += dinWidth; // Nächste Y-Position für die nächste Palette in dieser Spalte
+            unit.currentY += dinWidth; 
           } else {
-            break; // Kein Platz mehr in dieser Reihe (quer) für DIN
+            break; 
           }
         }
-        if (unit.currentX >= unit.length) break; // Einheit ist voll
+        if (unit.currentX >= unit.length) break; 
         if (rowPalletsPlaced > 0) {
-          unit.currentX += rowHeight; // X-Position für die nächste Spalte von Paletten erhöhen
-          unit.dinEndX = unit.currentX; // Endposition der DIN-Paletten in Längsrichtung merken
-          unit.dinEndY = unit.currentY; // Y-Position nach der letzten DIN-Reihe merken
-          unit.dinLastRowIncomplete = (rowPalletsPlaced === 1 && unit.width / PALLET_TYPES.industrial.length >= 2); // Letzte Reihe unvollständig, wenn nur eine Palette platziert wurde, obwohl Platz für zwei gewesen wäre
+          unit.currentX += rowHeight; 
+          unit.dinEndX = unit.currentX; 
+          unit.dinEndY = unit.currentY; 
+          unit.dinLastRowIncomplete = (rowPalletsPlaced === 1 && unit.width / PALLET_TYPES.industrial.length >= 2); 
         } else {
-          // Keine DIN-Paletten konnten in dieser neuen Spalte platziert werden -> Einheit ist voll für DINs
           unit.currentX = unit.length;
         }
       }
-      unit.eupStartX = unit.dinEndX; // EUPs starten dort, wo DINs in Längsrichtung geendet haben
+      unit.eupStartX = unit.dinEndX; 
     }
   }
   if (dinPlacedCountTotal < currentDinQuantity && !tempWarnings.some(w => w.includes("Gewichtslimit") || w.includes("Kapazität ist"))) {
     tempWarnings.push(`Konnte nicht alle ${currentDinQuantity} Industriepaletten aufgrund von Platzmangel laden. Nur ${dinPlacedCountTotal} platziert.`);
   }
 
-  const initialUnitsAfterDIN = JSON.parse(JSON.stringify(unitsState)); // Zustand nach DIN-Platzierung sichern
+  const initialUnitsAfterDIN = JSON.parse(JSON.stringify(unitsState)); 
   const weightAfterDINs = currentTotalWeight;
 
   // --- EUP Paletten Platzierung ---
@@ -245,7 +246,7 @@ const calculateLoadingLogic = (
     finalEupLabelCounter: eupLabelGlobalCounter,
   };
 
-  if (eupQuantityToPlace > 0) {
+  if (eupQuantityToPlace > 0) { // Verwendet das jetzt deklarierte eupQuantityToPlace
     const patternsToTry = currentEupLoadingPattern === 'auto' ? ['long', 'broad'] : [currentEupLoadingPattern];
     let aPatternHasBeenSetAsBest = (currentEupLoadingPattern !== 'auto');
 
@@ -254,17 +255,16 @@ const calculateLoadingLogic = (
       let patternVisualEUP = 0, patternBaseEUP = 0, patternAreaEUP = 0;
       let patternWeight = weightAfterDINs;
       let patternWarn = [];
-      let patternRemainingEup = eupQuantityToPlace;
+      let patternRemainingEup = eupQuantityToPlace; // Verwendet das jetzt deklarierte eupQuantityToPlace
       let currentPatternEupCounter = eupLabelGlobalCounter;
 
-      // Versuch, Lücken zu füllen, die durch unvollständige DIN-Reihen entstanden sind
       for (const unit of currentUnits) {
         if (patternRemainingEup <= 0) break;
         if (unit.dinLastRowIncomplete) {
-          const gapX = unit.dinEndX - PALLET_TYPES.industrial.width; // X, wo die einzelne DIN-Palette endete
-          const gapY = PALLET_TYPES.industrial.length; // Y-Position neben der einzelnen DIN-Palette
-          const gapWidth = unit.width - gapY; // Verbleibende Breite im LKW
-          const dinLenInRow = PALLET_TYPES.industrial.width; // Länge der DIN-Palette in dieser Reihe
+          const gapX = unit.dinEndX - PALLET_TYPES.industrial.width; 
+          const gapY = PALLET_TYPES.industrial.length; 
+          const gapWidth = unit.width - gapY; 
+          const dinLenInRow = PALLET_TYPES.industrial.width; 
           const eupDef = PALLET_TYPES.euro;
           let placedInGap = false, eupLenPlaced = 0, gapConfig = null;
 
@@ -343,7 +343,6 @@ const calculateLoadingLogic = (
         }
       }
 
-      // Restliche Fläche mit EUPs füllen
       for (const unit of currentUnits) {
         if (patternRemainingEup <= 0) break;
         unit.currentX = unit.eupStartX;
@@ -473,6 +472,7 @@ const calculateLoadingLogic = (
     tempWarnings.push(...bestEUPResult.tempWarnings.filter(w => !tempWarnings.includes(w)));
     eupLabelGlobalCounter = bestEUPResult.finalEupLabelCounter;
 
+    // Hier wird korrekterweise currentEupQuantity verwendet, um die ursprüngliche Anforderung zu prüfen.
     if (finalTotalEuroVisual < currentEupQuantity && !tempWarnings.some(w => w.includes('Gewichtslimit'))) {
       tempWarnings.push(`Konnte nicht alle ${currentEupQuantity} Europaletten laden. Nur ${finalTotalEuroVisual} (visuell) platziert mit Muster '${bestEUPResult.chosenPattern}'.`);
     }
@@ -490,12 +490,11 @@ const calculateLoadingLogic = (
   const util = totalArea > 0 ? (finalTotalAreaBase / totalArea) * 100 : 0;
   const utilizationPercentage = parseFloat(util.toFixed(1));
 
+  // Verwendet das jetzt deklarierte eupQuantityToPlace für die Erfolgsmeldung
   if (tempWarnings.length === 0 && (eupQuantityToPlace > 0 || dinQuantityToPlace > 0)) {
     tempWarnings.push('Alle Paletten erfolgreich platziert.');
   } else if (tempWarnings.length === 0 && eupQuantityToPlace === 0 && dinQuantityToPlace === 0) {
-    // Keine spezifische Erfolgsmeldung, wenn keine Paletten angefordert wurden,
-    // aber auch keine Fehler aufgetreten sind.
-    // tempWarnings.push('Es liegen keine Fehlermeldungen vor.'); // Kann optional sein
+    // Keine spezifische Erfolgsmeldung, wenn keine Paletten angefordert wurden
   }
   
   const uniqueWarnings = Array.from(new Set(tempWarnings));
@@ -559,7 +558,6 @@ export default function HomePage() {
     if (eupQuantity > 0 && results.eupLoadingPatternUsed) {
         setActualEupLoadingPattern(results.eupLoadingPatternUsed);
     } else if (eupQuantity === 0) {
-        // Wenn keine EUPs geladen werden, das vom Benutzer gewählte Pattern beibehalten oder auf 'auto' zurücksetzen
         setActualEupLoadingPattern(eupLoadingPattern); 
     }
 
@@ -582,16 +580,12 @@ export default function HomePage() {
     setIsEUPStackable(false);
     setIsDINStackable(false);
     setEupLoadingPattern('auto');
-    setActualEupLoadingPattern('auto'); // Auch das tatsächlich verwendete Pattern zurücksetzen
+    setActualEupLoadingPattern('auto'); 
   };
 
-  // Diese Funktion wurde nicht explizit angefragt zu ändern, bleibt aber für Vollständigkeit
   const handleMaximizePallets = (palletTypeToMax) => {
-    // const truckConfig = TRUCK_TYPES[selectedTruck]; // Nicht direkt verwendet, da calculateLoadingLogic die Logik übernimmt
-    
     let tempEupQty = 0;
     let tempDinQty = 0;
-    // Für "Maximize" wird standardmäßig von einlagiger Beladung ausgegangen, um die maximale Grundflächenbelegung zu ermitteln
     let tempEupStack = false; 
     let tempDinStack = false;
     let tempEupPattern = eupLoadingPattern; 
@@ -616,12 +610,12 @@ export default function HomePage() {
     if (palletTypeToMax === 'industrial') {
         setDinQuantity(simResults.loadedIndustrialPalletsBase);
         setEupQuantity(0); 
-        setIsDINStackable(false); // Sicherstellen, dass Stapeloption deaktiviert ist
+        setIsDINStackable(false); 
         setIsEUPStackable(false);
     } else if (palletTypeToMax === 'euro') {
         setEupQuantity(simResults.loadedEuroPalletsBase);
         setDinQuantity(0); 
-        setIsEUPStackable(false); // Sicherstellen, dass Stapeloption deaktiviert ist
+        setIsEUPStackable(false); 
         setIsDINStackable(false);
          if (simResults.eupLoadingPatternUsed && simResults.eupLoadingPatternUsed !== 'none') {
             setActualEupLoadingPattern(simResults.eupLoadingPatternUsed);
@@ -634,8 +628,6 @@ export default function HomePage() {
 
   const handleFillRemainingWithEUP = () => {
     setIsEUPStackable(false); 
-    // DIN-Stapelung beibehalten oder nicht, je nach Anforderung. Hier wird sie für die "Rest füllen"-Logik deaktiviert.
-    // const currentDinStackable = isDINStackable; // Falls man die aktuelle DIN-Stapelung beibehalten wollte
     setIsDINStackable(false); 
     
     const currentDinQty = dinQuantity; 
@@ -644,8 +636,8 @@ export default function HomePage() {
       selectedTruck,
       MAX_PALLET_SIMULATION_QUANTITY, 
       currentDinQty,
-      false, // isEUPStackable = false für diese Funktion
-      false, // isDINStackable = false für diese Funktion, um maximale EUPs zu ermitteln
+      false, 
+      false, 
       eupWeightPerPallet,
       dinWeightPerPallet,
       eupLoadingPattern 
@@ -661,7 +653,6 @@ export default function HomePage() {
 
   const handleFillRemainingWithDIN = () => {
     setIsDINStackable(false); 
-    // const currentEupStackable = isEUPStackable; // Falls man die aktuelle EUP-Stapelung beibehalten wollte
     setIsEUPStackable(false);
 
     const currentEupQty = eupQuantity; 
@@ -670,8 +661,8 @@ export default function HomePage() {
       selectedTruck,
       currentEupQty,
       MAX_PALLET_SIMULATION_QUANTITY, 
-      false, // isEUPStackable = false für diese Funktion
-      false, // isDINStackable = false für diese Funktion, um maximale DINs zu ermitteln
+      false, 
+      false, 
       eupWeightPerPallet,
       dinWeightPerPallet,
       eupLoadingPattern 
@@ -683,11 +674,6 @@ export default function HomePage() {
   const renderPallet = (pallet, displayScale = 0.3) => {
     if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) return null;
     const d = PALLET_TYPES[pallet.type];
-    // In der Visualisierung:
-    // 'width' der Palette im SVG/HTML entspricht der 'height' der Palette in der LKW-Logik (quer zur Fahrtrichtung)
-    // 'height' der Palette im SVG/HTML entspricht der 'width' der Palette in der LKW-Logik (in Fahrtrichtung)
-    // 'left' (x-Achse im SVG/HTML) entspricht der 'y' Position in der LKW-Logik
-    // 'top' (y-Achse im SVG/HTML) entspricht der 'x' Position in der LKW-Logik
     const w = pallet.height * displayScale; 
     const h = pallet.width * displayScale;  
     const x = pallet.y * displayScale;      
