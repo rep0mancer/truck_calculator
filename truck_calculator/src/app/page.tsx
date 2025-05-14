@@ -737,28 +737,33 @@ export default function HomePage() {
 
   const truckVisualizationScale = 0.3;
 
-  return (
-     <Head>
+return (
+    // Das äußere div wurde bereits vom User angepasst (min-h-screen entfernt)
+    // und der LKW-Typ-Wechsel wurde angepasst (handleClearAllPallets entfernt)
+    // Hier wird nun das Head-Element hinzugefügt.
+    <>
+      <Head>
         <title>Laderaumrechner</title>
       </Head>
-    <div className="container mx-auto p-4 font-sans bg-gray-50">
-      <header className="bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
-        <h1 className="text-3xl font-bold text-center tracking-tight">Laderaumrechner</h1>
-        <p className="text-center text-sm opacity-90">Visualisierung der Palettenplatzierung (Europäische Standards)</p>
-      </header>
-      <main className="p-6 bg-white shadow-lg rounded-b-lg">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          {/* Input Column */}
-          <div className="lg:col-span-1 space-y-6 bg-slate-50 p-5 rounded-lg border border-slate-200 shadow-sm">
-            <div>
-              <label htmlFor="truckType" className="block text-sm font-medium text-gray-700 mb-1">LKW-Typ:</label>
-              <select id="truckType" value={selectedTruck} onChange={e=>{setSelectedTruck(e.target.value);}} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-                {Object.keys(TRUCK_TYPES).map(key=><option key={key} value={key}>{TRUCK_TYPES[key].name}</option>)}
-              </select>
-            </div>
-            <div className="pt-4">
-              <button onClick={handleClearAllPallets} className="w-full py-2 px-4 bg-red-500 text-white font-semibold rounded-md shadow-sm hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 transition duration-150 ease-in-out">Alles zurücksetzen</button>
-            </div>
+      <div className="container mx-auto p-4 font-sans bg-gray-50">
+        <header className="bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
+          <h1 className="text-3xl font-bold text-center tracking-tight">Laderaumrechner</h1>
+          <p className="text-center text-sm opacity-90">Visualisierung der Palettenplatzierung (Europäische Standards)</p>
+        </header>
+        <main className="p-6 bg-white shadow-lg rounded-b-lg">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            {/* Input Column */}
+            <div className="lg:col-span-1 space-y-6 bg-slate-50 p-5 rounded-lg border border-slate-200 shadow-sm">
+              <div>
+                <label htmlFor="truckType" className="block text-sm font-medium text-gray-700 mb-1">LKW-Typ:</label>
+                {/* Der onChange Handler wurde bereits vom User angepasst, um handleClearAllPallets nicht mehr aufzurufen */}
+                <select id="truckType" value={selectedTruck} onChange={e=>{setSelectedTruck(e.target.value);}} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                  {Object.keys(TRUCK_TYPES).map(key=><option key={key} value={key}>{TRUCK_TYPES[key].name}</option>)}
+                </select>
+              </div>
+              <div className="pt-4">
+                <button onClick={handleClearAllPallets} className="w-full py-2 px-4 bg-red-500 text-white font-semibold rounded-md shadow-sm hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 transition duration-150 ease-in-out">Alles zurücksetzen</button>
+              </div>
 
             {/* DIN Paletten Sektion */}
             <div className="border-t pt-4">
