@@ -101,8 +101,6 @@ const calculateLoadingLogic = (
   const dinWeight = parseFloat(dinWeightStr) || 0;
   const safeEupWeight = eupWeight > 0 ? eupWeight : 0;
   const safeDinWeight = dinWeight > 0 ? dinWeight : 0;
-  const getVisualCount = (base: number, isStackable: boolean) =>
-  isStackable ? base * 2 : base;
 
   let unitsState = truckConfig.units.map(u => ({
     ...u, occupiedRects: [], currentX: 0, currentY: 0, palletsVisual: [],
@@ -638,10 +636,10 @@ export default function HomePage() {
     setTotalEuroPalletsVisual(simResults.totalEuroPalletsVisual);
 
     if (palletTypeToMax === 'industrial') {
-        setDinQuantity(getVisualCount(simResults.loadedIndustrialPalletsBase, isDINStackable)); setEupQuantity(0); 
+        setDinQuantity(simResults.loadedIndustrialPalletsBase); setEupQuantity(0); 
         setLoadedIndustrialPalletsBase(simResults.loadedIndustrialPalletsBase); setLoadedEuroPalletsBase(0);
     } else if (palletTypeToMax === 'euro') {
-        setEupQuantity(getVisualCount(simResults.loadedEuroPalletsBase, isEUPStackable)); setDinQuantity(0); 
+        setEupQuantity(simResults.loadedEuroPalletsBase); setDinQuantity(0); 
         setLoadedEuroPalletsBase(simResults.loadedEuroPalletsBase); setLoadedIndustrialPalletsBase(0);
     }
     // Stacking states (isEUPStackable, isDINStackable) remain as per user's checkboxes.
@@ -673,7 +671,7 @@ export default function HomePage() {
     setUtilizationPercentage(simResults.utilizationPercentage);
     setWarnings(simResults.warnings); setTotalWeightKg(simResults.totalWeightKg);
     
-    setEupQuantity(getVisualCount(simResults.loadedEuroPalletsBase, isEUPStackable)); 
+    setEupQuantity(simResults.loadedEuroPalletsBase); 
     // isEUPStackable and isDINStackable remain as per user's checkboxes.
 
     setActualEupLoadingPattern(simResults.eupLoadingPatternUsed);
@@ -702,7 +700,7 @@ export default function HomePage() {
     setUtilizationPercentage(simResults.utilizationPercentage);
     setWarnings(simResults.warnings); setTotalWeightKg(simResults.totalWeightKg);
 
-    setDinQuantity(getVisualCount(simResults.loadedIndustrialPalletsBase, isDINStackable)); 
+    setDinQuantity(simResults.loadedIndustrialPalletsBase); 
     // isEUPStackable and isDINStackable remain as per user's checkboxes.
 
     if (currentEupQty > 0) {
