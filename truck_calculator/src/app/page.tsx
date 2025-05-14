@@ -226,6 +226,11 @@ const calculateLoadingLogic = (
     tempWarnings.push(`Could not fit all ${currentDinQuantity} Industrial pallets due to space. Only ${dinPlacedCountTotal} placed.`);
   }
 
+    }
+  if (dinPlacedCountTotal < currentDinQuantity && !tempWarnings.some(w => w.includes("Weight limit") || w.includes("Waggon2 DIN capacity"))) {
+    tempWarnings.push(`Could not fit all ${currentDinQuantity} Industrial pallets due to space. Only ${dinPlacedCountTotal} placed.`);
+  }
+
   const initialUnitsAfterDIN = JSON.parse(JSON.stringify(unitsState));
   const weightAfterDINs = currentTotalWeight;
 
