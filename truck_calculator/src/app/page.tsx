@@ -68,7 +68,7 @@ const PALLET_TYPES = {
 };
 
 const MAX_GROSS_WEIGHT_KG = 24000;
-const MAX_PALLET_SIMULATION_QUANTITY = 300;
+const MAX_PALLET_SIMULATION_QUANTITY = 300; // Used for broad simulation, not necessarily a hard limit for iteration
 // Thresholds for axle load warning based on the number of pallets on the second layer
 const STACKED_EUP_THRESHOLD_FOR_AXLE_WARNING = 18;
 const STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING = 16;
@@ -220,7 +220,7 @@ const calculateLoadingLogic = (
         eupLabelGlobalCounter = bestEUPResultConfig.finalEupLabelCounter;
 
         if (finalTotalEuroVisual < eupQuantityToPlace && !tempWarnings.some(w => w.includes('Gewichtslimit'))) {
-            const message = eupQuantityToPlace === MAX_PALLET_SIMULATION_QUANTITY
+            const message = (eupQuantityToPlace >= MAX_PALLET_SIMULATION_QUANTITY && placementOrder === 'EUP_FIRST') // Check if it was a "Maximize EUP" call
                 ? `Konnte den LKW nicht vollständig mit Europaletten beladen. ${finalTotalEuroVisual} (visuell) platziert mit Muster '${bestEUPResultConfig.chosenPattern}'.`
                 : `Konnte nicht alle ${eupQuantityToPlace} Europaletten laden. Nur ${finalTotalEuroVisual} (visuell) platziert mit Muster '${bestEUPResultConfig.chosenPattern}'.`;
             tempWarnings.push(message);
@@ -276,7 +276,7 @@ const calculateLoadingLogic = (
         }
     }
     if (dinPlacedCountTotalSecondary < dinQuantityToPlace && !tempWarnings.some(w => w.includes("Gewichtslimit") || w.includes("Kapazität ist"))) {
-        const message = dinQuantityToPlace === MAX_PALLET_SIMULATION_QUANTITY
+         const message = (dinQuantityToPlace >= MAX_PALLET_SIMULATION_QUANTITY && placementOrder === 'EUP_FIRST') // Check if it was a "Fill with DIN after EUP"
             ? `Konnte den LKW nicht vollständig mit Industriepaletten (nach EUPs) auffüllen. Nur ${dinPlacedCountTotalSecondary} platziert.`
             : `Konnte nicht alle ${dinQuantityToPlace} Industriepaletten laden (nach EUPs). Nur ${dinPlacedCountTotalSecondary} platziert.`;
         tempWarnings.push(message);
@@ -335,7 +335,7 @@ const calculateLoadingLogic = (
         }
     }
     if (dinPlacedCountTotalPrimary < dinQuantityToPlace && !tempWarnings.some(w => w.includes("Gewichtslimit") || w.includes("Kapazität ist"))) {
-        const message = dinQuantityToPlace === MAX_PALLET_SIMULATION_QUANTITY
+        const message = (dinQuantityToPlace >= MAX_PALLET_SIMULATION_QUANTITY && placementOrder === 'DIN_FIRST') // Check if it was a "Maximize DIN" call
             ? `Konnte den LKW nicht vollständig mit Industriepaletten beladen. Nur ${dinPlacedCountTotalPrimary} platziert.`
             : `Konnte nicht alle ${dinQuantityToPlace} Industriepaletten laden. Nur ${dinPlacedCountTotalPrimary} platziert.`;
         tempWarnings.push(message);
@@ -412,13 +412,13 @@ const calculateLoadingLogic = (
                                 patternVisualEUP++; patternWeight += safeEupWeight; patternRemainingEup--;
                             } else if (!patternWarnLocal.some(w => w.includes('Stapeln EUP Lücke'))) patternWarnLocal.push('Gewichtslimit Stapeln EUP Lücke.');
                         }
-                        unit.eupStartX = unit.dinEndX; // This might need adjustment if EUPs are also placed after this gap EUP in the main flow
+                        unit.eupStartX = unit.dinEndX; 
                     }
                 }
             }
             for (const unit of currentUnitsAttempt) {
                 if (patternRemainingEup <= 0) break;
-                unit.currentX = unit.eupStartX; unit.currentY = 0; // Start EUPs after all DINs (or after gap EUPs in specific units)
+                unit.currentX = unit.eupStartX; unit.currentY = 0; 
                 const effectiveLength = unit.length;
                 while (unit.currentX < effectiveLength) {
                     if (patternRemainingEup <= 0) break;
@@ -490,7 +490,7 @@ const calculateLoadingLogic = (
         eupLabelGlobalCounter = bestEUPResultConfig_DIN_FIRST.finalEupLabelCounter;
 
         if (finalTotalEuroVisual < eupQuantityToPlace && !tempWarnings.some(w => w.includes('Gewichtslimit'))) {
-            const message = eupQuantityToPlace === MAX_PALLET_SIMULATION_QUANTITY
+            const message = (eupQuantityToPlace >= MAX_PALLET_SIMULATION_QUANTITY && placementOrder === 'DIN_FIRST') // Check if it was a "Fill with EUP after DIN"
                 ? `Konnte den LKW nicht vollständig mit Europaletten (nach DINs) auffüllen. ${finalTotalEuroVisual} (visuell) platziert mit Muster '${bestEUPResultConfig_DIN_FIRST.chosenPattern}'.`
                 : `Konnte nicht alle ${eupQuantityToPlace} Europaletten laden (nach DINs). Nur ${finalTotalEuroVisual} (visuell) platziert mit Muster '${bestEUPResultConfig_DIN_FIRST.chosenPattern}'.`;
             tempWarnings.push(message);
@@ -522,19 +522,17 @@ const calculateLoadingLogic = (
   const uniqueWarnings = Array.from(new Set(tempWarnings));
 
   let determinedEupPatternForReturn = currentEupLoadingPattern;
-  if (finalTotalEuroVisual > 0 || (placementOrder === 'DIN_FIRST' && eupQuantityToPlace > 0) ) { // Ensure pattern is determined if EUPs were involved
+  if (finalTotalEuroVisual > 0 || (placementOrder === 'DIN_FIRST' && eupQuantityToPlace > 0) ) { 
     if (placementOrder === 'EUP_FIRST' && bestEUPResultConfig && typeof bestEUPResultConfig.chosenPattern !== 'undefined') {
         determinedEupPatternForReturn = bestEUPResultConfig.chosenPattern;
     } else if (placementOrder === 'DIN_FIRST' && bestEUPResultConfig_DIN_FIRST && typeof bestEUPResultConfig_DIN_FIRST.chosenPattern !== 'undefined') {
         determinedEupPatternForReturn = bestEUPResultConfig_DIN_FIRST.chosenPattern;
     } else if (currentEupLoadingPattern === 'auto' && (finalTotalEuroVisual > 0 || eupQuantityToPlace > 0)) {
-        // If auto was selected and some EUPs were processed but no specific pattern was chosen (e.g. only gap EUP)
-        // it might default to 'none' or keep 'auto'. For now, 'none' if no main EUPs placed.
-        determinedEupPatternForReturn = 'none'; // Or handle more gracefully
+        determinedEupPatternForReturn = 'none'; 
     }
   } else if (eupQuantityToPlace === 0) {
-    determinedEupPatternForReturn = currentEupLoadingPattern; // Keep user's choice if no EUPs requested
-  } else { // EUPs requested but none placed
+    determinedEupPatternForReturn = currentEupLoadingPattern; 
+  } else { 
     if (currentEupLoadingPattern === 'auto') {
         determinedEupPatternForReturn = 'none';
     } else {
@@ -619,20 +617,20 @@ export default function HomePage() {
 
   const handleMaximizePallets = (palletTypeToMax) => {
     let targetEupQty = 0; let targetDinQty = 0;
-    let order = 'DIN_FIRST'; // Default to DIN_FIRST
+    let order = 'DIN_FIRST'; 
     let eupStackForCalc = false;
     let dinStackForCalc = false;
 
     if (palletTypeToMax === 'industrial') {
-      targetDinQty = MAX_PALLET_SIMULATION_QUANTITY;
+      targetDinQty = MAX_PALLET_SIMULATION_QUANTITY; // Simulate with a high number to find max
       targetEupQty = 0;
       dinStackForCalc = isDINStackable;
-      order = 'DIN_FIRST'; // Explicitly DIN_FIRST for maximizing DIN
+      order = 'DIN_FIRST'; 
     } else if (palletTypeToMax === 'euro') {
-      targetEupQty = MAX_PALLET_SIMULATION_QUANTITY;
+      targetEupQty = MAX_PALLET_SIMULATION_QUANTITY; // Simulate with a high number
       targetDinQty = 0;
       eupStackForCalc = isEUPStackable;
-      order = 'EUP_FIRST'; // Explicitly EUP_FIRST for maximizing EUP
+      order = 'EUP_FIRST'; 
     }
 
     const simResults = calculateLoadingLogic(
@@ -650,13 +648,13 @@ export default function HomePage() {
     setTotalEuroPalletsVisual(simResults.totalEuroPalletsVisual);
 
     if (palletTypeToMax === 'industrial') {
-        setDinQuantity(simResults.totalDinPalletsVisual);
-        setEupQuantity(0);
+        setDinQuantity(simResults.totalDinPalletsVisual); // Set to actual placed DINs
+        setEupQuantity(0); // Clear EUPs
         setLoadedIndustrialPalletsBase(simResults.loadedIndustrialPalletsBase);
         setLoadedEuroPalletsBase(0);
     } else if (palletTypeToMax === 'euro') {
-        setEupQuantity(simResults.totalEuroPalletsVisual);
-        setDinQuantity(0);
+        setEupQuantity(simResults.totalEuroPalletsVisual); // Set to actual placed EUPs
+        setDinQuantity(0); // Clear DINs
         setLoadedEuroPalletsBase(simResults.loadedEuroPalletsBase);
         setLoadedIndustrialPalletsBase(0);
     }
@@ -670,25 +668,29 @@ export default function HomePage() {
   const handleFillRemainingWithEUP = () => {
     const currentDinQty = dinQuantity;
 
+    // Try to place currentDINQty first, then fill the rest with EUPs.
+    // This uses DIN_FIRST placement, which allows EUP-in-DIN-gap if DINs are placed first.
     const simResults = calculateLoadingLogic(
-      selectedTruck, MAX_PALLET_SIMULATION_QUANTITY, currentDinQty,
+      selectedTruck, 
+      MAX_PALLET_SIMULATION_QUANTITY, // Request max EUPs to fill remaining space
+      currentDinQty,                  // Keep current DINs
       isEUPStackable,
       isDINStackable,
       eupWeightPerPallet, dinWeightPerPallet,
       eupLoadingPattern,
-      'DIN_FIRST' // Place current DINs first, then fill with EUPs (allows EUP-in-DIN-gap)
+      'DIN_FIRST' // DINs are primary, EUPs fill, allowing EUPs in DIN gaps.
     );
 
     setPalletArrangement(simResults.palletArrangement);
     setLoadedIndustrialPalletsBase(simResults.loadedIndustrialPalletsBase);
     setLoadedEuroPalletsBase(simResults.loadedEuroPalletsBase);
-    setTotalDinPalletsVisual(simResults.totalDinPalletsVisual);
-    setTotalEuroPalletsVisual(simResults.totalEuroPalletsVisual);
+    setTotalDinPalletsVisual(simResults.totalDinPalletsVisual); // Should reflect currentDinQty or actual if limited
+    setTotalEuroPalletsVisual(simResults.totalEuroPalletsVisual); // Max EUPs that fit
     setUtilizationPercentage(simResults.utilizationPercentage);
     setWarnings(simResults.warnings); setTotalWeightKg(simResults.totalWeightKg);
 
-    setEupQuantity(simResults.totalEuroPalletsVisual); // Set EUP quantity to what was actually placed
-    setDinQuantity(simResults.totalDinPalletsVisual); // Ensure DIN quantity reflects what was kept/placed
+    setEupQuantity(simResults.totalEuroPalletsVisual); 
+    setDinQuantity(simResults.totalDinPalletsVisual); // Update DIN quantity to what was actually placed/kept
 
     setActualEupLoadingPattern(simResults.eupLoadingPatternUsed);
     if (eupLoadingPattern === 'auto' && simResults.eupLoadingPatternUsed !== 'auto' && simResults.eupLoadingPatternUsed !== 'none' && simResults.totalEuroPalletsVisual > 0) {
@@ -698,46 +700,69 @@ export default function HomePage() {
 
   const handleFillRemainingWithDIN = () => {
     const currentEupQty = eupQuantity;
+    let bestSimResults = null;
 
-    // Simulate with DIN_FIRST to see if we can fit currentEupQty while maximizing DINs
-    // This allows leveraging the EUP-in-DIN-gap logic.
-    const dinFirstSimResults = calculateLoadingLogic(
-      selectedTruck,
-      currentEupQty, // EUPs to be placed as secondary
-      MAX_PALLET_SIMULATION_QUANTITY, // Try to maximize DINs as primary
-      isEUPStackable,
-      isDINStackable,
-      eupWeightPerPallet,
-      dinWeightPerPallet,
-      eupLoadingPattern, // EUP pattern for EUPs placed after DINs
-      'DIN_FIRST'
-    );
-
-    // Check if all currentEupQty could be accommodated with the DIN_FIRST strategy
-    if (dinFirstSimResults.totalEuroPalletsVisual >= currentEupQty) {
-        setPalletArrangement(dinFirstSimResults.palletArrangement);
-        setLoadedIndustrialPalletsBase(dinFirstSimResults.loadedIndustrialPalletsBase);
-        setLoadedEuroPalletsBase(dinFirstSimResults.loadedEuroPalletsBase); // Includes original + potential gap EUP
-        setTotalDinPalletsVisual(dinFirstSimResults.totalDinPalletsVisual);
-        setTotalEuroPalletsVisual(dinFirstSimResults.totalEuroPalletsVisual);
-        setUtilizationPercentage(dinFirstSimResults.utilizationPercentage);
-        setWarnings(dinFirstSimResults.warnings);
-        setTotalWeightKg(dinFirstSimResults.totalWeightKg);
-
-        setDinQuantity(dinFirstSimResults.totalDinPalletsVisual); // This should be the maximized DIN count (e.g., 17)
-        setEupQuantity(currentEupQty); // Keep the EUP quantity input as what the user had
-
-        setActualEupLoadingPattern(dinFirstSimResults.eupLoadingPatternUsed);
-        if (currentEupQty > 0 || dinFirstSimResults.totalEuroPalletsVisual > currentEupQty) { // If EUPs were involved or a gap EUP was added
-            if (eupLoadingPattern === 'auto' && dinFirstSimResults.eupLoadingPatternUsed !== 'auto' && dinFirstSimResults.eupLoadingPatternUsed !== 'none') {
-                setEupLoadingPattern(dinFirstSimResults.eupLoadingPatternUsed);
-            }
-        } else {
-            setActualEupLoadingPattern(eupLoadingPattern); // Or 'none' if no EUPs
-        }
+    // Determine a reasonable upper bound for DIN pallets for iteration
+    const currentTruckInfo = TRUCK_TYPES[selectedTruck];
+    let truckTheoreticalMaxDin = 0;
+    if (currentTruckInfo.singleLayerDINCapacity) {
+        truckTheoreticalMaxDin = currentTruckInfo.singleLayerDINCapacity;
+    } else if (currentTruckInfo.singleLayerDINCapacityPerUnit && currentTruckInfo.units.length > 0) {
+        truckTheoreticalMaxDin = currentTruckInfo.singleLayerDINCapacityPerUnit * currentTruckInfo.units.length;
+    } else if (currentTruckInfo.units.length > 0) { // Fallback estimation
+        truckTheoreticalMaxDin = Math.floor(currentTruckInfo.units[0].length / PALLET_TYPES.industrial.width) * 2 * currentTruckInfo.units.length;
     } else {
-        // Fallback: DIN_FIRST strategy couldn't fit all original EUPs.
-        // Revert to original EUP_FIRST strategy for filling with DINs.
+        truckTheoreticalMaxDin = 30; // Default fallback
+    }
+    
+    const iterationMaxDin = truckTheoreticalMaxDin * (isDINStackable ? 2 : 1);
+
+    for (let d = iterationMaxDin; d >= 0; d--) {
+        const simResults = calculateLoadingLogic(
+            selectedTruck,
+            currentEupQty, 
+            d,             
+            isEUPStackable,
+            isDINStackable,
+            eupWeightPerPallet,
+            dinWeightPerPallet,
+            eupLoadingPattern,
+            'DIN_FIRST' 
+        );
+
+        if (simResults.totalEuroPalletsVisual >= currentEupQty && simResults.totalDinPalletsVisual === d) {
+            // This is the highest 'd' that accommodates all currentEupQty and places exactly 'd' DINs.
+            bestSimResults = simResults;
+            break; 
+        }
+    }
+
+    if (bestSimResults) {
+        setPalletArrangement(bestSimResults.palletArrangement);
+        setLoadedIndustrialPalletsBase(bestSimResults.loadedIndustrialPalletsBase);
+        setLoadedEuroPalletsBase(bestSimResults.loadedEuroPalletsBase);
+        setTotalDinPalletsVisual(bestSimResults.totalDinPalletsVisual);
+        setTotalEuroPalletsVisual(bestSimResults.totalEuroPalletsVisual); 
+        setUtilizationPercentage(bestSimResults.utilizationPercentage);
+        setWarnings(bestSimResults.warnings);
+        setTotalWeightKg(bestSimResults.totalWeightKg);
+
+        setDinQuantity(bestSimResults.totalDinPalletsVisual); 
+        setEupQuantity(currentEupQty); // Preserve the EUP quantity the user had
+
+        setActualEupLoadingPattern(bestSimResults.eupLoadingPatternUsed);
+        // Update EUP pattern if auto and a specific one was chosen, and EUPs are involved
+        if ((currentEupQty > 0 || bestSimResults.totalEuroPalletsVisual > 0) && eupLoadingPattern === 'auto' && 
+            bestSimResults.eupLoadingPatternUsed !== 'auto' && bestSimResults.eupLoadingPatternUsed !== 'none') {
+            setEupLoadingPattern(bestSimResults.eupLoadingPatternUsed);
+        } else if (currentEupQty === 0 && bestSimResults.totalEuroPalletsVisual === 0) {
+            // If no EUPs were intended and none placed, actual pattern might be 'none' or user's choice
+             setActualEupLoadingPattern(eupLoadingPattern === 'auto' ? 'none' : eupLoadingPattern);
+        }
+
+    } else {
+        // Fallback: If the iterative search doesn't find a solution (e.g., currentEupQty is too high to fit with any DINs)
+        // Use the EUP_FIRST strategy: place currentEUPs, then fill remaining with DINs.
         const eupFirstSimResults = calculateLoadingLogic(
           selectedTruck, currentEupQty, MAX_PALLET_SIMULATION_QUANTITY,
           isEUPStackable, isDINStackable, eupWeightPerPallet, dinWeightPerPallet,
@@ -747,21 +772,20 @@ export default function HomePage() {
         setLoadedIndustrialPalletsBase(eupFirstSimResults.loadedIndustrialPalletsBase);
         setLoadedEuroPalletsBase(eupFirstSimResults.loadedEuroPalletsBase);
         setTotalDinPalletsVisual(eupFirstSimResults.totalDinPalletsVisual);
-        setTotalEuroPalletsVisual(eupFirstSimResults.totalEuroPalletsVisual);
+        setTotalEuroPalletsVisual(eupFirstSimResults.totalEuroPalletsVisual); 
         setUtilizationPercentage(eupFirstSimResults.utilizationPercentage);
         setWarnings(eupFirstSimResults.warnings);
         setTotalWeightKg(eupFirstSimResults.totalWeightKg);
 
-        setDinQuantity(eupFirstSimResults.totalDinPalletsVisual); // This will be the result from EUP_FIRST (e.g., 16)
-        setEupQuantity(currentEupQty);
+        setDinQuantity(eupFirstSimResults.totalDinPalletsVisual);
+        setEupQuantity(eupFirstSimResults.totalEuroPalletsVisual); // Reflect EUPs placed by EUP_FIRST
 
         setActualEupLoadingPattern(eupFirstSimResults.eupLoadingPatternUsed);
-        if (currentEupQty > 0) {
-            if (eupLoadingPattern === 'auto' && eupFirstSimResults.eupLoadingPatternUsed !== 'auto' && eupFirstSimResults.eupLoadingPatternUsed !== 'none') {
-                setEupLoadingPattern(eupFirstSimResults.eupLoadingPatternUsed);
-            }
-        } else {
-             setActualEupLoadingPattern(eupLoadingPattern);
+         if (eupFirstSimResults.totalEuroPalletsVisual > 0 && eupLoadingPattern === 'auto' && 
+             eupFirstSimResults.eupLoadingPatternUsed !== 'auto' && eupFirstSimResults.eupLoadingPatternUsed !== 'none') {
+            setEupLoadingPattern(eupFirstSimResults.eupLoadingPatternUsed);
+        } else if (eupFirstSimResults.totalEuroPalletsVisual === 0) {
+            setActualEupLoadingPattern(eupLoadingPattern === 'auto' ? 'none' : eupLoadingPattern);
         }
     }
   };
@@ -849,7 +873,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            {(eupQuantity > 0 || totalEuroPalletsVisual > 0 || actualEupLoadingPattern !== 'auto' || eupLoadingPattern !== 'auto' || TRUCK_TYPES[selectedTruck].singleLayerEUPCapacityLong > 0 ) && ( // Adjusted condition to show pattern options if EUPs are visually present
+            {(eupQuantity > 0 || totalEuroPalletsVisual > 0 || actualEupLoadingPattern !== 'auto' || eupLoadingPattern !== 'auto' || (TRUCK_TYPES[selectedTruck].singleLayerEUPCapacityLong || 0) > 0 ) && ( 
             <div className="border-t pt-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">EUP Lade-Pattern:
                 <span className="text-xs text-gray-500"> (Gewählt: {actualEupLoadingPattern === 'none' ? 'Keines' : actualEupLoadingPattern})</span>
