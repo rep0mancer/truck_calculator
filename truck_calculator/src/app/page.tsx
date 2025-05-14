@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
+import Head from 'next/head'; // <--- HIER EINFÜGEN
 
 // Constants for truck types, including single-layer capacities
 const TRUCK_TYPES = {
@@ -737,6 +738,9 @@ export default function HomePage() {
   const truckVisualizationScale = 0.3;
 
   return (
+     <Head>
+        <title>Laderaumrechner</title>
+      </Head>
     <div className="container mx-auto p-4 font-sans bg-gray-50">
       <header className="bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
         <h1 className="text-3xl font-bold text-center tracking-tight">Laderaumrechner</h1>
