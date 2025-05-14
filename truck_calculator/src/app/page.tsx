@@ -49,6 +49,17 @@ const TRUCK_TYPES = {
     singleLayerDINCapacity: 26,
     maxDinPallets: 26,
   },
+    Waggon2: {
+    name: 'Waggon KRM ',
+    units: [{ id: 'main', length: 1600, width: 290, occupiedRects: [] }],
+    totalLength: 1600,
+    usableLength: 1600,
+    maxWidth: 290,
+    singleLayerEUPCapacityLong: 38,
+    singleLayerEUPCapacityBroad: 40,
+    singleLayerDINCapacity: 28,
+    maxDinPallets: 28,
+  },
 };
 
 // Constants for pallet types
