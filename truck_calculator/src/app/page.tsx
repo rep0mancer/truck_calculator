@@ -76,7 +76,7 @@ const MAX_GROSS_WEIGHT_KG = 24000;
 const MAX_PALLET_SIMULATION_QUANTITY = 300;
 const STACKED_EUP_THRESHOLD_FOR_AXLE_WARNING = 18;
 const STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING = 16;
-const MAX_WEIGHT_PER_METER_KG = 1800;
+const MAX_WEIGHT_PER_METER_KG = 1700;
 
 
 // Core calculation logic (remains unchanged from your latest working version)
@@ -529,10 +529,10 @@ const calculateLoadingLogic = (
   const usedLengthPercentage = truckConfig.usableLength > 0 ? (usedLength / truckConfig.usableLength) * 100 : 0;
 
   const weightPerMeter = truckConfig.usableLength > 0 ? currentTotalWeight / (truckConfig.usableLength / 100) : 0;
-  if (weightPerMeter > MAX_WEIGHT_PER_METER_KG) {
+  if (weightPerMeter >= MAX_WEIGHT_PER_METER_KG) {
     tempWarnings.push(`ACHTUNG – mögliche Achslastüberschreitung: ${weightPerMeter.toFixed(1)} kg/m`);
   }
-  if (currentTotalWeight >= 11000 && usedLengthPercentage <= 40) {
+  if (currentTotalWeight >= 10500 && usedLengthPercentage <= 40) {
     tempWarnings.push('ACHTUNG – mehr als 11t auf weniger als 40% der Ladefläche');
   }
 
