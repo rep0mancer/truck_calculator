@@ -832,12 +832,12 @@ export default function HomePage() {
             <div className="border-t pt-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">Industriepaletten (DIN)</label>
               <div className="flex items-center mt-1">
-                <button onClick={()=>handleQuantityChange('din',-1)} className="px-3 py-1 bg-[#00906c] text-white rounded-l-md hover:bg-[#007e5e]">-</button>
+                <button onClick={()=>handleQuantityChange('din',-1)} className="px-3 py-1 bg-red-500 text-white rounded-l-md hover:bg-red-600">-</button>
                 <input type="number" min="0" value={dinQuantity} onChange={e=>setDinQuantity(Math.max(0, parseInt(e.target.value,10)||0))} className="w-full text-center py-1.5 border-t border-b border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"/>
-                <button onClick={()=>handleQuantityChange('din',1)} className="px-3 py-1 bg-[#00906c] text-white rounded-r-md hover:bg-[#007e5e]">+</button>
+                <button onClick={()=>handleQuantityChange('din',1)} className="px-3 py-1 bg-blue-500 text-white rounded-r-md hover:bg-blue-600">+</button>
               </div>
-              <button onClick={() => handleMaximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 bg-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:bg-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. DIN</button>
-              <button onClick={handleFillRemainingWithDIN} className="mt-1 w-full py-1.5 px-3 bg-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:bg-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Rest mit max. DIN füllen</button>
+              <button onClick={() => handleMaximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 bg-gradient-to-b from-[#00b382] to-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#00906c] hover:to-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. DIN</button>
+              <button onClick={handleFillRemainingWithDIN} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. DIN füllen</button>
               <div className="mt-2">
                 <label className="text-xs font-medium text-gray-600">Gewicht/DIN (kg):</label>
                 <input type="number" min="0" value={dinWeightPerPallet} onChange={e=>setDinWeightPerPallet(e.target.value)} placeholder="z.B. 500" className="mt-1 block w-full py-1 px-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs"/>
@@ -852,12 +852,12 @@ export default function HomePage() {
             <div className="border-t pt-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">Europaletten (EUP)</label>
               <div className="flex items-center mt-1">
-                <button onClick={()=>handleQuantityChange('eup',-1)} className="px-3 py-1 bg-[#00906c] text-white rounded-l-md hover:bg-[#007e5e]">-</button>
+                <button onClick={()=>handleQuantityChange('eup',-1)} className="px-3 py-1 bg-red-500 text-white rounded-l-md hover:bg-red-600">-</button>
                 <input type="number" min="0" value={eupQuantity} onChange={e=>setEupQuantity(Math.max(0, parseInt(e.target.value,10)||0))} className="w-full text-center py-1.5 border-t border-b border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"/>
-                <button onClick={()=>handleQuantityChange('eup',1)} className="px-3 py-1 bg-[#00906c] text-white rounded-r-md hover:bg-[#007e5e]">+</button>
+                <button onClick={()=>handleQuantityChange('eup',1)} className="px-3 py-1 bg-blue-500 text-white rounded-r-md hover:bg-blue-600">+</button>
               </div>
-              <button onClick={() => handleMaximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 bg-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:bg-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. EUP</button>
-              <button onClick={handleFillRemainingWithEUP} className="mt-1 w-full py-1.5 px-3 bg-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:bg-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Rest mit max. EUP füllen</button>
+              <button onClick={() => handleMaximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 bg-gradient-to-b from-[#00b382] to-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#00906c] hover:to-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. EUP</button>
+              <button onClick={handleFillRemainingWithEUP} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. EUP füllen</button>
               <div className="mt-2">
                 <label className="text-xs font-medium text-gray-600">Gewicht/EUP (kg):</label>
                 <input type="number" min="0" value={eupWeightPerPallet} onChange={e=>setEupWeightPerPallet(e.target.value)} placeholder="z.B. 400" className="mt-1 block w-full py-1 px-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs"/>
