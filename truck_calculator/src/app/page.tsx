@@ -110,8 +110,16 @@ const calculateLoadingLogic = (
   const safeEupWeight = eupWeight > 0 ? eupWeight : 0;
   const safeDinWeight = dinWeight > 0 ? dinWeight : 0;
 
-  const allowedEupStack = currentIsEUPStackable ? (maxStackedEup ?? Infinity) : 0;
-  const allowedDinStack = currentIsDINStackable ? (maxStackedDin ?? Infinity) : 0;
+  const allowedEupStack = currentIsEUPStackable
+    ? (maxStackedEup && maxStackedEup > 0
+        ? Math.floor(maxStackedEup / 2)
+        : Infinity)
+    : 0;
+  const allowedDinStack = currentIsDINStackable
+    ? (maxStackedDin && maxStackedDin > 0
+        ? Math.floor(maxStackedDin / 2)
+        : Infinity)
+    : 0;
   let eupStacked = 0, dinStacked = 0;
 
   let unitsState = truckConfig.units.map(u => ({
@@ -895,7 +903,7 @@ export default function HomePage() {
                   value={dinStackLimit}
                   onChange={e=>setDinStackLimit(Math.max(0, parseInt(e.target.value,10)||0))}
                   className="mt-1 block w-full py-1 px-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs"
-                  placeholder="Max. Stapel"
+                  placeholder="Stapelbare Paletten (0 = alle)"
                 />
               )}
             </div>
@@ -925,7 +933,7 @@ export default function HomePage() {
                   value={eupStackLimit}
                   onChange={e=>setEupStackLimit(Math.max(0, parseInt(e.target.value,10)||0))}
                   className="mt-1 block w-full py-1 px-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs"
-                  placeholder="Max. Stapel"
+                  placeholder="Stapelbare Paletten (0 = alle)"
                 />
               )}
             </div>
