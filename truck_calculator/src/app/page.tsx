@@ -810,7 +810,7 @@ export default function HomePage() {
 
   return (
     <div className="container mx-auto p-4 font-sans bg-gray-50">
-      <header className="bg-primary text-primary-foreground p-5 rounded-t-lg shadow-lg mb-6">
+      <header className="bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
         <h1 className="text-3xl font-bold text-center tracking-tight">Laderaumrechner</h1>
         <p className="text-center text-sm opacity-90">Visualisierung der Palettenplatzierung (Europäische Standards)</p>
       </header>
