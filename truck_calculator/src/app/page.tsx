@@ -677,13 +677,12 @@ export default function HomePage() {
     setTotalWeightKg(primaryResults.totalWeightKg);
     setActualEupLoadingPattern(primaryResults.eupLoadingPatternUsed);
     
-  }, [selectedTruck, eupQuantity, dinQuantity, isEUPStackable, isDINStackable, eupWeightPerPallet, dinWeightPerPallet, eupLoadingPattern]);
+  }, [selectedTruck, eupQuantity, dinQuantity, isEUPStackable, isDINStackable, eupWeightPerPallet, dinWeightPerPallet, eupLoadingPattern, eupStackLimit, dinStackLimit]);
 
   useEffect(() => {
-    // Pass current eupQuantity and dinQuantity to ensure the effect hook uses the latest state values
-    // for its initial calculation and for the remaining capacity checks.
-    calculateAndSetState('DIN_FIRST', eupQuantity, dinQuantity); 
-  }, [calculateAndSetState, eupQuantity, dinQuantity]); // Add eupQuantity and dinQuantity to dependency array
+    // Recalculate whenever quantities or stack limits change so the visualization stays in sync
+    calculateAndSetState('DIN_FIRST', eupQuantity, dinQuantity);
+  }, [calculateAndSetState, eupQuantity, dinQuantity, eupStackLimit, dinStackLimit]);
 
 
   const handleQuantityChange = (type, amount) => {
