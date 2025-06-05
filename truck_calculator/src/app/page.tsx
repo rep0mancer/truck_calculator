@@ -30,6 +30,18 @@ const TRUCK_TYPES = {
     singleLayerDINCapacity: 26,
     maxGrossWeightKg: 24000,
   },
+  frigo: {
+    name: 'Frigo (Kühler) Standard (13.2m)',
+    units: [{ id: 'main', length: 1320, width: 245, occupiedRects: [] }],
+    totalLength: 1320,
+    usableLength: 1320,
+    trueLength: 1360,
+    maxWidth: 245,
+    singleLayerEUPCapacityLong: 33,
+    singleLayerEUPCapacityBroad: 32,
+    singleLayerDINCapacity: 26,
+    maxGrossWeightKg: 18300,
+  },
   smallTruck: {
     name: 'Motorwagen (7.2m)',
     units: [{ id: 'main', length: 720, width: 245, occupiedRects: [] }],
