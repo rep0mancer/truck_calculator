@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { Toaster } from '@/components/ui/toaster';
 
 // Constants for truck types, including single-layer capacities
 const TRUCK_TYPES = {
@@ -622,6 +624,8 @@ export default function HomePage() {
   const [totalWeightKg, setTotalWeightKg] = useState(0);
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
 
+  const { toast } = useToast();
+
 
   const calculateAndSetState = useCallback((order = 'DIN_FIRST', currentEup = eupQuantity, currentDin = dinQuantity) => {
     // Primary calculation based on current inputs or function call parameters
@@ -852,6 +856,53 @@ export default function HomePage() {
     // useEffect will run calculateAndSetState with these updated quantities.
   };
 
+  const suggestFeasibleLoad = () => {
+    let bestEup = 0;
+    let bestDin = 0;
+    let bestResult = null as any;
+
+    for (let d = dinQuantity; d >= 0; d--) {
+      for (let e = eupQuantity; e >= 0; e--) {
+        const res = calculateLoadingLogic(
+          selectedTruck,
+          e,
+          d,
+          isEUPStackable,
+          isDINStackable,
+          eupWeightPerPallet,
+          dinWeightPerPallet,
+          eupLoadingPattern,
+          'DIN_FIRST',
+          eupStackLimit,
+          dinStackLimit
+        );
+        const badWarning = res.warnings.some((w) =>
+          w.toLowerCase().includes('gewichtslimit') ||
+          w.toLowerCase().includes('konnte nicht')
+        );
+        if (!badWarning && res.totalEuroPalletsVisual === e && res.totalDinPalletsVisual === d) {
+          if (e + d > bestEup + bestDin) {
+            bestEup = e;
+            bestDin = d;
+            bestResult = res;
+          }
+        }
+      }
+    }
+
+    setEupQuantity(bestEup);
+    setDinQuantity(bestDin);
+    if (
+      bestResult &&
+      eupLoadingPattern === 'auto' &&
+      bestResult.eupLoadingPatternUsed !== 'auto' &&
+      bestResult.eupLoadingPatternUsed !== 'none'
+    ) {
+      setEupLoadingPattern(bestResult.eupLoadingPatternUsed);
+    }
+    toast({ title: 'Vorschlag übernommen', description: `${bestDin} DIN / ${bestEup} EUP geladen` });
+  };
+
   const renderPallet = (pallet, displayScale = 0.3) => {
     if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) return null;
     const d = PALLET_TYPES[pallet.type];
@@ -911,6 +962,9 @@ export default function HomePage() {
             </div>
             <div className="pt-4">
               <button onClick={handleClearAllPallets} className="w-full py-2 px-4 bg-[#00906c] text-white font-semibold rounded-md shadow-sm hover:bg-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50 transition duration-150 ease-in-out">Alles zurücksetzen</button>
+            </div>
+            <div>
+              <button onClick={suggestFeasibleLoad} className="w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-opacity-50 transition duration-150 ease-in-out">Automatisch anpassen</button>
             </div>
 
             {/* DIN Paletten Sektion */}
@@ -1033,6 +1087,7 @@ export default function HomePage() {
         <p>Laderaumrechner © {new Date().getFullYear()}</p>
          <p>by Andreas Steiner </p>
       </footer>
+      <Toaster />
     </div>
   );
 }
