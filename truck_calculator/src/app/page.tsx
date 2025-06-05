@@ -666,13 +666,19 @@ export default function HomePage() {
     } else if (additionalDinPossible > 0) {
         finalWarnings.push(`Es ist jetzt noch Platz für ${additionalDinPossible} DIN Paletten.`);
     }
+
+    const noWeightWarning = !finalWarnings.some(w => w.toLowerCase().includes('gewichtslimit'));
+    const isFull = additionalEupPossible === 0 && additionalDinPossible === 0 &&
+                   (primaryResults.totalEuroPalletsVisual + primaryResults.totalDinPalletsVisual > 0) &&
+                   noWeightWarning;
+    const finalUtilization = isFull ? 100 : primaryResults.utilizationPercentage;
     
     setPalletArrangement(primaryResults.palletArrangement);
     setLoadedIndustrialPalletsBase(primaryResults.loadedIndustrialPalletsBase);
     setLoadedEuroPalletsBase(primaryResults.loadedEuroPalletsBase);
     setTotalDinPalletsVisual(primaryResults.totalDinPalletsVisual);
     setTotalEuroPalletsVisual(primaryResults.totalEuroPalletsVisual);
-    setUtilizationPercentage(primaryResults.utilizationPercentage);
+    setUtilizationPercentage(finalUtilization);
     setWarnings(finalWarnings); // Set the combined warnings
     setTotalWeightKg(primaryResults.totalWeightKg);
     setActualEupLoadingPattern(primaryResults.eupLoadingPatternUsed);
@@ -857,6 +863,24 @@ export default function HomePage() {
 
   const truckVisualizationScale = 0.3;
 
+  const warningsWithoutInfo = warnings.filter(w => !w.toLowerCase().includes('platz'));
+  let meldungenStyle = {
+    bg: 'bg-gray-50',
+    border: 'border-gray-200',
+    header: 'text-gray-800',
+    list: 'text-gray-700'
+  };
+
+  if (eupQuantity === 0 && dinQuantity === 0 && totalEuroPalletsVisual === 0 && totalDinPalletsVisual === 0) {
+    meldungenStyle = { bg: 'bg-gray-50', border: 'border-gray-200', header: 'text-gray-800', list: 'text-gray-700' };
+  } else if (warningsWithoutInfo.length === 0) {
+    meldungenStyle = { bg: 'bg-green-50', border: 'border-green-200', header: 'text-green-800', list: 'text-green-700' };
+  } else if (warningsWithoutInfo.every(w => w.toLowerCase().includes('achslast'))) {
+    meldungenStyle = { bg: 'bg-yellow-50', border: 'border-yellow-200', header: 'text-yellow-800', list: 'text-yellow-700' };
+  } else {
+    meldungenStyle = { bg: 'bg-red-50', border: 'border-red-200', header: 'text-red-800', list: 'text-red-700' };
+  }
+
   return (
     <div className="container mx-auto p-4 font-sans bg-gray-50">
       <header className="bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
@@ -981,14 +1005,14 @@ export default function HomePage() {
             <p className="font-bold text-2xl text-yellow-700">{(totalWeightKg/1000).toFixed(1)} t</p>
             <p className="text-xs mt-1">(Max: {(TRUCK_TYPES[selectedTruck].maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG)/1000}t)</p>
           </div>
-          <div className="bg-red-50 p-4 rounded-lg border border-red-200 shadow-sm">
-            <h3 className="font-semibold text-red-800 mb-2">Meldungen</h3>
+          <div className={`${meldungenStyle.bg} p-4 rounded-lg border ${meldungenStyle.border} shadow-sm`}>
+            <h3 className={`font-semibold mb-2 ${meldungenStyle.header}`}>Meldungen</h3>
             {warnings.length > 0 ? (
-                <ul className="list-disc list-inside text-sm space-y-1 text-red-700">
+                <ul className={`list-disc list-inside text-sm space-y-1 ${meldungenStyle.list}`}> 
                 {warnings.map((w, i) => <li key={i}>{w}</li>)}
                 </ul>
             ) : (
-                <p className="text-sm text-gray-500">Keine Probleme erkannt.</p>
+                <p className={`text-sm ${meldungenStyle.list}`}>Keine Probleme erkannt.</p>
             )}
           </div>
         </div>
