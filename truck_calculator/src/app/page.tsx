@@ -609,6 +609,7 @@ export default function HomePage() {
   const [palletArrangement, setPalletArrangement] = useState([]);
   const [totalWeightKg, setTotalWeightKg] = useState(0);
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
+  const [toastMessage, setToastMessage] = useState('');
 
 
   const calculateAndSetState = useCallback((order = 'DIN_FIRST', currentEup = eupQuantity, currentDin = dinQuantity) => {
@@ -683,6 +684,13 @@ export default function HomePage() {
     // Recalculate whenever quantities or stack limits change so the visualization stays in sync
     calculateAndSetState('DIN_FIRST', eupQuantity, dinQuantity);
   }, [calculateAndSetState, eupQuantity, dinQuantity, eupStackLimit, dinStackLimit]);
+
+  useEffect(() => {
+    if (toastMessage) {
+      const t = setTimeout(() => setToastMessage(''), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [toastMessage]);
 
 
   const handleQuantityChange = (type, amount) => {
@@ -834,6 +842,45 @@ export default function HomePage() {
     // useEffect will run calculateAndSetState with these updated quantities.
   };
 
+  const suggestFeasibleLoad = () => {
+    let best = { eup: 0, din: 0 };
+    for (let e = eupQuantity; e >= 0; e--) {
+      for (let d = dinQuantity; d >= 0; d--) {
+        const res = calculateLoadingLogic(
+          selectedTruck,
+          e,
+          d,
+          isEUPStackable,
+          isDINStackable,
+          eupWeightPerPallet,
+          dinWeightPerPallet,
+          eupLoadingPattern,
+          'DIN_FIRST',
+          eupStackLimit,
+          dinStackLimit
+        );
+        if (res.totalEuroPalletsVisual === e && res.totalDinPalletsVisual === d) {
+          return { eup: e, din: d };
+        }
+        if (
+          res.totalEuroPalletsVisual <= eupQuantity &&
+          res.totalDinPalletsVisual <= dinQuantity &&
+          res.totalEuroPalletsVisual + res.totalDinPalletsVisual > best.eup + best.din
+        ) {
+          best = { eup: res.totalEuroPalletsVisual, din: res.totalDinPalletsVisual };
+        }
+      }
+    }
+    return best;
+  };
+
+  const handleAutoAdjust = () => {
+    const suggestion = suggestFeasibleLoad();
+    setEupQuantity(suggestion.eup);
+    setDinQuantity(suggestion.din);
+    setToastMessage(`Vorschlag: ${suggestion.eup} EUP, ${suggestion.din} DIN`);
+  };
+
   const renderPallet = (pallet, displayScale = 0.3) => {
     if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) return null;
     const d = PALLET_TYPES[pallet.type];
@@ -875,6 +922,9 @@ export default function HomePage() {
             </div>
             <div className="pt-4">
               <button onClick={handleClearAllPallets} className="w-full py-2 px-4 bg-[#00906c] text-white font-semibold rounded-md shadow-sm hover:bg-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50 transition duration-150 ease-in-out">Alles zurücksetzen</button>
+            </div>
+            <div className="pt-1">
+              <button onClick={handleAutoAdjust} className="w-full py-2 px-4 bg-blue-700 text-white font-semibold rounded-md shadow-sm hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-opacity-50 transition duration-150 ease-in-out">Automatisch anpassen</button>
             </div>
 
             {/* DIN Paletten Sektion */}
@@ -993,6 +1043,11 @@ export default function HomePage() {
           </div>
         </div>
       </main>
+      {toastMessage && (
+        <div className="fixed bottom-4 right-4 bg-gray-800 text-white py-2 px-4 rounded shadow-lg">
+          {toastMessage}
+        </div>
+      )}
       <footer className="text-center py-4 mt-8 text-sm text-gray-500 border-t border-gray-200">
         <p>Laderaumrechner © {new Date().getFullYear()}</p>
          <p>by Andreas Steiner </p>
