@@ -769,10 +769,15 @@ export default function HomePage() {
 
   const handleFillRemainingWithEUP = () => {
     // We want to keep current DINs and fill the rest with EUPs.
+    // This calculation should always be single layer, so disable stacking
+    // on both pallet types before running the simulation.
+    setIsEUPStackable(false);
+    setIsDINStackable(false);
+
     // The calculateAndSetState in useEffect will handle the detailed simulation.
-    // We just need to set the intention for eupQuantity to be "max"
-    // and keep dinQuantity as is.
-    // The primary calculation in calculateAndSetState will use MAX_PALLET_SIMULATION_QUANTITY for EUPs.
+    // We just need to set the intention for eupQuantity to be "max" and keep
+    // dinQuantity as is. The primary calculation in calculateAndSetState will use
+    // MAX_PALLET_SIMULATION_QUANTITY for EUPs.
     
     // Trigger a recalculation with current DIN quantity and a signal to maximize EUPs.
     // The `calculateAndSetState` will be called by useEffect due to state changes.
@@ -782,8 +787,8 @@ export default function HomePage() {
       selectedTruck,
       MAX_PALLET_SIMULATION_QUANTITY, // Attempt to fill with EUPs
       dinQuantity,                  // Keep current DINs
-      isEUPStackable,
-      isDINStackable,
+      false, // EUP stacking off for this calculation
+      false, // DIN stacking off for this calculation
       eupWeightPerPallet, dinWeightPerPallet,
       eupLoadingPattern,
       'DIN_FIRST', // Place DINs first, then fill EUPs
@@ -805,6 +810,10 @@ export default function HomePage() {
   };
 
   const handleFillRemainingWithDIN = () => {
+    // Filling the remaining space with DIN pallets should also be single layer.
+    setIsDINStackable(false);
+    setIsEUPStackable(false);
+
     const currentEupQty = eupQuantity;
     let bestSimResults = null;
 
@@ -819,7 +828,7 @@ export default function HomePage() {
     for (let d = iterationMaxDin; d >= 0; d--) {
         const simResults = calculateLoadingLogic(
             selectedTruck, currentEupQty, d,
-            isEUPStackable, isDINStackable, eupWeightPerPallet, dinWeightPerPallet,
+            false, false, eupWeightPerPallet, dinWeightPerPallet,
             eupLoadingPattern, 'DIN_FIRST',
             eupStackLimit,
             dinStackLimit
@@ -842,7 +851,7 @@ export default function HomePage() {
     } else {
         const eupFirstSimResults = calculateLoadingLogic(
           selectedTruck, currentEupQty, MAX_PALLET_SIMULATION_QUANTITY,
-          isEUPStackable, isDINStackable, eupWeightPerPallet, dinWeightPerPallet,
+          false, false, eupWeightPerPallet, dinWeightPerPallet,
           eupLoadingPattern, 'EUP_FIRST',
           eupStackLimit,
           dinStackLimit
