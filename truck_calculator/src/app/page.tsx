@@ -796,7 +796,9 @@ export default function HomePage() {
     setDinQuantity(fillResults.totalDinPalletsVisual); 
 
 
-    if (eupLoadingPattern === 'auto' && fillResults.eupLoadingPatternUsed !== 'auto' && fillResults.eupLoadingPatternUsed !== 'none' && fillResults.totalEuroPalletsVisual > 0) {
+    // Keep the loading pattern as 'auto' when auto-optimizing to allow mixed orientations
+    if (eupLoadingPattern !== 'auto' && fillResults.eupLoadingPatternUsed !== 'auto' &&
+        fillResults.eupLoadingPatternUsed !== 'none' && fillResults.totalEuroPalletsVisual > 0) {
         setEupLoadingPattern(fillResults.eupLoadingPatternUsed);
     }
     // useEffect will then run calculateAndSetState with these updated quantities.
