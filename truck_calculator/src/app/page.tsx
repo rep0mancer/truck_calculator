@@ -767,7 +767,7 @@ export default function HomePage() {
     const fillResults = calculateLoadingLogic(
       selectedTruck,
       MAX_PALLET_SIMULATION_QUANTITY, // Attempt to fill with EUPs
-      dinQuantity,                  // Keep current DINs
+      totalDinPalletsVisual,          // Use actually loaded DINs
       isEUPStackable,
       isDINStackable,
       eupWeightPerPallet, dinWeightPerPallet,
@@ -789,7 +789,7 @@ export default function HomePage() {
   };
 
   const handleFillRemainingWithDIN = () => {
-    const currentEupQty = eupQuantity;
+    const currentEupQty = totalEuroPalletsVisual;
     let bestSimResults = null;
 
     const currentTruckInfo = TRUCK_TYPES[selectedTruck];
