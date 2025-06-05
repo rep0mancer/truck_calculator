@@ -768,11 +768,7 @@ export default function HomePage() {
   };
 
   const handleFillRemainingWithEUP = () => {
-    // We want to keep current DINs and fill the rest with EUPs.
-    // This calculation should always be single layer, so disable stacking
-    // on both pallet types before running the simulation.
-    setIsEUPStackable(false);
-    setIsDINStackable(false);
+    // Keep current DINs and fill the rest with EUPs using the best pattern.
 
     // The calculateAndSetState in useEffect will handle the detailed simulation.
     // We just need to set the intention for eupQuantity to be "max" and keep
@@ -787,10 +783,10 @@ export default function HomePage() {
       selectedTruck,
       MAX_PALLET_SIMULATION_QUANTITY, // Attempt to fill with EUPs
       dinQuantity,                  // Keep current DINs
-      false, // EUP stacking off for this calculation
-      false, // DIN stacking off for this calculation
+      isEUPStackable,
+      isDINStackable,
       eupWeightPerPallet, dinWeightPerPallet,
-      eupLoadingPattern,
+      'auto',
       'DIN_FIRST', // Place DINs first, then fill EUPs
       eupStackLimit,
       dinStackLimit
@@ -800,19 +796,11 @@ export default function HomePage() {
     // dinQuantity remains the same, or if limited by fillResults, update it.
     setDinQuantity(fillResults.totalDinPalletsVisual); 
 
-
-    // Keep the loading pattern as 'auto' when auto-optimizing to allow mixed orientations
-    if (eupLoadingPattern !== 'auto' && fillResults.eupLoadingPatternUsed !== 'auto' &&
-        fillResults.eupLoadingPatternUsed !== 'none' && fillResults.totalEuroPalletsVisual > 0) {
-        setEupLoadingPattern(fillResults.eupLoadingPatternUsed);
-    }
     // useEffect will then run calculateAndSetState with these updated quantities.
   };
 
   const handleFillRemainingWithDIN = () => {
-    // Filling the remaining space with DIN pallets should also be single layer.
-    setIsDINStackable(false);
-    setIsEUPStackable(false);
+    // Keep current EUPs and fill the rest with DIN pallets using the best pattern.
 
     const currentEupQty = eupQuantity;
     let bestSimResults = null;
@@ -828,8 +816,8 @@ export default function HomePage() {
     for (let d = iterationMaxDin; d >= 0; d--) {
         const simResults = calculateLoadingLogic(
             selectedTruck, currentEupQty, d,
-            false, false, eupWeightPerPallet, dinWeightPerPallet,
-            eupLoadingPattern, 'DIN_FIRST',
+            isEUPStackable, isDINStackable, eupWeightPerPallet, dinWeightPerPallet,
+            'auto', 'DIN_FIRST',
             eupStackLimit,
             dinStackLimit
         );
@@ -844,25 +832,17 @@ export default function HomePage() {
         setDinQuantity(bestSimResults.totalDinPalletsVisual); 
         setEupQuantity(currentEupQty); // Preserve the EUP quantity
 
-        if ((currentEupQty > 0 || bestSimResults.totalEuroPalletsVisual > 0) && eupLoadingPattern === 'auto' && 
-            bestSimResults.eupLoadingPatternUsed !== 'auto' && bestSimResults.eupLoadingPatternUsed !== 'none') {
-            setEupLoadingPattern(bestSimResults.eupLoadingPatternUsed);
-        }
     } else {
         const eupFirstSimResults = calculateLoadingLogic(
           selectedTruck, currentEupQty, MAX_PALLET_SIMULATION_QUANTITY,
-          false, false, eupWeightPerPallet, dinWeightPerPallet,
-          eupLoadingPattern, 'EUP_FIRST',
+          isEUPStackable, isDINStackable, eupWeightPerPallet, dinWeightPerPallet,
+          'auto', 'EUP_FIRST',
           eupStackLimit,
           dinStackLimit
         );
         setDinQuantity(eupFirstSimResults.totalDinPalletsVisual);
         setEupQuantity(eupFirstSimResults.totalEuroPalletsVisual); 
 
-         if (eupFirstSimResults.totalEuroPalletsVisual > 0 && eupLoadingPattern === 'auto' && 
-             eupFirstSimResults.eupLoadingPatternUsed !== 'auto' && eupFirstSimResults.eupLoadingPatternUsed !== 'none') {
-            setEupLoadingPattern(eupFirstSimResults.eupLoadingPatternUsed);
-        }
     }
     // useEffect will run calculateAndSetState with these updated quantities.
   };
