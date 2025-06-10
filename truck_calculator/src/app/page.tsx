@@ -683,6 +683,51 @@ export default function HomePage() {
         finalWarnings.push(`Es ist jetzt noch Platz für ${additionalDinPossible} DIN Paletten.`);
     }
 
+    const truckCapEuro = calculateLoadingLogic(
+        selectedTruck,
+        MAX_PALLET_SIMULATION_QUANTITY,
+        0,
+        isEUPStackable,
+        isDINStackable,
+        eupWeightPerPallet,
+        dinWeightPerPallet,
+        eupLoadingPattern,
+        'DIN_FIRST',
+        eupStackLimit,
+        dinStackLimit
+    ).totalEuroPalletsVisual;
+    const truckCapDin = calculateLoadingLogic(
+        selectedTruck,
+        0,
+        MAX_PALLET_SIMULATION_QUANTITY,
+        isEUPStackable,
+        isDINStackable,
+        eupWeightPerPallet,
+        dinWeightPerPallet,
+        eupLoadingPattern,
+        'DIN_FIRST',
+        eupStackLimit,
+        dinStackLimit
+    ).totalDinPalletsVisual;
+
+    if (eupQuantity > truckCapEuro && truckCapEuro > 0 && dinQuantity === 0) {
+        const fullTrucks = Math.floor(eupQuantity / truckCapEuro);
+        const rest = eupQuantity % truckCapEuro;
+        if (rest > 0) {
+            finalWarnings.push(`es werden dafür ${fullTrucks} komplett LKW benötigt und ${rest} Paletten bleiben rest am ${fullTrucks + 1}. LKW`);
+        } else {
+            finalWarnings.push(`es werden dafür ${fullTrucks} komplett LKW benötigt`);
+        }
+    } else if (dinQuantity > truckCapDin && truckCapDin > 0 && eupQuantity === 0) {
+        const fullTrucks = Math.floor(dinQuantity / truckCapDin);
+        const rest = dinQuantity % truckCapDin;
+        if (rest > 0) {
+            finalWarnings.push(`es werden dafür ${fullTrucks} komplett LKW benötigt und ${rest} Paletten bleiben rest am ${fullTrucks + 1}. LKW`);
+        } else {
+            finalWarnings.push(`es werden dafür ${fullTrucks} komplett LKW benötigt`);
+        }
+    }
+
     const noWeightWarning = !finalWarnings.some(w => w.toLowerCase().includes('gewichtslimit'));
     const isFull = additionalEupPossible === 0 && additionalDinPossible === 0 &&
                    (primaryResults.totalEuroPalletsVisual + primaryResults.totalDinPalletsVisual > 0) &&
