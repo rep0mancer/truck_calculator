@@ -68,9 +68,10 @@ const PALLET_TYPES = {
 };
 
 const MAX_GROSS_WEIGHT_KG = 24000;
-const MAX_PALLET_SIMULATION_QUANTITY = 300; 
+const MAX_PALLET_SIMULATION_QUANTITY = 300;
 const STACKED_EUP_THRESHOLD_FOR_AXLE_WARNING = 18;
 const STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING = 16;
+const MAX_WEIGHT_PER_METER_KG = 2500;
 
 
 // Core calculation logic (remains unchanged from your latest working version)
@@ -516,6 +517,17 @@ const calculateLoadingLogic = (
      if (!tempWarnings.some(w => w.includes("ACHSLAST bei DIN"))) {
         tempWarnings.push(`ACHTUNG - ACHSLAST bei DIN im AUGE BEHALTEN! (${stackedDinPallets} gestapelte DIN)`);
      }
+  }
+
+  const weightPerMeter = currentTotalWeight / (truckConfig.usableLength / 100);
+  if (
+      weightPerMeter > MAX_WEIGHT_PER_METER_KG &&
+      requestedEupQuantity !== MAX_PALLET_SIMULATION_QUANTITY &&
+      requestedDinQuantity !== MAX_PALLET_SIMULATION_QUANTITY
+  ) {
+     tempWarnings.push(
+       `ACHTUNG – mögliche Achslastüberschreitung: ${weightPerMeter.toFixed(1)} kg/m`
+     );
   }
 
   const uniqueWarnings = Array.from(new Set(tempWarnings));
