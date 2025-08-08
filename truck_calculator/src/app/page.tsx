@@ -16,8 +16,10 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
-import { Separator } from "../components/ui/separator";
-
+ import { Separator } from "../components/ui/separator";
+ import Visualizer from "../components/Visualizer";
+ import MetricsPanel from "../components/MetricsPanel";
+ 
 function mmToDisplay(mm: number | undefined, units: Units): string {
   if (mm == null || Number.isNaN(mm)) return "";
   if (units === "imperial") return (mm / 25.4).toFixed(1);
@@ -379,26 +381,16 @@ export default function PlannerPage() {
         <div className="rounded-lg border p-4 md:p-6">
           <SectionTitle>Plan</SectionTitle>
           {plan ? (
-            <div className="mt-3 space-y-2 text-sm">
+            <div className="mt-3 space-y-4">
               <div>
-                <span className="font-medium">Total pallets:</span> {plan.metrics.count}
-              </div>
-              <div>
-                <span className="font-medium">Floor area used:</span> {(plan.metrics.floorAreaUsedRatio * 100).toFixed(1)}%
-              </div>
-              {plan.metrics.volumeUsedRatio != null && (
-                <div>
-                  <span className="font-medium">Volume used:</span> {(plan.metrics.volumeUsedRatio * 100).toFixed(1)}%
+                <div className="text-xs text-slate-500">Visualizer</div>
+                <div className="mt-2">
+                  {/* @ts-ignore - component defined in components dir */}
+                  <Visualizer plan={plan} />
                 </div>
-              )}
-              {plan.metrics.totalPalletWeightKg != null && (
-                <div>
-                  <span className="font-medium">Total est. weight:</span> {plan.metrics.totalPalletWeightKg.toFixed(0)} kg
-                </div>
-              )}
-              {plan.metrics.maxPayloadExceeded && (
-                <div className="text-red-700">Payload exceeds max!</div>
-              )}
+              </div>
+              {/* @ts-ignore */}
+              <MetricsPanel plan={plan} />
             </div>
           ) : (
             <p className="mt-3 text-sm text-slate-600">No plan computed yet. Adjust inputs and click "Compute plan".</p>
