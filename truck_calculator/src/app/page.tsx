@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { Toaster } from '@/components/ui/toaster';
 
 // Constants for truck types, including single-layer capacities
 const TRUCK_TYPES = {
@@ -29,6 +31,18 @@ const TRUCK_TYPES = {
     singleLayerEUPCapacityBroad: 32,
     singleLayerDINCapacity: 26,
     maxGrossWeightKg: 24000,
+  },
+  frigo: {
+    name: 'Frigo (Kühler) Standard (13.2m)',
+    units: [{ id: 'main', length: 1320, width: 245, occupiedRects: [] }],
+    totalLength: 1320,
+    usableLength: 1320,
+    trueLength: 1360,
+    maxWidth: 245,
+    singleLayerEUPCapacityLong: 33,
+    singleLayerEUPCapacityBroad: 32,
+    singleLayerDINCapacity: 26,
+    maxGrossWeightKg: 18300,
   },
   smallTruck: {
     name: 'Motorwagen (7.2m)',
@@ -610,6 +624,8 @@ export default function HomePage() {
   const [totalWeightKg, setTotalWeightKg] = useState(0);
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
 
+  const { toast } = useToast();
+
 
   const calculateAndSetState = useCallback((order = 'DIN_FIRST', currentEup = eupQuantity, currentDin = dinQuantity) => {
     // Primary calculation based on current inputs or function call parameters
@@ -666,13 +682,19 @@ export default function HomePage() {
     } else if (additionalDinPossible > 0) {
         finalWarnings.push(`Es ist jetzt noch Platz für ${additionalDinPossible} DIN Paletten.`);
     }
+
+    const noWeightWarning = !finalWarnings.some(w => w.toLowerCase().includes('gewichtslimit'));
+    const isFull = additionalEupPossible === 0 && additionalDinPossible === 0 &&
+                   (primaryResults.totalEuroPalletsVisual + primaryResults.totalDinPalletsVisual > 0) &&
+                   noWeightWarning;
+    const finalUtilization = isFull ? 100 : primaryResults.utilizationPercentage;
     
     setPalletArrangement(primaryResults.palletArrangement);
     setLoadedIndustrialPalletsBase(primaryResults.loadedIndustrialPalletsBase);
     setLoadedEuroPalletsBase(primaryResults.loadedEuroPalletsBase);
     setTotalDinPalletsVisual(primaryResults.totalDinPalletsVisual);
     setTotalEuroPalletsVisual(primaryResults.totalEuroPalletsVisual);
-    setUtilizationPercentage(primaryResults.utilizationPercentage);
+    setUtilizationPercentage(finalUtilization);
     setWarnings(finalWarnings); // Set the combined warnings
     setTotalWeightKg(primaryResults.totalWeightKg);
     setActualEupLoadingPattern(primaryResults.eupLoadingPatternUsed);
@@ -834,6 +856,53 @@ export default function HomePage() {
     // useEffect will run calculateAndSetState with these updated quantities.
   };
 
+  const suggestFeasibleLoad = () => {
+    let bestEup = 0;
+    let bestDin = 0;
+    let bestResult = null as any;
+
+    for (let d = dinQuantity; d >= 0; d--) {
+      for (let e = eupQuantity; e >= 0; e--) {
+        const res = calculateLoadingLogic(
+          selectedTruck,
+          e,
+          d,
+          isEUPStackable,
+          isDINStackable,
+          eupWeightPerPallet,
+          dinWeightPerPallet,
+          eupLoadingPattern,
+          'DIN_FIRST',
+          eupStackLimit,
+          dinStackLimit
+        );
+        const badWarning = res.warnings.some((w) =>
+          w.toLowerCase().includes('gewichtslimit') ||
+          w.toLowerCase().includes('konnte nicht')
+        );
+        if (!badWarning && res.totalEuroPalletsVisual === e && res.totalDinPalletsVisual === d) {
+          if (e + d > bestEup + bestDin) {
+            bestEup = e;
+            bestDin = d;
+            bestResult = res;
+          }
+        }
+      }
+    }
+
+    setEupQuantity(bestEup);
+    setDinQuantity(bestDin);
+    if (
+      bestResult &&
+      eupLoadingPattern === 'auto' &&
+      bestResult.eupLoadingPatternUsed !== 'auto' &&
+      bestResult.eupLoadingPatternUsed !== 'none'
+    ) {
+      setEupLoadingPattern(bestResult.eupLoadingPatternUsed);
+    }
+    toast({ title: 'Vorschlag übernommen', description: `${bestDin} DIN / ${bestEup} EUP geladen` });
+  };
+
   const renderPallet = (pallet, displayScale = 0.3) => {
     if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) return null;
     const d = PALLET_TYPES[pallet.type];
@@ -857,6 +926,24 @@ export default function HomePage() {
 
   const truckVisualizationScale = 0.3;
 
+  const warningsWithoutInfo = warnings.filter(w => !w.toLowerCase().includes('platz'));
+  let meldungenStyle = {
+    bg: 'bg-gray-50',
+    border: 'border-gray-200',
+    header: 'text-gray-800',
+    list: 'text-gray-700'
+  };
+
+  if (eupQuantity === 0 && dinQuantity === 0 && totalEuroPalletsVisual === 0 && totalDinPalletsVisual === 0) {
+    meldungenStyle = { bg: 'bg-gray-50', border: 'border-gray-200', header: 'text-gray-800', list: 'text-gray-700' };
+  } else if (warningsWithoutInfo.length === 0) {
+    meldungenStyle = { bg: 'bg-green-50', border: 'border-green-200', header: 'text-green-800', list: 'text-green-700' };
+  } else if (warningsWithoutInfo.every(w => w.toLowerCase().includes('achslast'))) {
+    meldungenStyle = { bg: 'bg-yellow-50', border: 'border-yellow-200', header: 'text-yellow-800', list: 'text-yellow-700' };
+  } else {
+    meldungenStyle = { bg: 'bg-red-50', border: 'border-red-200', header: 'text-red-800', list: 'text-red-700' };
+  }
+
   return (
     <div className="container mx-auto p-4 font-sans bg-gray-50">
       <header className="bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
@@ -875,6 +962,9 @@ export default function HomePage() {
             </div>
             <div className="pt-4">
               <button onClick={handleClearAllPallets} className="w-full py-2 px-4 bg-[#00906c] text-white font-semibold rounded-md shadow-sm hover:bg-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50 transition duration-150 ease-in-out">Alles zurücksetzen</button>
+            </div>
+            <div>
+              <button onClick={suggestFeasibleLoad} className="w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-opacity-50 transition duration-150 ease-in-out">Automatisch anpassen</button>
             </div>
 
             {/* DIN Paletten Sektion */}
@@ -981,14 +1071,14 @@ export default function HomePage() {
             <p className="font-bold text-2xl text-yellow-700">{(totalWeightKg/1000).toFixed(1)} t</p>
             <p className="text-xs mt-1">(Max: {(TRUCK_TYPES[selectedTruck].maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG)/1000}t)</p>
           </div>
-          <div className="bg-red-50 p-4 rounded-lg border border-red-200 shadow-sm">
-            <h3 className="font-semibold text-red-800 mb-2">Meldungen</h3>
+          <div className={`${meldungenStyle.bg} p-4 rounded-lg border ${meldungenStyle.border} shadow-sm`}>
+            <h3 className={`font-semibold mb-2 ${meldungenStyle.header}`}>Meldungen</h3>
             {warnings.length > 0 ? (
-                <ul className="list-disc list-inside text-sm space-y-1 text-red-700">
+                <ul className={`list-disc list-inside text-sm space-y-1 ${meldungenStyle.list}`}> 
                 {warnings.map((w, i) => <li key={i}>{w}</li>)}
                 </ul>
             ) : (
-                <p className="text-sm text-gray-500">Keine Probleme erkannt.</p>
+                <p className={`text-sm ${meldungenStyle.list}`}>Keine Probleme erkannt.</p>
             )}
           </div>
         </div>
@@ -997,6 +1087,7 @@ export default function HomePage() {
         <p>Laderaumrechner © {new Date().getFullYear()}</p>
          <p>by Andreas Steiner </p>
       </footer>
+      <Toaster />
     </div>
   );
 }
