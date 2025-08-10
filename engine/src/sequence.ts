@@ -25,30 +25,25 @@ export function planWithFixedSequence(
   const rowDepthByFamily = computeRowDepthByFamily(preset, opts);
   const downgrade = applyFrontZoneDowngrade(stacked, preset, opts, rowDepthByFamily);
 
-  // d) prepare final bands for packing
-  const EUP_stacked_items: Item[] = flattenColumnsToItems(downgrade.stacked.EUP_columns);
-  const DIN_stacked_items: Item[] = flattenColumnsToItems(downgrade.stacked.DIN_columns);
-
-  const EUP_unstacked: Item[] = [
-    ...unitBands.EUP_unstacked,
-    ...downgrade.stacked.EUP_singles, // leftover from forming columns
-    ...downgrade.downgraded.EUP, // overflow columns downgraded to singles
-  ];
-  const DIN_unstacked: Item[] = [
-    ...unitBands.DIN_unstacked,
-    ...downgrade.stacked.DIN_singles,
-    ...downgrade.downgraded.DIN,
-  ];
-
-  const bandsForPacking: Bands = {
-    EUP_stacked: EUP_stacked_items,
-    DIN_stacked: DIN_stacked_items,
-    EUP_unstacked,
-    DIN_unstacked,
+  // d) prepare pools for packing
+  const prepared = {
+    EUP_columns: downgrade.stacked.EUP_columns,
+    DIN_columns: downgrade.stacked.DIN_columns,
+    EUP_singles: downgrade.stacked.EUP_singles,
+    DIN_singles: downgrade.stacked.DIN_singles,
+    // unstacked pools from original unstacked items plus downgraded overflow
+    unstacked_EUP: [
+      ...unitBands.EUP_unstacked,
+      ...downgrade.downgraded.EUP,
+    ],
+    unstacked_DIN: [
+      ...unitBands.DIN_unstacked,
+      ...downgrade.downgraded.DIN,
+    ],
   };
 
   // e) pack in fixed sequence (skip empty bands)
-  const packed = packBandSequence(bandsForPacking, opts.fixedSequence, preset, opts);
+  const packed = packBandSequence(opts.fixedSequence, prepared, preset, opts);
 
   // f) append warnings
   const notes = [
