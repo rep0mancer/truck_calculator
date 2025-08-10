@@ -37,10 +37,10 @@ export function applyHeightChecks(plan: PlanResult, preset: TruckPreset): PlanRe
     if (innerHeight && top > innerHeight) {
       const units = Array.isArray(p.units) ? p.units : [];
       if (units.length > 0) {
-        for (const u of units) rejected.push({ item: u as any, reason: 'overheight' });
+        for (const u of units) rejected.push({ item: u, reason: 'overheight' });
       } else {
         rejected.push({
-          item: { family: 'EUP', qty: 1, id: `overheight@${p.x},${p.y}` } as any,
+          item: { family: 'EUP', qty: 1, id: `overheight@${p.x},${p.y}` },
           reason: 'overheight',
         });
       }
