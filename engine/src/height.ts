@@ -6,7 +6,7 @@ function getSideDoorHeight(preset: TruckPreset): number {
   return n ?? 2650;
 }
 
-function getPlacementTop(placement: any): number {
+function getPlacementTop(placement: Placement): number {
   const z = typeof placement.z === 'number' ? placement.z : 0;
   const height = typeof placement.stackHeightMm === 'number' ? placement.stackHeightMm : 0;
   return z + height;
