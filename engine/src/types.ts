@@ -25,6 +25,9 @@ export interface TruckPreset {
   lengthMm: number;
   widthMm: number;
   heightMm: number;
+  // Optional more explicit fields for height logic
+  innerHeight?: number;       // if absent, fall back to heightMm
+  sideDoorHeight?: number;    // if absent, default 2650
 }
 
 export interface Placement {
@@ -34,6 +37,10 @@ export interface Placement {
   h: number; // mm (row depth)
   rotated: boolean;
   idx: number; // running index for label
+  // Vertical info for height checks (optional)
+  z?: number;                 // base elevation in mm (default 0)
+  stackHeightMm?: number;     // vertical height of the placed unit/column
+  units?: Item[];             // actual units represented by this placement slot
 }
 
 export interface PlanResult {

@@ -60,6 +60,17 @@ function buildRowsForBand(kind: SeqBand, prepared: Prepared): RowCandidate[] {
   return rows;
 }
 
+function deriveUnitsAndHeight(u: Item | Column): { units: Item[]; heightMm: number } {
+  if ((u as any).units && (u as any).height != null) {
+    const col = u as Column;
+    return { units: [...col.units], heightMm: Math.max(0, Math.floor(col.height)) };
+  }
+  const item = u as Item;
+  const h = (item as any).heightMm;
+  const heightMm = typeof h === 'number' && Number.isFinite(h) ? Math.max(0, Math.floor(h)) : 0;
+  return { units: [item], heightMm };
+}
+
 export function packBandSequence(
   seq: SeqBand[],
   prepared: Prepared,
@@ -121,10 +132,15 @@ export function packBandSequence(
       // x placement: two slots across width, same family per row
       const slotW = getFamilyWidthMm(row.family);
       const xLeft = Math.floor((widthMm - slotW * 2) / 2); // center the two-across
+
+      // Left slot uses first item of the row, right slot uses second
+      const leftMeta = deriveUnitsAndHeight(row.items[0]);
+      const rightMeta = deriveUnitsAndHeight(row.items[1]);
+
       // left slot
-      placements.push({ x: xLeft, y: yCursor, w: slotW, h: rowDepth, rotated: false, idx: placements.length });
+      placements.push({ x: xLeft, y: yCursor, w: slotW, h: rowDepth, rotated: false, idx: placements.length, z: 0, stackHeightMm: leftMeta.heightMm, units: leftMeta.units });
       // right slot
-      placements.push({ x: xLeft + slotW, y: yCursor, w: slotW, h: rowDepth, rotated: false, idx: placements.length });
+      placements.push({ x: xLeft + slotW, y: yCursor, w: slotW, h: rowDepth, rotated: false, idx: placements.length, z: 0, stackHeightMm: rightMeta.heightMm, units: rightMeta.units });
       yCursor += rowDepth;
       placedAny = true;
     }
