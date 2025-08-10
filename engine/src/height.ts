@@ -14,7 +14,7 @@ function getPlacementTop(placement: any): number {
 
 export function applyHeightChecks(plan: PlanResult, preset: TruckPreset): PlanResult {
   const sideDoorHeight = getSideDoorHeight(preset);
-  const innerHeight = (preset as any).innerHeight ?? (preset as any).heightMm ?? (preset as any).height ?? 0;
+  const innerHeight = preset.innerHeight ?? preset.heightMm ?? 0;
 
   const warnings: string[] = [...(plan.warnings ?? [])];
   const notes: string[] = [...(plan.notes ?? [])];
