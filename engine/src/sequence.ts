@@ -2,6 +2,7 @@ import { Bands, splitIntoBands } from './bands';
 import { PackOptions, PlanResult, FamilyBandConfig, TruckPreset, Item } from './types';
 import { buildStackedBands, applyFrontZoneDowngrade, computeRowDepthByFamily } from './stacking';
 import { packBandSequence } from './packer';
+import { applyHeightChecks } from './height';
 
 function flattenColumnsToItems(columns: { units: Item[] }[]): Item[] {
   const items: Item[] = [];
@@ -51,8 +52,10 @@ export function planWithFixedSequence(
     ...downgrade.warnings,
   ];
 
+  // g) apply height checks and warnings
+  const withHeight = applyHeightChecks({ ...packed, notes }, preset);
+
   return {
-    ...packed,
-    notes,
+    ...withHeight,
   };
 }

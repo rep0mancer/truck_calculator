@@ -4,6 +4,7 @@ exports.planWithFixedSequence = planWithFixedSequence;
 const bands_1 = require("./bands");
 const stacking_1 = require("./stacking");
 const packer_1 = require("./packer");
+const height_1 = require("./height");
 function flattenColumnsToItems(columns) {
     const items = [];
     for (const c of columns)
@@ -41,8 +42,9 @@ function planWithFixedSequence(items, famCfgs, preset, opts) {
         ...(packed.notes ?? []),
         ...downgrade.warnings,
     ];
+    // g) apply height checks and warnings
+    const withHeight = (0, height_1.applyHeightChecks)({ ...packed, notes }, preset);
     return {
-        ...packed,
-        notes,
+        ...withHeight,
     };
 }
