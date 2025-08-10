@@ -27,9 +27,28 @@ export interface TruckPreset {
   heightMm: number;
 }
 
+export interface Placement {
+  x: number;
+  y: number; // mm, front-to-back (0 at bulkhead)
+  w: number; // mm
+  h: number; // mm (row depth)
+  rotated: boolean;
+  idx: number; // running index for label
+}
+
 export interface PlanResult {
   sequenceUsed: Array<'DIN_stacked' | 'EUP_stacked' | 'DIN_unstacked' | 'EUP_unstacked'>;
   notes?: string[];
   // For simple validation/debugging
   bandCounts?: Record<string, number>;
+  // Floor plan placements
+  placements?: Placement[];
+  // Items that could not be placed and the reason
+  rejected?: { item: Item; reason: string }[];
+  // Optional warnings collected during planning
+  warnings?: string[];
+  // Utilization metrics
+  usedLengthMm?: number;
+  usedWidthMm?: number;
+  usedHeightMm?: number;
 }
