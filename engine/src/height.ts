@@ -1,7 +1,7 @@
 import { PlanResult, TruckPreset } from './types';
 
 function getSideDoorHeight(preset: TruckPreset): number {
-  const v = (preset as any)?.sideDoorHeight;
+  const v = preset.sideDoorHeight;
   const n = typeof v === 'number' && Number.isFinite(v) ? v : undefined;
   return n ?? 2650;
 }
