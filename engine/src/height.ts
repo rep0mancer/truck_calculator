@@ -26,7 +26,7 @@ export function applyHeightChecks(plan: PlanResult, preset: TruckPreset): PlanRe
   type MaxEntry = { top: number; x: number; y: number; idx?: number };
   const byXY = new Map<string, MaxEntry>();
 
-  for (const p of placements as any[]) {
+  for (const p of placements) {
     const top = getPlacementTop(p);
     const key = `${p.x},${p.y}`;
     const prev = byXY.get(key);
