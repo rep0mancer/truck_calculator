@@ -59,3 +59,23 @@ export interface PlanResult {
   usedWidthMm?: number;
   usedHeightMm?: number;
 }
+
+// Axle analysis options for approximate checks
+export interface AxleOptions {
+  // Weight model
+  perSlotWeightKg?: number; // default 0; used when placement.units weights are not provided
+
+  // Linear kg/m triage
+  binSizeMm?: number; // default 1000mm
+  maxKgPerM?: number; // warn if exceeded; optional
+
+  // Two-support beam geometry (positions along y from bulkhead, in mm)
+  supportFrontX: number; // e.g., kingpin location or front support
+  supportRearX: number;  // e.g., rear axle group location
+
+  // Limits
+  rearAxleGroupMaxKg?: number;
+  kingpinMinKg?: number;
+  kingpinMaxKg?: number;
+  payloadMaxKg?: number;
+}
