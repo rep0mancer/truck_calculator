@@ -44,10 +44,7 @@ export function checkAxles(plan: PlanResult, _preset: TruckPreset, opts: AxleOpt
     binToKg.set(bin, (binToKg.get(bin) ?? 0) + w);
   }
 
-  let maxBinKg = 0;
-  for (const kg of binToKg.values()) {
-    if (kg > maxBinKg) maxBinKg = kg;
-  }
+  const maxBinKg = Math.max(0, ...binToKg.values());
   const maxKgPerM = (maxBinKg * 1000) / binSizeMm;
 
   const warnings: string[] = [];
