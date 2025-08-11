@@ -328,7 +328,8 @@ export function computePlan(params: {
     const axleOpts = getAxleOptionsForContainer();
     const report = computeAxles(plan.placements, axleOpts);
     plan.axles = report;
-  } catch (_e) {
+  } catch (e) {
+    console.error('Axle analysis failed:', e);
     // swallow axle analysis errors to avoid breaking core planning
   }
 
