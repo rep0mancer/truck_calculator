@@ -15,7 +15,7 @@ function getFamilyConfig(famCfgs: FamilyBandConfig[], family: 'EUP' | 'DIN'): Fa
 export function expandUnits(items: Item[]): Item[] {
   const units: Item[] = [];
   for (const item of items) {
-    const qty = Math.max(1, Number(item.qty ?? 1));
+    const qty = item.qty;
     for (let i = 0; i < qty; i += 1) {
       units.push({ ...item, qty: 1 });
     }
