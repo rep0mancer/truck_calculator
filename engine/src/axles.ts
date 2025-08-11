@@ -13,12 +13,12 @@ function getPlacementCentroidY(p: { y: number; h: number }): number {
   return y + h / 2;
 }
 
-function sumPlacementWeightKg(p: any): number {
+function sumPlacementWeightKg(p: Placement): number {
   // If units with weights are present, sum them; else 0 and let caller add perSlotWeightKg
-  const units = Array.isArray(p.units) ? p.units : [];
+  const units = p.units ?? [];
   let total = 0;
   for (const u of units) {
-    const w = (u as any).weightKg;
+    const w = (u as typeof u & { weightKg?: number }).weightKg;
     if (typeof w === 'number' && Number.isFinite(w)) total += w;
   }
   return total;
