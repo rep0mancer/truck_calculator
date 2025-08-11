@@ -182,6 +182,138 @@ export function computePlan(params: {
 
   const placements = canFitAny ? best.placements : [];
 
+  // Axle analysis (approximate)
+  type AxleReport = { R_front: number; R_rear: number; maxKgPerM: number; warnings: string[] };
+
+  function getAxleOptionsForContainer(): any {
+    // Rough presets; can be tuned per container type
+    const baseBinMm = 1000;
+    const id = container.id;
+    if (id === 'eu_semitrailer') {
+      return {
+        perSlotWeightKg: pallet.weightKg ?? 0,
+        binSizeMm: baseBinMm,
+        maxKgPerM: 3000,
+        supportFrontX: 1000,
+        supportRearX: Math.max(2000, container.innerLength - 1500),
+        rearAxleGroupMaxKg: 24000,
+        kingpinMinKg: 6000,
+        kingpinMaxKg: 15000,
+        payloadMaxKg: container.maxPayloadKg ?? undefined,
+      };
+    }
+    if (id === 'truck7_5t') {
+      return {
+        perSlotWeightKg: pallet.weightKg ?? 0,
+        binSizeMm: baseBinMm,
+        maxKgPerM: 1500,
+        supportFrontX: 800,
+        supportRearX: Math.max(1600, container.innerLength - 1200),
+        rearAxleGroupMaxKg: 5200,
+        kingpinMinKg: undefined,
+        kingpinMaxKg: undefined,
+        payloadMaxKg: container.maxPayloadKg ?? 3000,
+      };
+    }
+    if (id === 'sprinter') {
+      return {
+        perSlotWeightKg: pallet.weightKg ?? 0,
+        binSizeMm: baseBinMm,
+        maxKgPerM: 800,
+        supportFrontX: 600,
+        supportRearX: Math.max(1200, container.innerLength - 1000),
+        rearAxleGroupMaxKg: 1800,
+        kingpinMinKg: undefined,
+        kingpinMaxKg: undefined,
+        payloadMaxKg: container.maxPayloadKg ?? 1200,
+      };
+    }
+    if (id === '20ft' || id === '40ft') {
+      return {
+        perSlotWeightKg: pallet.weightKg ?? 0,
+        binSizeMm: baseBinMm,
+        maxKgPerM: 3000,
+        supportFrontX: 1000,
+        supportRearX: Math.max(2000, container.innerLength - 1500),
+        rearAxleGroupMaxKg: container.maxPayloadKg ?? 26000,
+        kingpinMinKg: undefined,
+        kingpinMaxKg: undefined,
+        payloadMaxKg: container.maxPayloadKg ?? undefined,
+      };
+    }
+    return {
+      perSlotWeightKg: pallet.weightKg ?? 0,
+      binSizeMm: baseBinMm,
+      maxKgPerM: 2000,
+      supportFrontX: 800,
+      supportRearX: Math.max(1600, container.innerLength - 1200),
+      payloadMaxKg: container.maxPayloadKg ?? undefined,
+    };
+  }
+
+  function centroidY(p: Placement): number {
+    return p.y + p.h / 2;
+  }
+
+  function computeAxles(placements: Placement[], opts: any): AxleReport {
+    const perSlotWeightKg = Math.max(0, Math.floor(opts.perSlotWeightKg ?? 0));
+    const binSizeMm = Math.max(1, Math.floor(opts.binSizeMm ?? 1000));
+
+    const binToKg = new Map<number, number>();
+    let totalWeightKg = 0;
+
+    for (const p of placements) {
+      const bin = Math.floor(centroidY(p) / binSizeMm);
+      const units: any[] = (p as any).units ?? [];
+      const unitSum = units.reduce((acc, u) => acc + (typeof u?.weightKg === 'number' ? u.weightKg : 0), 0);
+      const w = unitSum > 0 ? unitSum : perSlotWeightKg;
+      totalWeightKg += w;
+      binToKg.set(bin, (binToKg.get(bin) ?? 0) + w);
+    }
+
+    let maxBinKg = 0;
+    for (const kg of binToKg.values()) maxBinKg = Math.max(maxBinKg, kg);
+    const maxKgPerM = (maxBinKg * 1000) / binSizeMm;
+
+    const warnings: string[] = [];
+    if (opts.maxKgPerM != null && maxKgPerM > opts.maxKgPerM) {
+      warnings.push(`Peak linear density ${Math.round(maxKgPerM)} kg/m exceeds threshold ${opts.maxKgPerM} kg/m.`);
+    }
+
+    const supportFrontX = Math.max(0, Math.floor(opts.supportFrontX));
+    const supportRearX = Math.max(supportFrontX + 1, Math.floor(opts.supportRearX));
+    const L = supportRearX - supportFrontX;
+
+    let R_front = 0;
+    let R_rear = 0;
+
+    for (const p of placements) {
+      const xi = Math.max(supportFrontX, Math.min(supportRearX, centroidY(p)));
+      const units: any[] = (p as any).units ?? [];
+      const unitSum = units.reduce((acc, u) => acc + (typeof u?.weightKg === 'number' ? u.weightKg : 0), 0);
+      const w = unitSum > 0 ? unitSum : perSlotWeightKg;
+      const a = (supportRearX - xi) / L;
+      const b = (xi - supportFrontX) / L;
+      R_front += w * a;
+      R_rear += w * b;
+    }
+
+    if (opts.rearAxleGroupMaxKg != null && R_rear > opts.rearAxleGroupMaxKg) {
+      warnings.push(`Rear axle group load ${Math.round(R_rear)} kg exceeds ${opts.rearAxleGroupMaxKg} kg.`);
+    }
+    if (opts.kingpinMinKg != null && R_front < opts.kingpinMinKg) {
+      warnings.push(`Front support (kingpin) load ${Math.round(R_front)} kg below minimum ${opts.kingpinMinKg} kg.`);
+    }
+    if (opts.kingpinMaxKg != null && R_front > opts.kingpinMaxKg) {
+      warnings.push(`Front support (kingpin) load ${Math.round(R_front)} kg exceeds ${opts.kingpinMaxKg} kg.`);
+    }
+    if (opts.payloadMaxKg != null && totalWeightKg > opts.payloadMaxKg) {
+      warnings.push(`Total payload ${Math.round(totalWeightKg)} kg exceeds ${opts.payloadMaxKg} kg.`);
+    }
+
+    return { R_front: Math.round(R_front), R_rear: Math.round(R_rear), maxKgPerM: Math.round(maxKgPerM), warnings };
+  }
+
   const plan: Plan = {
     container,
     pallet,
@@ -191,6 +323,15 @@ export function computePlan(params: {
     metrics: computeMetrics({ container, pallet, constraints, units, placements }),
     note: params.note,
   };
+
+  try {
+    const axleOpts = getAxleOptionsForContainer();
+    const report = computeAxles(plan.placements, axleOpts);
+    plan.axles = report;
+  } catch (e) {
+    console.error('Axle analysis failed:', e);
+    // swallow axle analysis errors to avoid breaking core planning
+  }
 
   return plan;
 }

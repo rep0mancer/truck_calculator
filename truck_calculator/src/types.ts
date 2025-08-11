@@ -47,5 +47,11 @@ export interface Plan {
     totalPalletWeightKg?: number;
     maxPayloadExceeded?: boolean;
   };
+  axles?: {
+    R_front: number;
+    R_rear: number;
+    maxKgPerM: number;
+    warnings: string[];
+  };
   note?: string;
 }
