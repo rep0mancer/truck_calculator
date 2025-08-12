@@ -2,10 +2,6 @@
   "name": "truck_calculator",
   "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "engine",
-    "web"
-  ],
   "scripts": {
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
