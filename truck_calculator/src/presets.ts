@@ -14,13 +14,14 @@ export const PALLET_PRESETS: PalletPreset[] = [
   { id: 'half_euro', name: 'Half EUR 800×600', length: 800, width: 600, height: 140, weightKg: 10 },
 ];
 
-export type TruckPreset = {
+export interface TruckPreset {
+  id: string;
   name: string;
   innerLength: number;
   innerWidth: number;
   innerHeight: number;
   sideDoorHeight: number;
-  payloadMax: number;
+  payloadMaxKg: number;
   rearAxleGroupMax: number;
   supportFrontX: number;
   supportRearX: number;
@@ -30,7 +31,7 @@ export type TruckPreset = {
     rearY: number;
     between: number;
   };
-};
+}
 
 export const PRESETS: TruckPreset[] = [
   {
