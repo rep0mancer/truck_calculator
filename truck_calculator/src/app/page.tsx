@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { usePlannerStore } from "../store";
 import { CONTAINER_PRESETS, PALLET_PRESETS } from "../presets";
 import type { ContainerPreset, PalletPreset, Units, Constraints } from "../types";
+import { FamilyInputs } from "../components/FamilyInputs";
 
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -62,6 +63,25 @@ export default function PlannerPage() {
   } = usePlannerStore();
 
   const unitSuffix = units === "metric" ? "mm" : "in";
+  
+  // Family inputs state
+  const [eupState, setEupState] = useState({
+    qty: 0,
+    unitH: 100,
+    unitW: 50,
+    stackable: false,
+    stackableCount: 1,
+    maxStackHeight: 1
+  });
+  
+  const [dinState, setDinState] = useState({
+    qty: 0,
+    unitH: 100,
+    unitW: 50,
+    stackable: false,
+    stackableCount: 1,
+    maxStackHeight: 1
+  });
 
   const selectedContainer: ContainerPreset = useMemo(() => {
     if (containerId === "custom" && containerCustom) return containerCustom as ContainerPreset;
@@ -360,6 +380,32 @@ export default function PlannerPage() {
                 />
               </div>
             </div>
+          </div>
+
+          <Separator />
+          
+          <div className="space-y-3">
+            <SectionTitle>Family Inputs</SectionTitle>
+            <FamilyInputs
+              family="EUP"
+              qty={eupState.qty}
+              unitH={eupState.unitH}
+              unitW={eupState.unitW}
+              stackable={eupState.stackable}
+              stackableCount={eupState.stackableCount}
+              maxStackHeight={eupState.maxStackHeight}
+              onChange={(patch) => setEupState({...eupState, ...patch})}
+            />
+            <FamilyInputs
+              family="DIN"
+              qty={dinState.qty}
+              unitH={dinState.unitH}
+              unitW={dinState.unitW}
+              stackable={dinState.stackable}
+              stackableCount={dinState.stackableCount}
+              maxStackHeight={dinState.maxStackHeight}
+              onChange={(patch) => setDinState({...dinState, ...patch})}
+            />
           </div>
 
           {lastValidationErrors.length > 0 && (
