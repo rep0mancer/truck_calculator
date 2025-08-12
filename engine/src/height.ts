@@ -1,4 +1,4 @@
-import { PlanResult, TruckPreset } from './types';
+import { PlanResult, TruckPreset, Placement } from './types';
 
 function getSideDoorHeight(preset: TruckPreset): number {
   const v = preset.sideDoorHeight;
