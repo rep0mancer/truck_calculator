@@ -365,7 +365,7 @@ const calculateLoadingLogic = (
           eupQuantityToPlace >= MAX_PALLET_SIMULATION_QUANTITY &&
           placementOrder === "EUP_FIRST"
             ? `Konnte den LKW nicht vollständig mit Europaletten beladen. ${finalTotalEuroVisual} (visuell) platziert mit Muster '${bestEUPResultConfig.chosenPattern}'.`
-            : `Konnte nicht alle ${eupQuantityToPlace} Europaletten laden. Nur ${finalTotalEuroPalletsVisual} (visuell) platziert mit Muster '${bestEUPResultConfig.chosenPattern}'.`;
+            : `Konnte nicht alle ${eupQuantityToPlace} Europaletten laden. Nur ${finalTotalEuroVisual} (visuell) platziert mit Muster '${bestEUPResultConfig.chosenPattern}'.`;
         tempWarnings.push(message);
       }
     }
