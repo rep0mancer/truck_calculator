@@ -109,6 +109,16 @@ const STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING = 16;
 const MAX_WEIGHT_PER_METER_KG = 1800;
 
 // Core calculation logic (unchanged except TS fix in signature)
+
+// Simple collision checker to avoid overlapping placements
+const canPlace = (unit: any, x: number, y: number, w: number, h: number): boolean => {
+  if (!unit || !Array.isArray(unit.occupiedRects)) return true;
+  for (const r of unit.occupiedRects) {
+    const noOverlap = x + w <= r.x || r.x + r.width <= x || y + h <= r.y || r.y + r.height <= y;
+    if (!noOverlap) return false;
+  }
+  return true;
+};
 const calculateLoadingLogic = (
   truckKey: string,
   requestedEupQuantity: number,
@@ -149,8 +159,7 @@ const calculateLoadingLogic = (
       ? Math.floor(maxStackedDin / 2)
       : Infinity
     : 0;
-  let eupStacked = 0,
-    dinStacked = 0;
+  let dinStacked = 0;
 
   let unitsState = truckConfig.units.map((u: any) => ({
     ...u,
@@ -219,6 +228,7 @@ const calculateLoadingLogic = (
         let patternWeight = currentTotalWeight;
         let patternWarnLocal: string[] = [];
         let patternRemainingEup = eupQuantityToPlace;
+        let eupStackedLocal = 0;
         let currentPatternEupCounter = eupLabelGlobalCounter;
 
         for (const unit of currentUnitsAttempt) {
@@ -284,7 +294,7 @@ const calculateLoadingLogic = (
                 if (
                   currentIsEUPStackable &&
                   patternRemainingEup > 0 &&
-                  eupStacked < allowedEupStack
+                  eupStackedLocal < allowedEupStack
                 ) {
                   if (!(safeEupWeight > 0 && patternWeight + safeEupWeight > weightLimit)) {
                     stackedEupLabelId = ++currentPatternEupCounter;
@@ -305,7 +315,7 @@ const calculateLoadingLogic = (
                     patternVisualEUP++;
                     patternWeight += safeEupWeight;
                     patternRemainingEup--;
-                    eupStacked++;
+                    eupStackedLocal++;
                   } else if (!patternWarnLocal.some((w) => w.includes("Stapeln von EUP")))
                     patternWarnLocal.push("Gewichtslimit beim Stapeln von EUP.");
                 }
@@ -401,7 +411,8 @@ const calculateLoadingLogic = (
               unit.currentX + dinLength <= unit.length &&
               unit.currentY + dinWidth <= unit.width
             ) {
-              const baseDinLabelId = ++dinLabelGlobalCounter;
+              if (canPlace(unit, unit.currentX, unit.currentY, dinLength, dinWidth)) {
+const baseDinLabelId = ++dinLabelGlobalCounter;
               let stackedDinLabelId: number | null = null;
               const baseDinPallet = {
                 x: unit.currentX,
@@ -625,6 +636,7 @@ const calculateLoadingLogic = (
         let patternWeight = weightAfterDINs;
         let patternWarnLocal: string[] = [];
         let patternRemainingEup = eupQuantityToPlace;
+        let eupStackedLocal = 0;
         let currentPatternEupCounter = eupLabelGlobalCounter;
 
         for (const unit of currentUnitsAttempt) {
@@ -717,7 +729,7 @@ const calculateLoadingLogic = (
                   patternWarnLocal.push("Gewichtslimit für EUP in Lücke.");
               }
             }
-            if (placedInGap && gapConfig) {
+            if (placedInGap && gapConfig && canPlace(unit, gapConfig.x, gapConfig.y, gapConfig.width, gapConfig.height)) {
               const baseEupLabelId = ++currentPatternEupCounter;
               let stackedEupLabelId: number | null = null;
               const baseGapPallet = {
@@ -745,7 +757,7 @@ const calculateLoadingLogic = (
               if (
                 currentIsEUPStackable &&
                 patternRemainingEup > 0 &&
-                eupStacked < allowedEupStack
+                eupStackedLocal < allowedEupStack
               ) {
                 if (!(safeEupWeight > 0 && patternWeight + safeEupWeight > weightLimit)) {
                   stackedEupLabelId = ++currentPatternEupCounter;
@@ -764,7 +776,7 @@ const calculateLoadingLogic = (
                   patternVisualEUP++;
                   patternWeight += safeEupWeight;
                   patternRemainingEup--;
-                  eupStacked++;
+                  eupStackedLocal++;
                 } else if (!patternWarnLocal.some((w) => w.includes("Stapeln EUP Lücke")))
                   patternWarnLocal.push("Gewichtslimit Stapeln EUP Lücke.");
               }
@@ -835,7 +847,7 @@ const calculateLoadingLogic = (
                 if (
                   currentIsEUPStackable &&
                   patternRemainingEup > 0 &&
-                  eupStacked < allowedEupStack
+                  eupStackedLocal < allowedEupStack
                 ) {
                   if (!(safeEupWeight > 0 && patternWeight + safeEupWeight > weightLimit)) {
                     stackedEupLabelId = ++currentPatternEupCounter;
@@ -856,7 +868,7 @@ const calculateLoadingLogic = (
                     patternVisualEUP++;
                     patternWeight += safeEupWeight;
                     patternRemainingEup--;
-                    eupStacked++;
+                    eupStackedLocal++;
                   } else if (!patternWarnLocal.some((w) => w.includes("Stapeln von EUP")))
                     patternWarnLocal.push("Gewichtslimit Stapeln von EUP.");
                 }
