@@ -628,6 +628,10 @@ export default function HomePage() {
     meldungenStyle = { bg: "bg-red-50", border: "border-red-200", header: "text-red-800", list: "text-red-700" };
   }
 
+  if (!isMounted) {
+    return null;
+  }
+
   return (
     <div className="container mx-auto p-4 font-sans bg-gray-50">
       <header className="bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
