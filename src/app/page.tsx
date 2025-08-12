@@ -726,7 +726,7 @@ export default function HomePage() {
             <h3 className="font-semibold text-blue-800 mb-2">Geladene Paletten (Visuell)</h3>
             <p>Industrie (DIN): <span className="font-bold text-lg">{totalDinPalletsVisual}</span></p>
             <p>Euro (EUP): <span className="font-bold text-lg">{totalEuroPalletsVisual}</span></p>
-            <p className="text-xs mt-1">(Basis: {loadedIndustrialPalletsBase} DIN, {loadedEuroPalletsVisual} EUP)</p>
+            <p className="text-xs mt-1">(Basis: {loadedIndustrialPalletsBase} DIN, {loadedEuroPalletsBase} EUP)</p>
           </div>
           <div className="bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm text-center">
             <h3 className="font-semibold text-green-800 mb-2">Flächenausnutzung</h3>
