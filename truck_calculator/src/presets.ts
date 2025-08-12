@@ -13,3 +13,72 @@ export const PALLET_PRESETS: PalletPreset[] = [
   { id: 'industrial', name: 'Industrial 1200×1000', length: 1200, width: 1000, height: 150, weightKg: 30 },
   { id: 'half_euro', name: 'Half EUR 800×600', length: 800, width: 600, height: 140, weightKg: 10 },
 ];
+
+export type TruckPreset = {
+  name: string;
+  innerLength: number;
+  innerWidth: number;
+  innerHeight: number;
+  sideDoorHeight: number;
+  payloadMax: number;
+  rearAxleGroupMax: number;
+  supportFrontX: number;
+  supportRearX: number;
+  clearances: {
+    wallX: number;
+    frontY: number;
+    rearY: number;
+    between: number;
+  };
+};
+
+export const PRESETS: TruckPreset[] = [
+  {
+    name: 'Curtainsider 13.2 (tandem)',
+    innerLength: 13200,
+    innerWidth: 2440,
+    innerHeight: 2700,
+    sideDoorHeight: 2650,
+    payloadMax: 24000,
+    rearAxleGroupMax: 18000,
+    supportFrontX: 1300,
+    supportRearX: 12000,
+    clearances: { wallX: 0, frontY: 0, rearY: 0, between: 0 }
+  },
+  {
+    name: 'Curtainsider 13.2 (tridem)',
+    innerLength: 13200,
+    innerWidth: 2440,
+    innerHeight: 2700,
+    sideDoorHeight: 2650,
+    payloadMax: 24000,
+    rearAxleGroupMax: 24000,
+    supportFrontX: 1300,
+    supportRearX: 12000,
+    clearances: { wallX: 0, frontY: 0, rearY: 0, between: 0 }
+  },
+  {
+    name: 'Mega 13.2',
+    innerLength: 13200,
+    innerWidth: 2440,
+    innerHeight: 3000,
+    sideDoorHeight: 2650,
+    payloadMax: 24000,
+    rearAxleGroupMax: 18000,
+    supportFrontX: 1300,
+    supportRearX: 12000,
+    clearances: { wallX: 0, frontY: 0, rearY: 0, between: 0 }
+  },
+  {
+    name: 'City 10.0',
+    innerLength: 10000,
+    innerWidth: 2440,
+    innerHeight: 2700,
+    sideDoorHeight: 2650,
+    payloadMax: 16000,
+    rearAxleGroupMax: 13000,
+    supportFrontX: 1000,
+    supportRearX: 9000,
+    clearances: { wallX: 0, frontY: 0, rearY: 0, between: 0 }
+  },
+];
