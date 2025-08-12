@@ -423,13 +423,19 @@ export default function HomePage() {
   const [totalWeightKg, setTotalWeightKg] = useState(0);
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState<"auto" | "long" | "broad" | "none">("auto");
 
-  const calculateAndSetState = useCallback(
-    (currentEup = eupQuantity, currentDin = dinQuantity) => {
-      // Primary calculation based on current inputs
+  // This effect runs once on component mount to signal that the client has loaded.
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // This effect performs the calculation, but only after the component has mounted.
+  // It now depends on the raw state values instead of a memoized callback.
+  useEffect(() => {
+    if (isMounted) {
       const primaryResults = calculateLoadingLogic(
         selectedTruck,
-        currentEup,
-        currentDin,
+        eupQuantity,
+        dinQuantity,
         isEUPStackable,
         isDINStackable,
         eupWeightPerPallet,
@@ -439,32 +445,29 @@ export default function HomePage() {
         dinStackLimit
       );
 
-      // --- Remaining capacity checks ---
-      // To check remaining EUP space, we try to fill the truck with EUPs after the current DINs are placed.
       const eupCapacityCheckResults = calculateLoadingLogic(
         selectedTruck,
-        MAX_PALLET_SIMULATION_QUANTITY, // Try to fill with EUPs
-        primaryResults.totalDinPalletsVisual, // But keep the already placed DINs
+        MAX_PALLET_SIMULATION_QUANTITY,
+        primaryResults.totalDinPalletsVisual,
         isEUPStackable,
         isDINStackable,
         eupWeightPerPallet,
         dinWeightPerPallet,
-        "auto", // Always use auto to find max capacity
+        "auto",
         eupStackLimit,
         dinStackLimit
       );
       const additionalEupPossible = Math.max(0, eupCapacityCheckResults.totalEuroPalletsVisual - primaryResults.totalEuroPalletsVisual);
 
-      // To check remaining DIN space, we try to fill with DINs after current EUPs are placed.
       const dinCapacityCheckResults = calculateLoadingLogic(
         selectedTruck,
-        primaryResults.totalEuroPalletsVisual, // Keep already placed EUPs
-        MAX_PALLET_SIMULATION_QUANTITY, // Try to fill with DINs
+        primaryResults.totalEuroPalletsVisual,
+        MAX_PALLET_SIMULATION_QUANTITY,
         isEUPStackable,
         isDINStackable,
         eupWeightPerPallet,
         dinWeightPerPallet,
-        primaryResults.eupLoadingPatternUsed, // Use the same pattern for consistency
+        primaryResults.eupLoadingPatternUsed,
         eupStackLimit,
         dinStackLimit
       );
@@ -479,8 +482,6 @@ export default function HomePage() {
         finalWarnings.push(`Es ist jetzt noch Platz für ${additionalDinPossible} DIN Paletten.`);
       }
 
-      // ... (rest of the warning logic is largely unchanged)
-
       setPalletArrangement(primaryResults.palletArrangement);
       setLoadedIndustrialPalletsBase(primaryResults.loadedIndustrialPalletsBase);
       setLoadedEuroPalletsBase(primaryResults.loadedEuroPalletsBase);
@@ -490,32 +491,20 @@ export default function HomePage() {
       setWarnings(finalWarnings);
       setTotalWeightKg(primaryResults.totalWeightKg);
       setActualEupLoadingPattern(primaryResults.eupLoadingPatternUsed);
-    },
-    [
-      selectedTruck,
-      eupQuantity,
-      dinQuantity,
-      isEUPStackable,
-      isDINStackable,
-      eupWeightPerPallet,
-      dinWeightPerPallet,
-      eupLoadingPattern,
-      eupStackLimit,
-      dinStackLimit,
-    ]
-  );
-  
-  // This effect runs once on component mount to signal that the client has loaded.
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  // This effect performs the calculation, but only after the component has mounted.
-  useEffect(() => {
-    if (isMounted) {
-      calculateAndSetState();
     }
-  }, [isMounted, calculateAndSetState]);
+  }, [
+    isMounted,
+    selectedTruck,
+    eupQuantity,
+    dinQuantity,
+    isEUPStackable,
+    isDINStackable,
+    eupWeightPerPallet,
+    dinWeightPerPallet,
+    eupLoadingPattern,
+    eupStackLimit,
+    dinStackLimit,
+  ]);
 
   const handleQuantityChange = (type: "eup" | "din", amount: number) => {
     if (type === "eup")
