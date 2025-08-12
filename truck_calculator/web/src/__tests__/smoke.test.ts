@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeAxleLoadPerMeter } from '@rep0mancer/engine';
+import { computeAxleLoadPerMeter } from '@truck/engine';
 
 describe('web uses engine', () => {
   it('computes axle load', () => {
