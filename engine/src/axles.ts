@@ -1,4 +1,4 @@
-import { PlanResult, TruckPreset, AxleOptions } from './types';
+import { PlanResult, TruckPreset, AxleOptions, Placement } from './types';
 
 export interface AxleReport {
   R_front: number; // kingpin proxy
