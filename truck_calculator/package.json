@@ -3,16 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "pnpm -r run build",
-    "test": "pnpm -r run test",
-    "lint": "pnpm -r run lint",
-    "dev:web": "pnpm --filter @rep0mancer/web dev",
-    "dev:next": "next dev",
-    "build:next": "next build",
-    "start:next": "next start",
-    "build:worker": "opennextjs-cloudflare",
-    "preview:next": "opennextjs-cloudflare && wrangler dev",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv env.d.ts"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
   },
   "dependencies": {
     "@truck/engine": "link:../engine",
