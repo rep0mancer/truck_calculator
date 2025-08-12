@@ -398,6 +398,7 @@ const placePallets = (
 // #endregion
 
 export default function HomePage() {
+  const [isMounted, setIsMounted] = useState(false);
   const [selectedTruck, setSelectedTruck] = useState("curtainSider");
   const [eupQuantity, setEupQuantity] = useState(0);
   const [dinQuantity, setDinQuantity] = useState(0);
@@ -503,10 +504,18 @@ export default function HomePage() {
       dinStackLimit,
     ]
   );
-
+  
+  // This effect runs once on component mount to signal that the client has loaded.
   useEffect(() => {
-    calculateAndSetState();
-  }, [calculateAndSetState]);
+    setIsMounted(true);
+  }, []);
+
+  // This effect performs the calculation, but only after the component has mounted.
+  useEffect(() => {
+    if (isMounted) {
+      calculateAndSetState();
+    }
+  }, [isMounted, calculateAndSetState]);
 
   const handleQuantityChange = (type: "eup" | "din", amount: number) => {
     if (type === "eup")
@@ -717,7 +726,7 @@ export default function HomePage() {
             <h3 className="font-semibold text-blue-800 mb-2">Geladene Paletten (Visuell)</h3>
             <p>Industrie (DIN): <span className="font-bold text-lg">{totalDinPalletsVisual}</span></p>
             <p>Euro (EUP): <span className="font-bold text-lg">{totalEuroPalletsVisual}</span></p>
-            <p className="text-xs mt-1">(Basis: {loadedIndustrialPalletsBase} DIN, {loadedEuroPalletsBase} EUP)</p>
+            <p className="text-xs mt-1">(Basis: {loadedIndustrialPalletsBase} DIN, {loadedEuroPalletsVisual} EUP)</p>
           </div>
           <div className="bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm text-center">
             <h3 className="font-semibold text-green-800 mb-2">Flächenausnutzung</h3>
