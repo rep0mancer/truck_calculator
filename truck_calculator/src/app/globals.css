@@ -1,91 +1,39 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-body {
-  font-family: Arial, Helvetica, sans-serif;
+/* ===== Base, tokens, and simple utilities (no framework) ===== */
+:root{
+  --bg: #0b0f19;
+  --panel:#0f172a;
+  --muted:#94a3b8;
+  --text:#e2e8f0;
+  --border:#1f2937;
+  --primary:#16a34a; /* green-600 */
+  --accent:#2563eb;  /* blue-600  */
+  --bad:#ef4444;
+  --warn:#f59e0b;
+  --good:#10b981;
 }
-
-@layer base {
-  :root {
-    --radius: 0.5rem;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%; /* This is the variable for border color */
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
-  }
-  .dark {
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%; /* This is the variable for border color in dark mode */
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
-  }
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,Segoe UI,Roboto,Arial}
+a{color:inherit;text-decoration:none}
+.container{max-width:1100px;margin:24px auto;padding:0 16px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px}
+.hstack{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.vstack{display:flex;gap:12px;flex-direction:column}
+.input,select{padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:#0b1220;color:var(--text)}
+input[type=number]{width:110px}
+button{padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:#0b1220;color:var(--text);cursor:pointer}
+button.primary{background:var(--primary);border-color:var(--primary);color:#00120a;font-weight:600}
+button:disabled{opacity:.6;cursor:not-allowed}
+.bad{color:var(--bad)} .warn{color:var(--warn)} .good{color:var(--good)}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{border:1px solid var(--accent);color:var(--accent);background:#0b1220;border-radius:9999px;padding:4px 10px}
+.chip .arrows{display:flex;flex-direction:column;margin-left:6px;gap:4px}
+label.small{font-size:12px;opacity:.85;display:flex;align-items:center;gap:6px}
+svg{background:#0a0f1d;border:1px solid var(--border);border-radius:12px}
+.header{
+  background:linear-gradient(90deg, rgba(37,99,235,.15), rgba(22,163,74,.15));
+  border-bottom:1px solid var(--border);
+  position:sticky;top:0;backdrop-filter:blur(6px);
 }
-
-@layer base {
-  * {
-    /* @apply border-border; */ /* This was the first problematic line, now commented */
-    /* border-color: var(--border); */ /* If a global border color is desired for all elements */
-  }
-  body {
-    background-color: var(--background);
-    color: var(--foreground);
-  }
-}
+.header h1{margin:0;padding:14px 0;font-size:18px;font-weight:700}
 

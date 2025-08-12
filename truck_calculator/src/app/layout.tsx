@@ -1,30 +1,14 @@
-import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
-import './globals.css'
+export const metadata = { title: 'Truck Loading Space Calculator' };
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin']
-})
-
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin']
-})
-
-export const metadata: Metadata = {
-  title: 'Laderaumrechner',
-  
-}
-
-export default function RootLayout({
-  children
-}: Readonly<{
-  children: React.ReactNode
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>{children}</body>
+    <html lang="en">
+      <body>
+        <div className="header">
+          <div className="container"><h1>Truck Loading Space Calculator</h1></div>
+        </div>
+        <div className="container" style={{marginTop:16}}>{children}</div>
+      </body>
     </html>
-  )
+  );
 }
