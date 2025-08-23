@@ -1510,12 +1510,16 @@ export default function HomePage() {
       title = `${d.name} (Stapel: ${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId})`;
     if (pallet.isStackedTier === "top") title += " - Oben";
     if (pallet.isStackedTier === "base") title += " - Basis des Stapels";
+    let zIndexValue = pallet.type === "industrial" ? 20 : 10;
+    if (pallet.isStackedTier === "top") {
+      zIndexValue = pallet.type === "industrial" ? 40 : 30;
+    }
     return (
       
         {txt}
-        {pallet.isStackedTier === "top" && (
+        {pallet.isStackedTier === "top" && 
           
-        )}
+        }
       
     );
   };
