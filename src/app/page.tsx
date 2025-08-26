@@ -54,7 +54,7 @@ const pairOrder = (p: any) => (p.isStackedTier === "top" ? 1 : 0);
    - EUP broad (preferred): 3×80 across, step 120 along → 33 / 66
    - EUP long (on request): 2×120 across, step 80 + one 3-across row → also 33
    - Mixed: never leave a hole. If a DIN row ends single, fill the partner slot
-     immediately with an EUP in that SAME row (stacked if we’re in stacked stage).
+     immediately with one long EUP (80×120 rotated) in that SAME row.
    - “Stackable pallets” input N means N pallets may be stacked (topsBudget = ⌊N/2⌋).
 -------------------------------------------------------------- */
 
@@ -135,45 +135,15 @@ function calculatePlan(input: PlanInputs): PlanResult {
     unit.occupiedRects.push({ x: p.x, y: p.y, width: p.width, height: p.height });
   };
 
-  // fill partner slot in the last DIN row of each unit if exactly one DIN is there
-  const fillDinPartnerWithEUP = (stage: "stacked" | "solo") => {
-    for (const u of units) {
-      const lastX = u.currentX - 100;
-      if (lastX < 0 || eupLeft <= 0) continue;
-      const rowDIN = u.palletsVisual.filter((p: any) => p.type === "din" && p.x === lastX && !p.showAsFraction);
-      if (rowDIN.length !== 1) continue;
-      // avoid double fill
-      const alreadySomething = u.palletsVisual.some((p: any) => p.x === lastX && p.type === "euro");
-      if (alreadySomething) continue;
+  // rectangle overlap helper (to allow broad rows to fill around a long partner EUP)
+  const overlaps = (a: any, b: any) =>
+    !(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y);
 
-      const usedY = rowDIN[0].y;
-      const partnerY = usedY === 0 ? 120 : 0;
-
-      const baseId = ++ctx.eupLabel;
-      const base = {
-        x: lastX, y: partnerY, width: 80, height: 120,
-        type: "euro" as const, isStackedTier: null as any,
-        key: `eup_fill_${u.id}_${baseId}`, unitId: u.id,
-        labelId: baseId, displayBaseLabelId: baseId, displayStackedLabelId: null as any,
-        showAsFraction: false
-      };
-      push(u, base);
-      ctx.totalAreaBase += PALLET_TYPES.euro.length * PALLET_TYPES.euro.width;
-      ctx.totalWeight += ctx.eupWeight;
-      eupLeft--;
-
-      if (stage === "stacked" && eupStackable && ctx.eupTopsBudget > 0 && eupLeft > 0 && canAdd(ctx.eupWeight)) {
-        const topId = ++ctx.eupLabel;
-        u.palletsVisual[u.palletsVisual.length - 1] = {
-          ...base, isStackedTier: "base" as const, showAsFraction: true, displayStackedLabelId: topId
-        };
-        push(u, { ...base, isStackedTier: "top" as const, key: `eup_fill_top_${u.id}_${topId}`,
-          labelId: topId, displayBaseLabelId: baseId, displayStackedLabelId: topId, showAsFraction: true });
-        ctx.totalWeight += ctx.eupWeight;
-        eupLeft--;
-        ctx.eupTopsBudget--;
-      }
-    }
+  const canPlaceRect = (u: any, x: number, y: number, w: number, h: number) => {
+    if (x + w > u.length || y + h > u.width) return false;
+    const candidate = { x, y, width: w, height: h };
+    for (const r of u.occupiedRects) if (overlaps(candidate, r)) return false;
+    return true;
   };
 
   // DIN rows: true DIN raster
@@ -185,13 +155,14 @@ function calculatePlan(input: PlanInputs): PlanResult {
         let placedInRow = 0;
         for (let i = 0; i < 2 && dinLeft > 0; i++) {
           if (!canAdd(ctx.dinWeight)) { unit.currentX = unit.length; break; }
-          if (unit.currentY + 120 <= unit.width) {
+          const x = unit.currentX, y = unit.currentY, w = 100, h = 120;
+          if (canPlaceRect(unit, x, y, w, h)) {
             const baseId = ++ctx.dinLabel;
             const base = {
-              x: unit.currentX, y: unit.currentY, width: 100, height: 120,
-              type: "din" as const, isStackedTier: null as any,
-              key: `din_${stacked ? "stk" : "solo"}_${unit.id}_${baseId}_${i}`, unitId: unit.id,
-              labelId: baseId, displayBaseLabelId: baseId, displayStackedLabelId: null as any, showAsFraction: false
+              x, y, width: w, height: h, type: "din" as const,
+              isStackedTier: null as any, key: `din_${stacked ? "stk" : "solo"}_${unit.id}_${baseId}_${i}`,
+              unitId: unit.id, labelId: baseId, displayBaseLabelId: baseId, displayStackedLabelId: null as any,
+              showAsFraction: false
             };
             push(unit, base);
             ctx.totalAreaBase += PALLET_TYPES.din.length * PALLET_TYPES.din.width;
@@ -212,24 +183,27 @@ function calculatePlan(input: PlanInputs): PlanResult {
             }
 
             unit.currentY += 120;
+          } else {
+            break;
           }
         }
 
-        // inline micro-fill for SOLO stage, in the same row
+        // inline micro-fill for SOLO stage: partner slot in the SAME row
         if (!stacked && placedInRow === 1 && eupLeft > 0) {
-          const rowStartX = unit.currentX;
-          const partnerY = unit.currentY === 120 ? 0 : 120; // if first placed at y=0 then currentY=120 now
-          const baseId = ++ctx.eupLabel;
-          const base = {
-            x: rowStartX, y: partnerY, width: 80, height: 120,
-            type: "euro" as const, isStackedTier: null as any,
-            key: `eup_fill_inline_${unit.id}_${baseId}`, unitId: unit.id,
-            labelId: baseId, displayBaseLabelId: baseId, displayStackedLabelId: null as any, showAsFraction: false
-          };
-          push(unit, base);
-          ctx.totalAreaBase += PALLET_TYPES.euro.length * PALLET_TYPES.euro.width;
-          ctx.totalWeight += ctx.eupWeight;
-          eupLeft--;
+          const x = unit.currentX, partnerY = unit.currentY === 120 ? 0 : 120, w = 80, h = 120;
+          if (canPlaceRect(unit, x, partnerY, w, h)) {
+            const baseId = ++ctx.eupLabel;
+            const base = {
+              x, y: partnerY, width: w, height: h, type: "euro" as const,
+              isStackedTier: null as any, key: `eup_fill_inline_${unit.id}_${baseId}`,
+              unitId: unit.id, labelId: baseId, displayBaseLabelId: baseId, displayStackedLabelId: null as any,
+              showAsFraction: false
+            };
+            push(unit, base);
+            ctx.totalAreaBase += PALLET_TYPES.euro.length * PALLET_TYPES.euro.width;
+            ctx.totalWeight += ctx.eupWeight;
+            eupLeft--;
+          }
         }
 
         if (placedInRow > 0) unit.currentX += 100; else break;
@@ -237,120 +211,132 @@ function calculatePlan(input: PlanInputs): PlanResult {
     }
   };
 
-  // EUP variants
-  const tryPlaceEUPVariant = (variant: "broad" | "long", stacked: boolean, cloneUnits: any[], localCtx: PlaceCtx, leftInit: number) => {
+  // EUP variants (with collision checks, so 3-across rows can fill around a long partner EUP)
+  const tryPlaceEUPVariant = (
+    variant: "broad" | "long",
+    stacked: boolean,
+    cloneUnits: any[],
+    localCtx: PlaceCtx,
+    leftInit: number
+  ) => {
     let left = leftInit;
 
     if (variant === "broad") {
-      // 3 across, step 120
+      // 3 across, step 120 along
       for (const u of cloneUnits) {
         while (left > 0 && u.currentX + 120 <= u.length) {
-          u.currentY = 0;
-          let placed = 0;
-          for (let i = 0; i < 3 && left > 0; i++) {
+          const x = u.currentX;
+          // try to place up to three at y candidates [0,80,160], skipping blocked slots
+          const ys = [0, 80, 160];
+          let placedThisRow = 0;
+          for (const y of ys) {
+            if (left <= 0) break;
             if (!(localCtx.weightLimit <= 0 || localCtx.totalWeight + localCtx.eupWeight <= localCtx.weightLimit)) { u.currentX = u.length; break; }
-            if (u.currentY + 80 <= u.width) {
-              const baseId = ++localCtx.eupLabel;
-              const base = {
-                x: u.currentX, y: u.currentY, width: 120, height: 80,
-                type: "euro" as const, isStackedTier: null as any,
-                key: `eup_broad_${u.id}_${baseId}_${i}`, unitId: u.id,
-                labelId: baseId, displayBaseLabelId: baseId, displayStackedLabelId: null as any, showAsFraction: false
-              };
-              u.palletsVisual.push(base);
-              u.occupiedRects.push({ x: base.x, y: base.y, width: base.width, height: base.height });
-              localCtx.totalAreaBase += PALLET_TYPES.euro.length * PALLET_TYPES.euro.width;
-              localCtx.totalWeight += localCtx.eupWeight;
-              left--; placed++;
+            if (!canPlaceRect(u, x, y, 120, 80)) continue;
 
-              if (stacked && left > 0 && localCtx.eupTopsBudget > 0 &&
-                  (localCtx.weightLimit <= 0 || localCtx.totalWeight + localCtx.eupWeight <= localCtx.weightLimit)) {
-                const topId = ++localCtx.eupLabel;
-                u.palletsVisual[u.palletsVisual.length - 1] = {
-                  ...base, isStackedTier: "base" as const, showAsFraction: true, displayStackedLabelId: topId
-                };
-                u.palletsVisual.push({
-                  ...base, isStackedTier: "top" as const, key: `eup_broad_top_${u.id}_${topId}_${i}`,
-                  labelId: topId, displayBaseLabelId: baseId, displayStackedLabelId: topId, showAsFraction: true
-                });
-                localCtx.totalWeight += localCtx.eupWeight; left--; localCtx.eupTopsBudget--;
-              }
-              u.currentY += 80;
+            const baseId = ++localCtx.eupLabel;
+            const base = {
+              x, y, width: 120, height: 80, type: "euro" as const,
+              isStackedTier: null as any, key: `eup_broad_${u.id}_${baseId}_${y}`,
+              unitId: u.id, labelId: baseId, displayBaseLabelId: baseId, displayStackedLabelId: null as any,
+              showAsFraction: false
+            };
+            u.palletsVisual.push(base);
+            u.occupiedRects.push({ x, y, width: 120, height: 80 });
+            localCtx.totalAreaBase += PALLET_TYPES.euro.length * PALLET_TYPES.euro.width;
+            localCtx.totalWeight += localCtx.eupWeight;
+            left--; placedThisRow++;
+
+            if (stacked && left > 0 && localCtx.eupTopsBudget > 0 &&
+                (localCtx.weightLimit <= 0 || localCtx.totalWeight + localCtx.eupWeight <= localCtx.weightLimit)) {
+              const topId = ++localCtx.eupLabel;
+              u.palletsVisual[u.palletsVisual.length - 1] = {
+                ...base, isStackedTier: "base" as const, showAsFraction: true, displayStackedLabelId: topId
+              };
+              u.palletsVisual.push({
+                ...base, isStackedTier: "top" as const, key: `eup_broad_top_${u.id}_${topId}_${y}`,
+                labelId: topId, displayBaseLabelId: baseId, displayStackedLabelId: topId, showAsFraction: true
+              });
+              localCtx.totalWeight += localCtx.eupWeight; left--; localCtx.eupTopsBudget--;
             }
           }
-          if (placed > 0) u.currentX += 120; else break;
+          if (placedThisRow === 0) break;
+          u.currentX += 120;
         }
       }
     } else {
-      // long: one 3-across row (120) + then 2-across rows with step 80
+      // long: one 3-across head row (120) + 2-across rows (80 step)
       for (const u of cloneUnits) {
         if (left > 0 && u.currentX + 120 <= u.length) {
-          u.currentY = 0;
-          let placed = 0;
-          for (let i = 0; i < 3 && left > 0; i++) {
+          const x = u.currentX;
+          const ys = [0, 80, 160];
+          let placedHead = 0;
+          for (const y of ys) {
+            if (left <= 0) break;
             if (!(localCtx.weightLimit <= 0 || localCtx.totalWeight + localCtx.eupWeight <= localCtx.weightLimit)) { u.currentX = u.length; break; }
-            if (u.currentY + 80 <= u.width) {
-              const baseId = ++localCtx.eupLabel;
-              const base = {
-                x: u.currentX, y: u.currentY, width: 120, height: 80,
-                type: "euro" as const, isStackedTier: null as any, key: `eup_long_head_${u.id}_${baseId}_${i}`,
-                unitId: u.id, labelId: baseId, displayBaseLabelId: baseId, displayStackedLabelId: null as any, showAsFraction: false
+            if (!canPlaceRect(u, x, y, 120, 80)) continue;
+
+            const baseId = ++localCtx.eupLabel;
+            const base = {
+              x, y, width: 120, height: 80, type: "euro" as const,
+              isStackedTier: null as any, key: `eup_long_head_${u.id}_${baseId}_${y}`,
+              unitId: u.id, labelId: baseId, displayBaseLabelId: baseId, displayStackedLabelId: null as any, showAsFraction: false
+            };
+            u.palletsVisual.push(base);
+            u.occupiedRects.push({ x, y, width: 120, height: 80 });
+            localCtx.totalAreaBase += PALLET_TYPES.euro.length * PALLET_TYPES.euro.width;
+            localCtx.totalWeight += localCtx.eupWeight;
+            left--; placedHead++;
+            if (stacked && left > 0 && localCtx.eupTopsBudget > 0 &&
+                (localCtx.weightLimit <= 0 || localCtx.totalWeight + localCtx.eupWeight <= localCtx.weightLimit)) {
+              const topId = ++localCtx.eupLabel;
+              u.palletsVisual[u.palletsVisual.length - 1] = {
+                ...base, isStackedTier: "base" as const, showAsFraction: true, displayStackedLabelId: topId
               };
-              u.palletsVisual.push(base);
-              u.occupiedRects.push({ x: base.x, y: base.y, width: base.width, height: base.height });
-              localCtx.totalAreaBase += PALLET_TYPES.euro.length * PALLET_TYPES.euro.width;
-              localCtx.totalWeight += localCtx.eupWeight;
-              left--; placed++;
-              if (stacked && left > 0 && localCtx.eupTopsBudget > 0 &&
-                  (localCtx.weightLimit <= 0 || localCtx.totalWeight + localCtx.eupWeight <= localCtx.weightLimit)) {
-                const topId = ++localCtx.eupLabel;
-                u.palletsVisual[u.palletsVisual.length - 1] = {
-                  ...base, isStackedTier: "base" as const, showAsFraction: true, displayStackedLabelId: topId
-                };
-                u.palletsVisual.push({
-                  ...base, isStackedTier: "top" as const, key: `eup_long_head_top_${u.id}_${topId}_${i}`,
-                  labelId: topId, displayBaseLabelId: baseId, displayStackedLabelId: topId, showAsFraction: true
-                });
-                localCtx.totalWeight += localCtx.eupWeight; left--; localCtx.eupTopsBudget--;
-              }
-              u.currentY += 80;
+              u.palletsVisual.push({
+                ...base, isStackedTier: "top" as const, key: `eup_long_head_top_${u.id}_${topId}_${y}`,
+                labelId: topId, displayBaseLabelId: baseId, displayStackedLabelId: topId, showAsFraction: true
+              });
+              localCtx.totalWeight += localCtx.eupWeight; left--; localCtx.eupTopsBudget--;
             }
           }
-          if (placed > 0) u.currentX += 120;
+          if (placedHead > 0) u.currentX += 120;
         }
+
         while (left > 0 && u.currentX + 80 <= u.length) {
-          u.currentY = 0;
-          let placed = 0;
-          for (let i = 0; i < 2 && left > 0; i++) {
+          const x = u.currentX;
+          const ys = [0, 120];
+          let placedRow = 0;
+          for (const y of ys) {
+            if (left <= 0) break;
             if (!(localCtx.weightLimit <= 0 || localCtx.totalWeight + localCtx.eupWeight <= localCtx.weightLimit)) { u.currentX = u.length; break; }
-            if (u.currentY + 120 <= u.width) {
-              const baseId = ++localCtx.eupLabel;
-              const base = {
-                x: u.currentX, y: u.currentY, width: 80, height: 120,
-                type: "euro" as const, isStackedTier: null as any, key: `eup_long_${u.id}_${baseId}_${i}`,
-                unitId: u.id, labelId: baseId, displayBaseLabelId: baseId, displayStackedLabelId: null as any, showAsFraction: false
+            if (!canPlaceRect(u, x, y, 80, 120)) continue;
+
+            const baseId = ++localCtx.eupLabel;
+            const base = {
+              x, y, width: 80, height: 120, type: "euro" as const,
+              isStackedTier: null as any, key: `eup_long_${u.id}_${baseId}_${y}`,
+              unitId: u.id, labelId: baseId, displayBaseLabelId: baseId, displayStackedLabelId: null as any, showAsFraction: false
+            };
+            u.palletsVisual.push(base);
+            u.occupiedRects.push({ x, y, width: 80, height: 120 });
+            localCtx.totalAreaBase += PALLET_TYPES.euro.length * PALLET_TYPES.euro.width;
+            localCtx.totalWeight += localCtx.eupWeight;
+            left--; placedRow++;
+            if (stacked && left > 0 && localCtx.eupTopsBudget > 0 &&
+                (localCtx.weightLimit <= 0 || localCtx.totalWeight + localCtx.eupWeight <= localCtx.weightLimit)) {
+              const topId = ++localCtx.eupLabel;
+              u.palletsVisual[u.palletsVisual.length - 1] = {
+                ...base, isStackedTier: "base" as const, showAsFraction: true, displayStackedLabelId: topId
               };
-              u.palletsVisual.push(base);
-              u.occupiedRects.push({ x: base.x, y: base.y, width: base.width, height: base.height });
-              localCtx.totalAreaBase += PALLET_TYPES.euro.length * PALLET_TYPES.euro.width;
-              localCtx.totalWeight += localCtx.eupWeight;
-              left--; placed++;
-              if (stacked && left > 0 && localCtx.eupTopsBudget > 0 &&
-                  (localCtx.weightLimit <= 0 || localCtx.totalWeight + localCtx.eupWeight <= localCtx.weightLimit)) {
-                const topId = ++localCtx.eupLabel;
-                u.palletsVisual[u.palletsVisual.length - 1] = {
-                  ...base, isStackedTier: "base" as const, showAsFraction: true, displayStackedLabelId: topId
-                };
-                u.palletsVisual.push({
-                  ...base, isStackedTier: "top" as const, key: `eup_long_top_${u.id}_${topId}_${i}`,
-                  labelId: topId, displayBaseLabelId: baseId, displayStackedLabelId: topId, showAsFraction: true
-                });
-                localCtx.totalWeight += localCtx.eupWeight; left--; localCtx.eupTopsBudget--;
-              }
-              u.currentY += 120;
+              u.palletsVisual.push({
+                ...base, isStackedTier: "top" as const, key: `eup_long_top_${u.id}_${topId}_${y}`,
+                labelId: topId, displayBaseLabelId: baseId, displayStackedLabelId: topId, showAsFraction: true
+              });
+              localCtx.totalWeight += localCtx.eupWeight; left--; localCtx.eupTopsBudget--;
             }
           }
-          if (placed > 0) u.currentX += 80; else break;
+          if (placedRow > 0) u.currentX += 80; else break;
         }
       }
     }
@@ -360,17 +346,18 @@ function calculatePlan(input: PlanInputs): PlanResult {
   const placeEUP = (stacked: boolean) => {
     if (eupLeft <= 0) return;
 
-    const order: ("broad" | "long")[] = eupPattern === "auto" ? ["broad", "long"] : (eupPattern === "broad" ? ["broad"] : ["long"]);
-    let best = { score: -1, res: null as any };
+    // IMPORTANT: "auto" now **always** prefers 3-across and does not switch to "long"
+    const variants: ("broad" | "long")[] =
+      eupPattern === "auto" ? ["broad"] : eupPattern === "broad" ? ["broad"] : ["long"];
 
-    for (const v of order) {
+    let best = { score: -1, res: null as any };
+    for (const v of variants) {
       const cloneU = JSON.parse(JSON.stringify(units));
       const lctx: PlaceCtx = JSON.parse(JSON.stringify(ctx));
       const placed = tryPlaceEUPVariant(v, stacked, cloneU, lctx, eupLeft);
       const score = placed.units.reduce((s: number, u: any) => s + u.palletsVisual.length, 0);
       if (score > best.score) best = { score, res: placed };
     }
-
     if (best.res) {
       for (let i = 0; i < units.length; i++) units[i] = best.res.units[i];
       ctx.eupLabel = best.res.ctx.eupLabel;
@@ -384,8 +371,7 @@ function calculatePlan(input: PlanInputs): PlanResult {
   // ---------- pipeline (fixed) ----------
   // 1) STACKED DIN
   placeDINRows(true);
-  // micro-fill partner slot with STACKED EUP if possible
-  fillDinPartnerWithEUP("stacked");
+  // (removed: stacked-stage EUP micro-fill — keeps order clean)
   // 2) STACKED EUP
   placeEUP(true);
   // 3) DIN (solo) with inline micro-fill of partner slot per row
@@ -705,8 +691,8 @@ export default function Page() {
             {arrangement.map((unit: any) => (
               <div key={unit.unitId} className="mb-4 w-full flex flex-col items-center">
                 <div className="relative bg-gray-300 border-2 border-gray-500 overflow-hidden rounded shadow-inner"
-                  style={{ width: unit.unitWidth * truckScale, height: unit.unitLength * truckScale }}>
-                  {unit.pallets.map((p: any) => renderPallet(p, truckScale))}
+                  style={{ width: unit.unitWidth * 0.3, height: unit.unitLength * 0.3 }}>
+                  {unit.pallets.map((p: any) => renderPallet(p, 0.3))}
                 </div>
               </div>
             ))}
@@ -731,13 +717,13 @@ export default function Page() {
             <p className="font-bold text-2xl text-yellow-700">{(totalWeightKg/1000).toFixed(1)} t</p>
             <p className="text-xs mt-1">(Max: {(TRUCK_TYPES[selectedTruck].maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG)/1000} t)</p>
           </div>
-          <div className={`${warnStyle.bg} p-4 rounded border ${warnStyle.border}`}>
-            <h3 className={`font-semibold mb-2 ${warnStyle.header}`}>Meldungen</h3>
+          <div className={`p-4 rounded border ${warnings.length===0 ? "bg-green-50 border-green-200" : warnings.every(w=>w.toLowerCase().includes("achslast")) ? "bg-yellow-50 border-yellow-200" : "bg-red-50 border-red-200"}`}>
+            <h3 className="font-semibold mb-2">{warnings.length===0 ? "Meldungen" : "Hinweise"}</h3>
             {warnings.length ? (
-              <ul className={`list-disc list-inside text-sm space-y-1 ${warnStyle.list}`}>
+              <ul className="list-disc list-inside text-sm space-y-1">
                 {warnings.map((w,i)=><li key={i}>{w}</li>)}
               </ul>
-            ) : <p className={`text-sm ${warnStyle.list}`}>Keine Probleme erkannt.</p>}
+            ) : <p className="text-sm">Keine Probleme erkannt.</p>}
           </div>
         </div>
       </main>
