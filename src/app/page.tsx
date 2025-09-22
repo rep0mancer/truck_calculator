@@ -95,132 +95,132 @@ const MAX_WEIGHT_PER_METER_KG = 1800;
 
 // Core calculation logic (remains unchanged from your latest working version)
 const calculateLoadingLogic = (
-  truckKey,
-  requestedEupQuantity,
-  requestedDinQuantity,
-  currentIsEUPStackable,
-  currentIsDINStackable,
-  eupWeightStr,
-  dinWeightStr,
-  currentEupLoadingPattern,
-  placementOrder = 'DIN_FIRST',
-  maxStackedEup?,
-  maxStackedDin?
+  truckKey,
+  requestedEupQuantity,
+  requestedDinQuantity,
+  currentIsEUPStackable,
+  currentIsDINStackable,
+  eupWeightStr,
+  dinWeightStr,
+  currentEupLoadingPattern,
+  placementOrder = 'DIN_FIRST',
+  maxStackedEup?,
+  maxStackedDin?
 ) => {
-  const truckConfig = JSON.parse(JSON.stringify(TRUCK_TYPES[truckKey]));
-  const weightLimit = truckConfig.maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG;
-  let tempWarnings = [];
-  let finalTotalEuroVisual = 0;
-  let finalTotalDinVisual = 0;
-  let finalActualEUPBase = 0;
-  let finalActualDINBase = 0;
-  let finalTotalAreaBase = 0;
-  let currentTotalWeight = 0;
-  let dinLabelGlobalCounter = 0;
-  let eupLabelGlobalCounter = 0;
+  const truckConfig = JSON.parse(JSON.stringify(TRUCK_TYPES[truckKey]));
+  const weightLimit = truckConfig.maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG;
+  let tempWarnings = [];
+  let finalTotalEuroVisual = 0;
+  let finalTotalDinVisual = 0;
+  let finalActualEUPBase = 0;
+  let finalActualDINBase = 0;
+  let finalTotalAreaBase = 0;
+  let currentTotalWeight = 0;
+  let dinLabelGlobalCounter = 0;
+  let eupLabelGlobalCounter = 0;
 
-  const eupWeight = parseFloat(eupWeightStr) || 0;
-  const dinWeight = parseFloat(dinWeightStr) || 0;
-  const safeEupWeight = eupWeight > 0 ? eupWeight : 0;
-  const safeDinWeight = dinWeight > 0 ? dinWeight : 0;
+  const eupWeight = parseFloat(eupWeightStr) || 0;
+  const dinWeight = parseFloat(dinWeightStr) || 0;
+  const safeEupWeight = eupWeight > 0 ? eupWeight : 0;
+  const safeDinWeight = dinWeight > 0 ? dinWeight : 0;
 
-  const allowedEupStack = currentIsEUPStackable
-    ? (maxStackedEup && maxStackedEup > 0
-        ? Math.floor(maxStackedEup / 2)
-        : Infinity)
-    : 0;
-  const allowedDinStack = currentIsDINStackable
-    ? (maxStackedDin && maxStackedDin > 0
-        ? Math.floor(maxStackedDin / 2)
-        : Infinity)
-    : 0;
-  let eupStacked = 0, dinStacked = 0;
+  const allowedEupStack = currentIsEUPStackable
+    ? (maxStackedEup && maxStackedEup > 0
+        ? Math.floor(maxStackedEup / 2)
+        : Infinity)
+    : 0;
+  const allowedDinStack = currentIsDINStackable
+    ? (maxStackedDin && maxStackedDin > 0
+        ? Math.floor(maxStackedDin / 2)
+        : Infinity)
+    : 0;
+  let eupStacked = 0, dinStacked = 0;
 
-  let unitsState = truckConfig.units.map(u => ({
-    ...u, occupiedRects: [], currentX: 0, currentY: 0, palletsVisual: [],
-    dinEndX: 0, dinEndY: 0, dinLastRowIncomplete: false, eupStartX: 0,
-    eupEndX: 0, eupEndY: 0, eupLastRowIncomplete: false, dinStartX: 0,
-  }));
+  let unitsState = truckConfig.units.map(u => ({
+    ...u, occupiedRects: [], currentX: 0, currentY: 0, palletsVisual: [],
+    dinEndX: 0, dinEndY: 0, dinLastRowIncomplete: false, eupStartX: 0,
+    eupEndX: 0, eupEndY: 0, eupLastRowIncomplete: false, dinStartX: 0,
+  }));
 
-  let dinQuantityToPlace = requestedDinQuantity;
-  let eupQuantityToPlace = requestedEupQuantity;
+  let dinQuantityToPlace = requestedDinQuantity;
+  let eupQuantityToPlace = requestedEupQuantity;
 
-  if (truckConfig.maxDinPallets !== undefined && dinQuantityToPlace > truckConfig.maxDinPallets) {
-    if (requestedDinQuantity > truckConfig.maxDinPallets && requestedDinQuantity !== MAX_PALLET_SIMULATION_QUANTITY) { // Avoid warning during simulation
-        tempWarnings.push(
-            `${truckConfig.name.trim()} maximale DIN-Kapazität ist ${truckConfig.maxDinPallets}. ` +
-            `Angeforderte Menge ${requestedDinQuantity}, es werden ${truckConfig.maxDinPallets} platziert.`
-        );
-    }
-    dinQuantityToPlace = truckConfig.maxDinPallets;
-  }
+  if (truckConfig.maxDinPallets !== undefined && dinQuantityToPlace > truckConfig.maxDinPallets) {
+    if (requestedDinQuantity > truckConfig.maxDinPallets && requestedDinQuantity !== MAX_PALLET_SIMULATION_QUANTITY) {
+      tempWarnings.push(
+        `${truckConfig.name.trim()} maximale DIN-Kapazität ist ${truckConfig.maxDinPallets}. ` +
+        `Angeforderte Menge ${requestedDinQuantity}, es werden ${truckConfig.maxDinPallets} platziert.`
+      );
+    }
+    dinQuantityToPlace = truckConfig.maxDinPallets;
+  }
+  
+  let bestEUPResultConfig = undefined;
+  let bestEUPResultConfig_DIN_FIRST = undefined;
 
-  let bestEUPResultConfig = undefined;
-  let bestEUPResultConfig_DIN_FIRST = undefined;
+  if (placementOrder === 'EUP_FIRST') {
+    // This block remains unchanged from your original code.
+    bestEUPResultConfig = {
+        unitsConfiguration: JSON.parse(JSON.stringify(unitsState)),
+        totalVisualEUPs: 0, baseEUPs: 0, areaEUPs: 0, tempWarnings: [],
+        currentWeightAfterEUPs: currentTotalWeight,
+        chosenPattern: (currentEupLoadingPattern !== 'auto' ? currentEupLoadingPattern : 'none'),
+        finalEupLabelCounter: eupLabelGlobalCounter,
+    };
 
-  if (placementOrder === 'EUP_FIRST') {
-    bestEUPResultConfig = {
-        unitsConfiguration: JSON.parse(JSON.stringify(unitsState)),
-        totalVisualEUPs: 0, baseEUPs: 0, areaEUPs: 0, tempWarnings: [],
-        currentWeightAfterEUPs: currentTotalWeight,
-        chosenPattern: (currentEupLoadingPattern !== 'auto' ? currentEupLoadingPattern : 'none'),
-        finalEupLabelCounter: eupLabelGlobalCounter,
-    };
+    if (eupQuantityToPlace > 0) {
+        const patternsToTry = currentEupLoadingPattern === 'auto' ? ['long', 'broad'] : [currentEupLoadingPattern];
+        let aPatternHasBeenSetAsBest = (currentEupLoadingPattern !== 'auto');
 
-    if (eupQuantityToPlace > 0) {
-        const patternsToTry = currentEupLoadingPattern === 'auto' ? ['long', 'broad'] : [currentEupLoadingPattern];
-        let aPatternHasBeenSetAsBest = (currentEupLoadingPattern !== 'auto');
+        for (const pattern of patternsToTry) {
+            let currentUnitsAttempt = JSON.parse(JSON.stringify(unitsState));
+            let patternVisualEUP = 0, patternBaseEUP = 0, patternAreaEUP = 0;
+            let patternWeight = currentTotalWeight;
+            let patternWarnLocal = [];
+            let patternRemainingEup = eupQuantityToPlace;
+            let currentPatternEupCounter = eupLabelGlobalCounter;
 
-        for (const pattern of patternsToTry) {
-            let currentUnitsAttempt = JSON.parse(JSON.stringify(unitsState));
-            let patternVisualEUP = 0, patternBaseEUP = 0, patternAreaEUP = 0;
-            let patternWeight = currentTotalWeight;
-            let patternWarnLocal = [];
-            let patternRemainingEup = eupQuantityToPlace;
-            let currentPatternEupCounter = eupLabelGlobalCounter;
-
-            for (const unit of currentUnitsAttempt) {
-                if (patternRemainingEup <= 0) break;
-                unit.currentX = 0; unit.currentY = 0;
-                const effectiveLength = unit.length;
-                while (unit.currentX < effectiveLength) {
-                    if (patternRemainingEup <= 0) break;
-                    let rowCount = 0; const eupDef = PALLET_TYPES.euro;
-                    const palletsPerRow = (pattern === 'long' ? 3 : 2);
-                    const eupLen = pattern === 'long' ? eupDef.length : eupDef.width;
-                    const eupWid = pattern === 'long' ? eupDef.width : eupDef.length;
-                    let rowHeight = 0; unit.currentY = 0;
-                    for (let i = 0; i < palletsPerRow; i++) {
-                        if (patternRemainingEup <= 0) break;
-                        if (safeEupWeight > 0 && patternWeight + safeEupWeight > weightLimit) {
-                            if (!patternWarnLocal.some(w => w.includes('Gewichtslimit für EUP'))) patternWarnLocal.push(`Gewichtslimit für EUP-Paletten erreicht. Max ${weightLimit / 1000}t.`);
-                            unit.currentX = effectiveLength; break;
-                        }
-                        if (unit.currentX + eupLen <= effectiveLength && unit.currentY + eupWid <= unit.width) {
-                            const baseEupLabelId = ++currentPatternEupCounter; let stackedEupLabelId = null;
-                            const baseEupPallet = {
-                                x: unit.currentX, y: unit.currentY, width: eupLen, height: eupWid, type: 'euro',
-                                isStackedTier: null, key: `eup_base_${unit.id}_${patternBaseEUP}_${pattern}_${i}`, unitId: unit.id,
-                                labelId: baseEupLabelId, displayBaseLabelId: baseEupLabelId, displayStackedLabelId: null, showAsFraction: false,
-                            };
-                            unit.palletsVisual.push(baseEupPallet);
-                            unit.occupiedRects.push({ x: unit.currentX, y: unit.currentY, width: eupLen, height: eupWid });
-                            patternAreaEUP += eupDef.area; patternBaseEUP++; patternVisualEUP++;
-                            patternWeight += safeEupWeight; patternRemainingEup--; rowCount++;
-                            rowHeight = Math.max(rowHeight, eupLen);
-                            if (currentIsEUPStackable && patternRemainingEup > 0 && eupStacked < allowedEupStack) {
-                                if (!(safeEupWeight > 0 && patternWeight + safeEupWeight > weightLimit)) {
-                                    stackedEupLabelId = ++currentPatternEupCounter;
-                                    baseEupPallet.showAsFraction = true; baseEupPallet.displayStackedLabelId = stackedEupLabelId; baseEupPallet.isStackedTier = 'base';
-                                    unit.palletsVisual.push({
-                                       ...baseEupPallet, isStackedTier: 'top', key: `eup_stack_${unit.id}_${patternBaseEUP - 1}_${pattern}_${i}`,
-                                        labelId: stackedEupLabelId, displayBaseLabelId: baseEupLabelId, displayStackedLabelId: stackedEupLabelId, showAsFraction: true,
-                                    });
-                                    patternVisualEUP++; patternWeight += safeEupWeight; patternRemainingEup--; eupStacked++;
-                                } else if (!patternWarnLocal.some(w => w.includes('Stapeln von EUP'))) patternWarnLocal.push('Gewichtslimit beim Stapeln von EUP.');
-                            }
-                            unit.currentY += eupWid;
-                        } else break;
+            for (const unit of currentUnitsAttempt) {
+                if (patternRemainingEup <= 0) break;
+                unit.currentX = 0; unit.currentY = 0;
+                const effectiveLength = unit.length;
+                while (unit.currentX < effectiveLength) {
+                    if (patternRemainingEup <= 0) break;
+                    let rowCount = 0; const eupDef = PALLET_TYPES.euro;
+                    const palletsPerRow = (pattern === 'long' ? 3 : 2);
+                    const eupLen = pattern === 'long' ? eupDef.length : eupDef.width;
+                    const eupWid = pattern === 'long' ? eupDef.width : eupDef.length;
+                    let rowHeight = 0; unit.currentY = 0;
+                    for (let i = 0; i < palletsPerRow; i++) {
+                        if (patternRemainingEup <= 0) break;
+                        if (safeEupWeight > 0 && patternWeight + safeEupWeight > weightLimit) {
+                            if (!patternWarnLocal.some(w => w.includes('Gewichtslimit für EUP'))) patternWarnLocal.push(`Gewichtslimit für EUP-Paletten erreicht. Max ${weightLimit / 1000}t.`);
+                            unit.currentX = effectiveLength; break;
+                        }
+                        if (unit.currentX + eupLen <= effectiveLength && unit.currentY + eupWid <= unit.width) {
+                            const baseEupLabelId = ++currentPatternEupCounter; let stackedEupLabelId = null;
+                            const baseEupPallet = {
+                                x: unit.currentX, y: unit.currentY, width: eupLen, height: eupWid, type: 'euro',
+                                isStackedTier: null, key: `eup_base_${unit.id}_${patternBaseEUP}_${pattern}_${i}`, unitId: unit.id,
+                                labelId: baseEupLabelId, displayBaseLabelId: baseEupLabelId, displayStackedLabelId: null, showAsFraction: false,
+                            };
+                            unit.palletsVisual.push(baseEupPallet);
+                            unit.occupiedRects.push({ x: unit.currentX, y: unit.currentY, width: eupLen, height: eupWid });
+                            patternAreaEUP += eupDef.area; patternBaseEUP++; patternVisualEUP++;
+                            patternWeight += safeEupWeight; patternRemainingEup--; rowCount++;
+                            rowHeight = Math.max(rowHeight, eupLen);
+                            if (currentIsEUPStackable && patternRemainingEup > 0 && eupStacked < allowedEupStack) {
+                                if (!(safeEupWeight > 0 && patternWeight + safeEupWeight > weightLimit)) {
+                                    stackedEupLabelId = ++currentPatternEupCounter;
+                                    baseEupPallet.showAsFraction = true; baseEupPallet.displayStackedLabelId = stackedEupLabelId; baseEupPallet.isStackedTier = 'base';
+                                    unit.palletsVisual.push({
+                                       ...baseEupPallet, isStackedTier: 'top', key: `eup_stack_${unit.id}_${patternBaseEUP - 1}_${pattern}_${i}`,
+                                        labelId: stackedEupLabelId, displayBaseLabelId: baseEupLabelId, displayStackedLabelId: stackedEupLabelId, showAsFraction: true,
+                                    });
+                                    patternVisualEUP++; patternWeight += safeEupWeight; patternRemainingEup--; eupStacked++;
+                                } else if (!patternWarnLocal.some(w => w.includes('Stapeln von EUP'))) patternWarnLocal.push('Gewichtslimit beim Stapeln von EUP.');
+                            }
+                            unit.currentY += eupWid;
                     }
                     if (unit.currentX >= effectiveLength) break;
                     if (rowCount > 0) unit.currentX += rowHeight; else unit.currentX = effectiveLength;
