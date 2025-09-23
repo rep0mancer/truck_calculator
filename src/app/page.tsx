@@ -498,10 +498,16 @@ export default function HomePage() {
 
   return (
     <div className="container mx-auto p-4 font-sans bg-gray-50">
-      <header className="bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
-        <h1 className="text-3xl font-bold text-center tracking-tight">Laderaumrechner</h1>
-        <p className="text-center text-sm opacity-90">Visualisierung der Palettenplatzierung (Europäische Standards)</p>
-      </header>
+      <header className="relative bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
+  {/* The new, absolutely positioned text block */}
+  <div className="absolute top-2 right-4 text-right text-xs opacity-75">
+    <p>Laderaumrechner © {new Date().getFullYear()}</p>
+    <p>by Andreas Steiner</p>
+  </div>
+
+  <h1 className="text-3xl font-bold text-center tracking-tight">Laderaumrechner</h1>
+  <p className="text-center text-sm opacity-90">Visualisierung der Palettenplatzierung (Europäische Standards)</p>
+</header>
       <main className="p-6 bg-white shadow-lg rounded-b-lg">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="lg:col-span-1 space-y-6 bg-slate-50 p-5 rounded-lg border border-slate-200 shadow-sm">
@@ -617,8 +623,8 @@ export default function HomePage() {
         </div>
       </main>
       <footer className="text-center py-4 mt-8 text-sm text-gray-500 border-t border-gray-200">
-        <p>Laderaumrechner © {new Date().getFullYear()}</p>
-         <p>by Andreas Steiner </p>
+        <p>Laderaumrechner © {new Date().getFullYear()} by Andreas Steiner</p>
+         
       </footer>
       <Toaster />
     </div>
