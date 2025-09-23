@@ -105,6 +105,7 @@ const MAX_WEIGHT_PER_METER_KG = 1800;
  */
 // Core calculation logic (REFACTORED for correct stacking order)
 // Core calculation logic (REVISED to correctly sequence stacked/single pallets)
+// Core calculation logic (FINAL REVISION for state management)
 const calculateLoadingLogic = (
   truckKey,
   requestedEupQuantity,
@@ -126,6 +127,7 @@ const calculateLoadingLogic = (
   const safeDinWeight = dinWeight > 0 ? dinWeight : 0;
 
   // 1. Determine quantities for each of the four loading phases
+  // A limit of 0 is interpreted as "all are stackable" (Infinity).
   const allowedEupStackBases = currentIsEUPStackable ? (maxStackedEup && maxStackedEup > 0 ? Math.floor(maxStackedEup / 2) : Infinity) : 0;
   const allowedDinStackBases = currentIsDINStackable ? (maxStackedDin && maxStackedDin > 0 ? Math.floor(maxStackedDin / 2) : Infinity) : 0;
 
@@ -182,7 +184,6 @@ const calculateLoadingLogic = (
           let rowHeight = 0; unit.currentY = 0;
           for (let i = 0; i < 2; i++) {
             if (dinStackedPlaced >= dinStackedTotal) break;
-            // Check for a full stack's weight
             if (safeDinWeight > 0 && currentTotalWeight + (safeDinWeight * 2) > weightLimit) {
               if (!tempWarnings.some(w => w.includes("Gewichtslimit für DIN"))) tempWarnings.push(`Gewichtslimit für DIN-Paletten erreicht. Max ${weightLimit / 1000}t.`);
               stopAllPlacement = true; break;
@@ -220,42 +221,40 @@ const calculateLoadingLogic = (
     // --- PHASE 2: PLACE STACKED EUP PALLETS ---
     let eupStackedPlaced = 0;
     if (eupStackedTotal > 0 && !stopAllPlacement) {
-        // This logic is complex, reusing the gap-filling and pattern placement from your original code
-        // It's intentionally duplicated and adapted to ONLY handle stacking.
-        const originalEupLogicForStacking = (unit, remainingToPlace) => {
-            let placedInThisUnit = 0;
-            // A. Gap Filling
-            if (unit.dinLastRowIncomplete && placedInThisUnit < remainingToPlace) {
+        for (const unit of unitsState) {
+            if (eupStackedPlaced >= eupStackedTotal || stopAllPlacement) break;
+            
+            unit.currentX = unit.eupStartX;
+            if (unit.dinLastRowIncomplete) {
               const gapX = unit.dinEndX - PALLET_TYPES.industrial.width; const gapY = PALLET_TYPES.industrial.length;
               const gapWidth = unit.width - gapY; const dinLenInRow = PALLET_TYPES.industrial.width;
-              const eupDef = PALLET_TYPES.euro; let placedInGap = false; let gapConfig = null;
+              const eupDef = PALLET_TYPES.euro; let gapConfig = null;
               
               if (eupPattern === 'broad' && gapWidth >= eupDef.length && dinLenInRow >= eupDef.width) gapConfig = { w: eupDef.width, h: eupDef.length };
               else if (eupPattern === 'long' && gapWidth >= eupDef.width && dinLenInRow >= eupDef.length) gapConfig = { w: eupDef.length, h: eupDef.width };
               
               if (gapConfig && (safeEupWeight === 0 || currentTotalWeight + (safeEupWeight * 2) <= weightLimit)) {
-                  placedInGap = true;
                   const baseEupLabelId = ++eupLabelGlobalCounter, stackedEupLabelId = ++eupLabelGlobalCounter;
                   const baseGapPallet = { x: gapX, y: gapY, width: gapConfig.w, height: gapConfig.h, type: 'euro', isStackedTier: 'base', key: `eup_gap_base_s_${finalActualEUPBase}`, unitId: unit.id, labelId: baseEupLabelId, displayBaseLabelId: baseEupLabelId, displayStackedLabelId: stackedEupLabelId, showAsFraction: true };
                   unit.palletsVisual.push(baseGapPallet);
                   unit.palletsVisual.push({ ...baseGapPallet, isStackedTier: 'top', key: `eup_gap_stack_s_${finalActualEUPBase}`, labelId: stackedEupLabelId });
                   unit.occupiedRects.push({ x: gapX, y: gapY, width: gapConfig.w, height: gapConfig.h });
                   finalTotalAreaBase += eupDef.area; finalActualEUPBase++; currentTotalWeight += safeEupWeight * 2;
-                  placedInThisUnit += 2;
-                  unit.eupStartX = unit.dinEndX;
-                  unit.dinLastRowIncomplete = false; // Gap is now filled
+                  eupStackedPlaced += 2;
+                  unit.dinLastRowIncomplete = false; 
               } else if (gapConfig) { stopAllPlacement = true; }
             }
-            // B. Main placement
-            unit.currentX = unit.eupStartX;
-            while(unit.currentX < unit.length && placedInThisUnit < remainingToPlace && !stopAllPlacement) {
+            if(stopAllPlacement) break;
+
+            while(unit.currentX < unit.length) {
+              if (eupStackedPlaced >= eupStackedTotal) break;
               let rowCount = 0; const eupDef = PALLET_TYPES.euro;
               const palletsPerRow = (eupPattern === 'long' ? 3 : 2);
               const eupLen = eupPattern === 'long' ? eupDef.length : eupDef.width;
               const eupWid = eupPattern === 'long' ? eupDef.width : eupDef.length;
               let rowHeight = 0; unit.currentY = 0;
               for (let i = 0; i < palletsPerRow; i++) {
-                if (placedInThisUnit >= remainingToPlace) break;
+                if (eupStackedPlaced >= eupStackedTotal) break;
                 if (safeEupWeight > 0 && currentTotalWeight + (safeEupWeight*2) > weightLimit) { stopAllPlacement = true; break; }
                 if (unit.currentX + eupLen <= unit.length && unit.currentY + eupWid <= unit.width) {
                   const baseEupLabelId = ++eupLabelGlobalCounter, stackedEupLabelId = ++eupLabelGlobalCounter;
@@ -264,30 +263,29 @@ const calculateLoadingLogic = (
                   unit.palletsVisual.push({ ...baseEupPallet, isStackedTier: 'top', key: `eup_stack_s_${unit.id}_${finalActualEUPBase}`, labelId: stackedEupLabelId });
                   unit.occupiedRects.push({ x: unit.currentX, y: unit.currentY, width: eupLen, height: eupWid });
                   finalTotalAreaBase += eupDef.area; finalActualEUPBase++; currentTotalWeight += safeEupWeight * 2;
-                  placedInThisUnit += 2; rowCount++;
+                  eupStackedPlaced += 2; rowCount++;
                   rowHeight = Math.max(rowHeight, eupLen);
                   unit.currentY += eupWid;
                 } else { stopAllPlacement = true; break; }
               }
+              if(stopAllPlacement) break;
               if (rowCount > 0) unit.currentX += rowHeight; else unit.currentX = unit.length;
             }
-            unit.dinEndX = unit.currentX; // Update end position for the next phase
-            unit.eupStartX = unit.currentX;
-            return placedInThisUnit;
         }
-        for (const unit of unitsState) {
-          if (eupStackedPlaced >= eupStackedTotal || stopAllPlacement) break;
-          const placed = originalEupLogicForStacking(unit, eupStackedTotal - eupStackedPlaced);
-          eupStackedPlaced += placed;
-        }
+    }
+    
+    // *** FIX IS HERE: This block updates the state after Phase 2 is complete ***
+    for (const unit of unitsState) {
+        unit.dinEndX = unit.currentX;
+        unit.eupStartX = unit.currentX;
+        unit.dinLastRowIncomplete = false; 
     }
 
     // --- PHASE 3: PLACE SINGLE DIN PALLETS ---
     let dinSinglePlaced = 0;
     if (dinSingleTotal > 0 && !stopAllPlacement) {
         for (const unit of unitsState) {
-            if (dinSinglePlaced >= dinSingleTotal || stopAllPlacement) break;
-            // Start where the last phase left off
+            if (dinSinglePlaced >= dinSingleTotal) break;
             unit.currentX = unit.dinEndX;
             while(unit.currentX < unit.length) {
               if (dinSinglePlaced >= dinSingleTotal) break;
@@ -322,39 +320,38 @@ const calculateLoadingLogic = (
     // --- PHASE 4: PLACE SINGLE EUP PALLETS ---
     let eupSinglePlaced = 0;
     if (eupSingleTotal > 0 && !stopAllPlacement) {
-      const originalEupLogicForSingles = (unit, remainingToPlace) => {
-        let placedInThisUnit = 0;
-        // A. Gap Filling
-        if (unit.dinLastRowIncomplete && placedInThisUnit < remainingToPlace) {
+      for (const unit of unitsState) {
+        if (eupSinglePlaced >= eupSingleTotal || stopAllPlacement) break;
+        unit.currentX = unit.eupStartX;
+        if (unit.dinLastRowIncomplete) {
             const gapX = unit.dinEndX - PALLET_TYPES.industrial.width; const gapY = PALLET_TYPES.industrial.length;
             const gapWidth = unit.width - gapY; const dinLenInRow = PALLET_TYPES.industrial.width;
-            const eupDef = PALLET_TYPES.euro; let placedInGap = false; let gapConfig = null;
+            const eupDef = PALLET_TYPES.euro; let gapConfig = null;
             
             if (eupPattern === 'broad' && gapWidth >= eupDef.length && dinLenInRow >= eupDef.width) gapConfig = { w: eupDef.width, h: eupDef.length };
             else if (eupPattern === 'long' && gapWidth >= eupDef.width && dinLenInRow >= eupDef.length) gapConfig = { w: eupDef.length, h: eupDef.width };
             
             if (gapConfig && (safeEupWeight === 0 || currentTotalWeight + safeEupWeight <= weightLimit)) {
-                placedInGap = true;
                 const baseEupLabelId = ++eupLabelGlobalCounter;
                 const baseGapPallet = { x: gapX, y: gapY, width: gapConfig.w, height: gapConfig.h, type: 'euro', isStackedTier: null, key: `eup_gap_base_single_${finalActualEUPBase}`, unitId: unit.id, labelId: baseEupLabelId, displayBaseLabelId: baseEupLabelId, displayStackedLabelId: null, showAsFraction: false };
                 unit.palletsVisual.push(baseGapPallet);
                 unit.occupiedRects.push({ x: gapX, y: gapY, width: gapConfig.w, height: gapConfig.h });
                 finalTotalAreaBase += eupDef.area; finalActualEUPBase++; currentTotalWeight += safeEupWeight;
-                placedInThisUnit++;
-                unit.eupStartX = unit.dinEndX;
+                eupSinglePlaced++;
                 unit.dinLastRowIncomplete = false;
             } else if (gapConfig) { stopAllPlacement = true; }
         }
-        // B. Main placement
-        unit.currentX = unit.eupStartX;
-        while(unit.currentX < unit.length && placedInThisUnit < remainingToPlace && !stopAllPlacement) {
+        if (stopAllPlacement) break;
+
+        while(unit.currentX < unit.length) {
+            if (eupSinglePlaced >= eupSingleTotal) break;
             let rowCount = 0; const eupDef = PALLET_TYPES.euro;
             const palletsPerRow = (eupPattern === 'long' ? 3 : 2);
             const eupLen = eupPattern === 'long' ? eupDef.length : eupDef.width;
             const eupWid = eupPattern === 'long' ? eupDef.width : eupDef.length;
             let rowHeight = 0; unit.currentY = 0;
             for (let i = 0; i < palletsPerRow; i++) {
-                if (placedInThisUnit >= remainingToPlace) break;
+                if (eupSinglePlaced >= eupSingleTotal) break;
                 if (safeEupWeight > 0 && currentTotalWeight + safeEupWeight > weightLimit) { stopAllPlacement = true; break; }
                 if (unit.currentX + eupLen <= unit.length && unit.currentY + eupWid <= unit.width) {
                     const baseEupLabelId = ++eupLabelGlobalCounter;
@@ -362,19 +359,14 @@ const calculateLoadingLogic = (
                     unit.palletsVisual.push(baseEupPallet);
                     unit.occupiedRects.push({ x: unit.currentX, y: unit.currentY, width: eupLen, height: eupWid });
                     finalTotalAreaBase += eupDef.area; finalActualEUPBase++; currentTotalWeight += safeEupWeight;
-                    placedInThisUnit++; rowCount++;
+                    eupSinglePlaced++; rowCount++;
                     rowHeight = Math.max(rowHeight, eupLen);
                     unit.currentY += eupWid;
                 } else { stopAllPlacement = true; break; }
             }
+            if (stopAllPlacement) break;
             if (rowCount > 0) unit.currentX += rowHeight; else unit.currentX = unit.length;
         }
-        return placedInThisUnit;
-      }
-      for (const unit of unitsState) {
-        if (eupSinglePlaced >= eupSingleTotal || stopAllPlacement) break;
-        const placed = originalEupLogicForSingles(unit, eupSingleTotal - eupSinglePlaced);
-        eupSinglePlaced += placed;
       }
     }
 
@@ -409,10 +401,10 @@ const calculateLoadingLogic = (
             chosenPattern: eupPattern,
         };
     }
-  } // end pattern loop
+  } 
 
   // 3. Finalize and return the best result found
-  const finalResult = bestOverallResult; // Use the best result from the pattern tests
+  const finalResult = bestOverallResult; 
   const finalPalletArrangement = finalResult.unitsState.map(u => ({
     unitId: u.id, unitLength: u.length, unitWidth: u.width, pallets: u.palletsVisual
   }));
