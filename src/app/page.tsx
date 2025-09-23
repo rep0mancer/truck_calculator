@@ -287,6 +287,33 @@ const calculateLoadingLogic = (
   
   let finalWarnings = [...finalResult.warnings];
 
+  // --- AXLE LOAD HEURISTICS RE-IMPLEMENTED ---
+  const usedLength = truckConfig.maxWidth > 0 ? (finalResult.totalAreaBase / truckConfig.maxWidth) : 0;
+  
+  if (usedLength > 0) {
+      const weightPerMeter = finalResult.totalWeightKg / (usedLength / 100);
+      if (weightPerMeter >= MAX_WEIGHT_PER_METER_KG) {
+          finalWarnings.push(`ACHTUNG – mögliche Achslastüberschreitung: ${weightPerMeter.toFixed(1)} kg/m`);
+      }
+  }
+  
+  if (truckConfig.usableLength > 0) {
+      const usedLengthPercentage = (usedLength / truckConfig.usableLength) * 100;
+      if (finalResult.totalWeightKg >= 10500 && usedLengthPercentage <= 40) {
+          finalWarnings.push('ACHTUNG – mehr als 10.5t auf weniger als 40% der Ladefläche');
+      }
+  }
+
+  const stackedDinPallets = finalResult.totalDinPalletsVisual - finalResult.loadedIndustrialPalletsBase;
+  const stackedEupPallets = finalResult.totalEuroPalletsVisual - finalResult.loadedEuroPalletsBase;
+  
+  if (stackedDinPallets >= STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING) {
+      finalWarnings.push(`ACHTUNG - ACHSLAST bei DIN im AUGE BEHALTEN! (${stackedDinPallets} gestapelte DIN)`);
+  }
+  if (stackedEupPallets >= STACKED_EUP_THRESHOLD_FOR_AXLE_WARNING) {
+      finalWarnings.push(`ACHTUNG - ACHSLAST bei EUP im AUGE BEHALTEN! (${stackedEupPallets} gestapelte EUP)`);
+  }
+
   return {
     palletArrangement: finalPalletArrangement,
     loadedIndustrialPalletsBase: finalResult.loadedIndustrialPalletsBase,
@@ -299,7 +326,6 @@ const calculateLoadingLogic = (
     eupLoadingPatternUsed: finalResult.totalEuroPalletsVisual > 0 ? finalResult.chosenPattern : 'none',
   };
 };
-
 export default function HomePage() {
   const [selectedTruck, setSelectedTruck] = useState('curtainSider');
   const [eupQuantity, setEupQuantity] = useState(0);
