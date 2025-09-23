@@ -110,6 +110,7 @@ const MAX_WEIGHT_PER_METER_KG = 1800;
 // Core calculation logic (FINAL VERSION + Rotation Heuristic)
 // Core calculation logic (FINAL VERSION + Dynamic Row Optimization)
 // Core calculation logic (FINAL VERSION with true Auto-Optimization)
+// Core calculation logic (FINAL VERSION with true Auto-Optimization + Tactical Rotation)
 const calculateLoadingLogic = (
   truckKey,
   requestedEupQuantity,
@@ -130,7 +131,6 @@ const calculateLoadingLogic = (
   const safeEupWeight = eupWeight > 0 ? eupWeight : 0;
   const safeDinWeight = dinWeight > 0 ? dinWeight : 0;
   
-  // When set to 'auto', we must simulate both patterns to find the true optimum.
   const patternsToTry = currentEupLoadingPattern === 'auto' ? ['broad', 'long'] : [currentEupLoadingPattern];
   let bestOverallResult = null;
 
@@ -200,6 +200,9 @@ const calculateLoadingLogic = (
         const palletDef = isEuro ? PALLET_TYPES.euro : PALLET_TYPES.industrial;
 
         let palletLen, palletWid;
+        let finalLen, finalWid;
+
+        // Determine primary dimensions from the global pattern
         if (isEuro) {
           palletLen = eupPattern === 'long' ? palletDef.length : palletDef.width;
           palletWid = eupPattern === 'long' ? palletDef.width : palletDef.length;
@@ -207,31 +210,52 @@ const calculateLoadingLogic = (
           palletLen = palletDef.width;
           palletWid = palletDef.length;
         }
-        
-        // If pallet doesn't fit in the current row's width, try rotating it or start a new row
-        if (currentY > 0 && currentY + palletWid > unit.width) {
-          let rotated = false;
-          if (isEuro) {
+
+        // --- NEW TACTICAL PLACEMENT LOGIC ---
+        let placeable = false;
+
+        // Step 1: Check if pallet fits in the current row.
+        if (currentY + palletWid <= unit.width && currentX + palletLen <= unit.length) {
+            finalLen = palletLen;
+            finalWid = palletWid;
+            placeable = true;
+        }
+        // Step 2: If not, and it's an EUP in auto mode, try rotating it.
+        else if (isEuro && currentEupLoadingPattern === 'auto') {
             const rotatedLen = palletWid;
             const rotatedWid = palletLen;
-            if (currentY + rotatedWid <= unit.width) {
-              palletLen = rotatedLen;
-              palletWid = rotatedWid;
-              rotated = true;
+            if (currentY + rotatedWid <= unit.width && currentX + rotatedLen <= unit.length) {
+                finalLen = rotatedLen;
+                finalWid = rotatedWid;
+                placeable = true;
             }
-          }
+        }
 
-          if (!rotated) {
+        // Step 3: If it's still not placeable, try starting a new row.
+        if (!placeable) {
             currentX += currentRowHeight;
             currentY = 0;
             currentRowHeight = 0;
-            // Re-run the loop to re-evaluate for the new row
-            continue; 
-          }
+
+            // After starting new row, re-check primary and rotated fit.
+            if (currentY + palletWid <= unit.width && currentX + palletLen <= unit.length) {
+                finalLen = palletLen;
+                finalWid = palletWid;
+                placeable = true;
+            } else if (isEuro && currentEupLoadingPattern === 'auto') {
+                const rotatedLen = palletWid;
+                const rotatedWid = palletLen;
+                if (currentY + rotatedWid <= unit.width && currentX + rotatedLen <= unit.length) {
+                    finalLen = rotatedLen;
+                    finalWid = rotatedWid;
+                    placeable = true;
+                }
+            }
         }
-        
-        if (currentX + palletLen > unit.length) {
-          break; 
+
+        // Step 4: If it's still not placeable, we're out of options for this unit.
+        if (!placeable) {
+            break;
         }
 
         const palletWeight = nextPallet.stacked ? (isEuro ? safeEupWeight : safeDinWeight) * 2 : (isEuro ? safeEupWeight : safeDinWeight);
@@ -245,7 +269,7 @@ const calculateLoadingLogic = (
         
         const baseLabelId = isEuro ? ++eupLabelCounter : ++dinLabelCounter;
         const basePallet = {
-            x: currentX, y: currentY, width: palletLen, height: palletWid,
+            x: currentX, y: currentY, width: finalLen, height: finalWid, // Use final dimensions
             type: palletToPlace.type, isStackedTier: null, unitId: unit.id,
             labelId: baseLabelId, displayBaseLabelId: baseLabelId, displayStackedLabelId: null, showAsFraction: false,
             key: `${palletToPlace.type}_${(isEuro ? finalActualEUPBase:finalActualDINBase)}`
@@ -268,8 +292,8 @@ const calculateLoadingLogic = (
             unit.palletsVisual.push(basePallet);
         }
         
-        currentY += palletWid;
-        currentRowHeight = Math.max(currentRowHeight, palletLen);
+        currentY += finalWid; // Use final width
+        currentRowHeight = Math.max(currentRowHeight, finalLen); // Use final length
       }
     }
     
@@ -282,7 +306,6 @@ const calculateLoadingLogic = (
     const currentDinVisual = unitsState.flatMap(u => u.palletsVisual).filter(p => p.type === 'industrial').length;
     const currentEupVisual = unitsState.flatMap(u => u.palletsVisual).filter(p => p.type === 'euro').length;
 
-    // The best result is the one that fits the most pallets. Tie-break with 'broad' as it's usually safer.
     if (!bestOverallResult || totalVisualForAttempt > bestOverallResult.totalVisual) {
         bestOverallResult = {
             unitsState, totalVisual: totalVisualForAttempt,
