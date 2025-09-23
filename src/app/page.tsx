@@ -107,6 +107,7 @@ const MAX_WEIGHT_PER_METER_KG = 1800;
 // Core calculation logic (REVISED to correctly sequence stacked/single pallets)
 // Core calculation logic (FINAL REVISION for state management)
 // Core calculation logic (FINAL VERSION using a Pallet Queue Algorithm)
+// Core calculation logic (FINAL VERSION + Rotation Heuristic)
 const calculateLoadingLogic = (
   truckKey,
   requestedEupQuantity,
@@ -159,7 +160,6 @@ const calculateLoadingLogic = (
 
     const dinToStack = [], dinSingle = [], eupToStack = [], eupSingle = [];
     
-    // Categorize all requested pallets
     let tempDinQty = dinQuantityToPlace;
     if (currentIsDINStackable) {
         const allowedStackBases = (maxStackedDin === 0) ? Infinity : (maxStackedDin && maxStackedDin > 0) ? Math.floor(maxStackedDin / 2) : 0;
@@ -178,10 +178,9 @@ const calculateLoadingLogic = (
     }
     for (let i = 0; i < tempEupQty; i++) eupSingle.push({ type: 'euro', stacked: false });
     
-    // Combine in the correct, prioritized order
     if (placementOrder === 'EUP_FIRST') {
         palletQueue.push(...eupToStack, ...dinToStack, ...eupSingle, ...dinSingle);
-    } else { // DIN_FIRST (default)
+    } else {
         palletQueue.push(...dinToStack, ...eupToStack, ...dinSingle, ...eupSingle);
     }
     
@@ -206,19 +205,32 @@ const calculateLoadingLogic = (
           palletWid = palletDef.length;
         }
 
-        // If pallet doesn't fit in the current row's width, start a new row
+        // If pallet doesn't fit in the current row's width, check for rotation or start a new row
         if (currentY > 0 && currentY + palletWid > unit.width) {
-          currentX += currentRowHeight;
-          currentY = 0;
-          currentRowHeight = 0;
+          let rotated = false;
+          // *** NEW HEURISTIC: Try rotating an EUP if it doesn't fit ***
+          if (isEuro) {
+            const rotatedLen = palletWid;
+            const rotatedWid = palletLen;
+            if (currentY + rotatedWid <= unit.width) {
+              palletLen = rotatedLen;
+              palletWid = rotatedWid;
+              rotated = true;
+            }
+          }
+
+          if (!rotated) {
+            // Pallet (even if rotated) doesn't fit, so start a new row
+            currentX += currentRowHeight;
+            currentY = 0;
+            currentRowHeight = 0;
+          }
         }
         
-        // If pallet doesn't fit in the remaining length of the truck, stop for this unit
         if (currentX + palletLen > unit.length) {
           break;
         }
 
-        // Check weight
         const palletWeight = nextPallet.stacked ? (isEuro ? safeEupWeight : safeDinWeight) * 2 : (isEuro ? safeEupWeight : safeDinWeight);
         if (palletWeight > 0 && currentTotalWeight + palletWeight > weightLimit) {
           if(!tempWarnings.some(w => w.includes('Gewichtslimit'))) tempWarnings.push('Gewichtslimit erreicht.');
@@ -226,7 +238,6 @@ const calculateLoadingLogic = (
           break;
         }
 
-        // All checks passed, so we consume and place the pallet
         const palletToPlace = palletQueue.shift();
         
         const baseLabelId = isEuro ? ++eupLabelCounter : ++dinLabelCounter;
@@ -248,7 +259,7 @@ const calculateLoadingLogic = (
             basePallet.showAsFraction = true;
             basePallet.displayStackedLabelId = stackedLabelId;
             const stackPallet = { ...basePallet, isStackedTier: 'top', labelId: stackedLabelId, key: basePallet.key + '_stack' };
-            unit.palletsVisual.push(basePallet); // Render base first so top is drawn over it
+            unit.palletsVisual.push(basePallet);
             unit.palletsVisual.push(stackPallet);
         } else {
             unit.palletsVisual.push(basePallet);
@@ -263,7 +274,6 @@ const calculateLoadingLogic = (
         tempWarnings.push(`Konnte nicht alle Paletten laden. ${palletQueue.length} Stk. übrig.`);
     }
 
-    // 4. Evaluate this pattern's result
     const totalVisualForAttempt = unitsState.flatMap(u => u.palletsVisual).length;
     const currentDinVisual = unitsState.flatMap(u => u.palletsVisual).filter(p => p.type === 'industrial').length;
     const currentEupVisual = unitsState.flatMap(u => u.palletsVisual).filter(p => p.type === 'euro').length;
@@ -282,10 +292,8 @@ const calculateLoadingLogic = (
     }
   }
 
-  // 5. Finalize and return the best result found
   const finalResult = bestOverallResult;
   if (!finalResult) { 
-      // This case handles when 0 pallets are requested, returning a clean empty state.
       return { 
           palletArrangement: [], loadedIndustrialPalletsBase: 0, loadedEuroPalletsBase: 0,
           totalDinPalletsVisual: 0, totalEuroPalletsVisual: 0, utilizationPercentage: 0,
@@ -301,7 +309,6 @@ const calculateLoadingLogic = (
   const utilizationPercentage = parseFloat(util.toFixed(1));
   
   let finalWarnings = [...finalResult.warnings];
-  // Add other final warning checks here if needed
 
   return {
     palletArrangement: finalPalletArrangement,
