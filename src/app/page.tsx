@@ -366,31 +366,68 @@ const calculateLoadingLogic = (
   }
 
   // Apply best result
-  unitsState = bestResult.unitsConfiguration;
-  finalTotalEuroVisual = bestResult.totalVisualEUPs;
-  finalTotalDinVisual = bestResult.totalVisualDINs;
-  finalActualEUPBase = bestResult.baseEUPs;
-  finalActualDINBase = bestResult.baseDINs;
-  finalTotalAreaBase = bestResult.area;
-  currentTotalWeight = bestResult.currentWeight;
-  tempWarnings = bestResult.tempWarnings;
+  let unitsState = bestResult ? bestResult.unitsConfiguration : truckConfig.units.map(u => ({
+    ...u,
+    occupiedRects: [],
+    palletsVisual: [],
+  }));
+  finalTotalEuroVisual = bestResult ? bestResult.totalVisualEUPs : 0;
+  finalTotalDinVisual = bestResult ? bestResult.totalVisualDINs : 0;
+  finalActualEUPBase = bestResult ? bestResult.baseEUPs : 0;
+  finalActualDINBase = bestResult ? bestResult.baseDINs : 0;
+  finalTotalAreaBase = bestResult ? bestResult.area : 0;
+  currentTotalWeight = bestResult ? bestResult.currentWeight : 0;
+  tempWarnings = bestResult ? bestResult.tempWarnings : [];
 
-  // Return as before
+  // Compute utilization and additional warnings to match your app's expectations
+  const finalPalletArrangement = unitsState.map(u => ({
+    unitId: u.id,
+    unitLength: u.length,
+    unitWidth: u.width,
+    pallets: u.palletsVisual,
+  }));
+  const totalPracticalArea = truckConfig.usableLength * truckConfig.maxWidth;
+  const util = totalPracticalArea > 0 ? (finalTotalAreaBase / totalPracticalArea) * 100 : 0;
+  const utilizationPercentage = parseFloat(util.toFixed(1));
+  const usedLength = truckConfig.maxWidth > 0 ? (finalTotalAreaBase / truckConfig.maxWidth) : 0;
+  const usedLengthPercentage = truckConfig.usableLength > 0 ? (usedLength / truckConfig.usableLength) * 100 : 0;
+  const weightPerMeter = usedLength > 0 ? currentTotalWeight / (usedLength / 100) : 0;
+  if (weightPerMeter >= MAX_WEIGHT_PER_METER_KG) {
+    tempWarnings.push(`ACHTUNG – mögliche Achslastüberschreitung: ${weightPerMeter.toFixed(1)} kg/m`);
+  }
+  if (currentTotalWeight >= 10500 && usedLengthPercentage <= 40) {
+    tempWarnings.push('ACHTUNG – mehr als 11t auf weniger als 40% der Ladefläche');
+  }
+  const stackedEupPallets = finalTotalEuroVisual - finalActualEUPBase;
+  const stackedDinPallets = finalTotalDinVisual - finalActualDINBase;
+  if (stackedEupPallets >= STACKED_EUP_THRESHOLD_FOR_AXLE_WARNING) {
+    if (!tempWarnings.some(w => w.includes('ACHSLAST bei EUP'))) {
+      tempWarnings.push(`ACHTUNG - ACHSLAST bei EUP im AUGE BEHALTEN! (${stackedEupPallets} gestapelte EUP)`);
+    }
+  }
+  if (stackedDinPallets >= STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING) {
+    if (!tempWarnings.some(w => w.includes('ACHSLAST bei DIN'))) {
+      tempWarnings.push(`ACHTUNG - ACHSLAST bei DIN im AUGE BEHALTEN! (${stackedDinPallets} gestapelte DIN)`);
+    }
+  }
+  const uniqueWarnings = Array.from(new Set(tempWarnings));
+
+  // Determine eupLoadingPatternUsed, defaulting to 'none' if no EUP placed
+  let eupLoadingPatternUsed = bestResult ? bestResult.chosenPattern : 'none';
+  if (finalTotalEuroVisual === 0) {
+    eupLoadingPatternUsed = 'none';
+  }
+
   return {
-    totalEuroPalletsVisual: finalTotalEuroVisual,
-    totalDinPalletsVisual: finalTotalDinVisual,
-    loadedEuroPalletsBase: finalActualEUPBase,
+    palletArrangement: finalPalletArrangement,
     loadedIndustrialPalletsBase: finalActualDINBase,
-    totalAreaBase: finalTotalAreaBase,
-    warnings: tempWarnings,
+    loadedEuroPalletsBase: finalActualEUPBase,
+    totalDinPalletsVisual: finalTotalDinVisual,
+    totalEuroPalletsVisual: finalTotalEuroVisual,
+    utilizationPercentage: utilizationPercentage,
+    warnings: uniqueWarnings,
     totalWeightKg: currentTotalWeight,
-    eupLoadingPatternUsed: bestResult.chosenPattern,
-    palletArrangement: unitsState.map(u => ({
-      unitId: u.id,
-      unitLength: u.length,
-      unitWidth: u.width,
-      pallets: u.palletsVisual,
-    })),
+    eupLoadingPatternUsed: eupLoadingPatternUsed,
   };
 };
 
