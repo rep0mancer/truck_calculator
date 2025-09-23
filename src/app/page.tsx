@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 
-// Constants for truck types, including single-layer capacities
+// Constants for truck types
 const TRUCK_TYPES = {
   roadTrain: {
     name: 'Hängerzug (2x 7,2m)',
@@ -326,7 +326,6 @@ export default function HomePage() {
 
   const { toast } = useToast();
 
-
   const calculateAndSetState = useCallback(() => {
     const primaryResults = calculateLoadingLogic(
       selectedTruck,
@@ -341,35 +340,47 @@ export default function HomePage() {
     );
     
     let multiTruckWarnings = [];
-    
+    let finalUtilization = primaryResults.utilizationPercentage;
+
+    // This block handles multi-truck warnings and overrides utilization to 100% for full, single-type loads
     if (dinQuantity > 0 && eupQuantity === 0) {
-        const dinCapacityResult = calculateLoadingLogic(selectedTruck, 0, MAX_PALLET_SIMULATION_QUANTITY, isEUPStackable, isDINStackable, eupWeightPerPallet, dinWeightPerPallet, eupLoadingPattern, 'DIN_FIRST', eupStackLimit, dinStackLimit);
+        const dinCapacityResult = calculateLoadingLogic(selectedTruck, 0, MAX_PALLET_SIMULATION_QUANTITY, isEUPStackable, isDINStackable, eupWeightPerPallet, dinWeightPerPallet, 'auto', 'DIN_FIRST', 0, 0);
         const maxDinCapacity = dinCapacityResult.totalDinPalletsVisual;
 
-        if (maxDinCapacity > 0 && dinQuantity > maxDinCapacity) {
-            const totalTrucks = Math.ceil(dinQuantity / maxDinCapacity);
-            const fullTrucks = Math.floor(dinQuantity / maxDinCapacity);
-            const remainingPallets = dinQuantity % maxDinCapacity;
-            
-            if (remainingPallets === 0) {
-                multiTruckWarnings.push(`Für diesen Auftrag werden ${fullTrucks} volle LKWs benötigt.`);
-            } else {
-                multiTruckWarnings.push(`Benötigt ${totalTrucks} LKWs: ${fullTrucks} volle LKW(s) und 1 LKW mit ${remainingPallets} Paletten.`);
+        if (maxDinCapacity > 0 && dinQuantity >= maxDinCapacity) {
+            if (dinQuantity === maxDinCapacity && primaryResults.totalDinPalletsVisual === maxDinCapacity) {
+                finalUtilization = 100.0;
+            }
+            if (dinQuantity > maxDinCapacity) {
+                const totalTrucks = Math.ceil(dinQuantity / maxDinCapacity);
+                const fullTrucks = Math.floor(dinQuantity / maxDinCapacity);
+                const remainingPallets = dinQuantity % maxDinCapacity;
+                
+                if (remainingPallets === 0) {
+                    multiTruckWarnings.push(`Für diesen Auftrag werden ${fullTrucks} volle LKWs benötigt.`);
+                } else {
+                    multiTruckWarnings.push(`Benötigt ${totalTrucks} LKWs: ${fullTrucks} volle LKW(s) und 1 LKW mit ${remainingPallets} Paletten.`);
+                }
             }
         }
     } else if (eupQuantity > 0 && dinQuantity === 0) {
-        const eupCapacityResult = calculateLoadingLogic(selectedTruck, MAX_PALLET_SIMULATION_QUANTITY, 0, isEUPStackable, isDINStackable, eupWeightPerPallet, dinWeightPerPallet, eupLoadingPattern, 'EUP_FIRST', eupStackLimit, dinStackLimit);
+        const eupCapacityResult = calculateLoadingLogic(selectedTruck, MAX_PALLET_SIMULATION_QUANTITY, 0, isEUPStackable, isDINStackable, eupWeightPerPallet, dinWeightPerPallet, 'auto', 'EUP_FIRST', 0, 0);
         const maxEupCapacity = eupCapacityResult.totalEuroPalletsVisual;
 
-        if (maxEupCapacity > 0 && eupQuantity > maxEupCapacity) {
-            const totalTrucks = Math.ceil(eupQuantity / maxEupCapacity);
-            const fullTrucks = Math.floor(eupQuantity / maxEupCapacity);
-            const remainingPallets = eupQuantity % maxEupCapacity;
-            
-            if (remainingPallets === 0) {
-                multiTruckWarnings.push(`Für diesen Auftrag werden ${fullTrucks} volle LKWs benötigt.`);
-            } else {
-                multiTruckWarnings.push(`Benötigt ${totalTrucks} LKWs: ${fullTrucks} volle LKW(s) und 1 LKW mit ${remainingPallets} Paletten.`);
+        if (maxEupCapacity > 0 && eupQuantity >= maxEupCapacity) {
+            if (eupQuantity === maxEupCapacity && primaryResults.totalEuroPalletsVisual === maxEupCapacity) {
+                finalUtilization = 100.0;
+            }
+            if (eupQuantity > maxEupCapacity) {
+                const totalTrucks = Math.ceil(eupQuantity / maxEupCapacity);
+                const fullTrucks = Math.floor(eupQuantity / maxEupCapacity);
+                const remainingPallets = eupQuantity % maxEupCapacity;
+                
+                if (remainingPallets === 0) {
+                    multiTruckWarnings.push(`Für diesen Auftrag werden ${fullTrucks} volle LKWs benötigt.`);
+                } else {
+                    multiTruckWarnings.push(`Benötigt ${totalTrucks} LKWs: ${fullTrucks} volle LKW(s) und 1 LKW mit ${remainingPallets} Paletten.`);
+                }
             }
         }
     }
@@ -379,7 +390,7 @@ export default function HomePage() {
     setLoadedEuroPalletsBase(primaryResults.loadedEuroPalletsBase);
     setTotalDinPalletsVisual(primaryResults.totalDinPalletsVisual);
     setTotalEuroPalletsVisual(primaryResults.totalEuroPalletsVisual);
-    setUtilizationPercentage(primaryResults.utilizationPercentage);
+    setUtilizationPercentage(finalUtilization);
     setWarnings(Array.from(new Set([...primaryResults.warnings, ...multiTruckWarnings])));
     setTotalWeightKg(primaryResults.totalWeightKg);
     setActualEupLoadingPattern(primaryResults.eupLoadingPatternUsed);
@@ -410,7 +421,7 @@ export default function HomePage() {
         palletTypeToMax === 'industrial' ? MAX_PALLET_SIMULATION_QUANTITY : 0,
         isEUPStackable, isDINStackable,
         eupWeightPerPallet, dinWeightPerPallet,
-        'auto', // Always use auto to find the best capacity
+        'auto',
         palletTypeToMax === 'euro' ? 'EUP_FIRST' : 'DIN_FIRST',
         eupStackLimit, dinStackLimit
     );
@@ -445,16 +456,13 @@ export default function HomePage() {
       'auto', 'DIN_FIRST', eupStackLimit, dinStackLimit
     );
     
-    // Check if the auto-calculation resulted in leftovers
     const leftoverWarning = res.warnings.find(w => w.includes("Übrig"));
     if (leftoverWarning) {
-        // If there are leftovers, we set the quantities to what actually fit
         setEupQuantity(res.totalEuroPalletsVisual);
         setDinQuantity(res.totalDinPalletsVisual);
         toast({ title: 'Vorschlag übernommen', description: `LKW ist voll. ${res.totalDinPalletsVisual} DIN / ${res.totalEuroPalletsVisual} EUP geladen.` });
     } else {
-        // If everything fit, fill the rest of the truck
-        handleFillRemaining('euro'); // Or 'industrial', depending on preference
+        handleFillRemaining('euro');
         toast({ title: 'LKW aufgefüllt', description: `Der verbleibende Platz wurde mit Paletten gefüllt.` });
     }
   };
@@ -499,15 +507,13 @@ export default function HomePage() {
   return (
     <div className="container mx-auto p-4 font-sans bg-gray-50">
       <header className="relative bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
-  {/* The new, absolutely positioned text block */}
-  <div className="absolute top-2 right-4 text-right text-xs opacity-75">
-    <p>Laderaumrechner © {new Date().getFullYear()}</p>
-    <p>by Andreas Steiner</p>
-  </div>
-
-  <h1 className="text-3xl font-bold text-center tracking-tight">Laderaumrechner</h1>
-  <p className="text-center text-sm opacity-90">Visualisierung der Palettenplatzierung (Europäische Standards)</p>
-</header>
+        <div className="absolute top-2 right-4 text-right text-xs opacity-75">
+          <p>Laderaumrechner © {new Date().getFullYear()}</p>
+          <p>by Andreas Steiner</p>
+        </div>
+        <h1 className="text-3xl font-bold text-center tracking-tight">Laderaumrechner</h1>
+        <p className="text-center text-sm opacity-90">Visualisierung der Palettenplatzierung (Europäische Standards)</p>
+      </header>
       <main className="p-6 bg-white shadow-lg rounded-b-lg">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="lg:col-span-1 space-y-6 bg-slate-50 p-5 rounded-lg border border-slate-200 shadow-sm">
@@ -623,10 +629,8 @@ export default function HomePage() {
         </div>
       </main>
       <footer className="text-center py-4 mt-8 text-sm text-gray-500 border-t border-gray-200">
-        <p>Laderaumrechner © {new Date().getFullYear()} by Andreas Steiner</p>
-         
+        
       </footer>
       <Toaster />
     </div>
   );
-}
