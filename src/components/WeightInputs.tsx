@@ -1,4 +1,3 @@
-// src/components/WeightInputs.tsx
 'use client';
 
 import React from 'react';
@@ -15,46 +14,85 @@ interface WeightInputsProps {
   entries: WeightEntry[];
   onChange: (entries: WeightEntry[]) => void;
   palletType: 'EUP' | 'DIN';
+  preferredId: number | null;
+  onSetPreferred: (id: number | null) => void;
+  groupName: string;
 }
 
-export function WeightInputs({ entries, onChange, palletType }: WeightInputsProps) {
+export function WeightInputs({ entries, onChange, palletType, preferredId, onSetPreferred, groupName }: WeightInputsProps) {
   const handleAddEntry = () => {
     onChange([...entries, { id: Date.now(), weight: '', quantity: 0 }]);
   };
 
   const handleRemoveEntry = (id: number) => {
+    // If the removed entry was the preferred one, reset the preference
+    if (id === preferredId) {
+      onSetPreferred(null);
+    }
     onChange(entries.filter(entry => entry.id !== id));
   };
 
   const handleEntryChange = (id: number, field: 'weight' | 'quantity', value: string) => {
     const newEntries = entries.map(entry => {
       if (entry.id === id) {
-        return { ...entry, [field]: field === 'quantity' ? parseInt(value, 10) || 0 : value };
+        const newQuantity = field === 'quantity' ? parseInt(value, 10) || 0 : entry.quantity;
+        const newWeight = field === 'weight' ? value : entry.weight;
+        // If quantity is set to 0, and it's the preferred item, reset preference
+        if (newQuantity === 0 && id === preferredId) {
+            onSetPreferred(null);
+        }
+        return { ...entry, quantity: newQuantity, weight: newWeight };
       }
       return entry;
     });
     onChange(newEntries);
   };
+  
+  const handleSetPreferred = (id: number) => {
+    const entry = entries.find(e => e.id === id);
+    if (entry && entry.quantity > 0) {
+      onSetPreferred(id);
+    }
+  };
+
 
   return (
     <div>
+      <div className="flex items-center gap-2 mb-1">
+        <label className="w-10 text-center text-xs text-gray-600">Prio</label>
+        <label className="w-20 text-center text-xs text-gray-600">Anzahl</label>
+        <label className="w-32 text-center text-xs text-gray-600">Gewicht/{palletType} (kg)</label>
+      </div>
       {entries.map((entry, index) => (
-        <div key={entry.id} className="flex items-center gap-2 mt-2">
+        <div key={entry.id} className="flex items-center gap-2 mt-1">
+          <div className="w-10 flex justify-center">
+            <input
+              type="radio"
+              name={groupName}
+              checked={entry.id === preferredId}
+              onChange={() => handleSetPreferred(entry.id)}
+              disabled={entry.quantity === 0}
+              className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500 disabled:opacity-50"
+              title="Priorität für Autom. Anpassen"
+            />
+          </div>
           <Input
             type="number"
+            min="0"
             value={entry.quantity}
             onChange={(e) => handleEntryChange(entry.id, 'quantity', e.target.value)}
-            placeholder="Qty"
-            className="w-20"
+            placeholder="Anzahl"
+            className="w-20 text-center"
           />
           <Input
             type="number"
+            min="0"
             value={entry.weight}
             onChange={(e) => handleEntryChange(entry.id, 'weight', e.target.value)}
-            placeholder={`Weight/${palletType} (kg)`}
-            className="w-32"
+            placeholder={`Gewicht/${palletType}`}
+            className="w-32 text-center"
           />
-          {index > 0 && (
+          {entries.length > 1 && (
             <Button onClick={() => handleRemoveEntry(entry.id)} variant="destructive" size="sm">
               -
             </Button>
@@ -62,7 +100,7 @@ export function WeightInputs({ entries, onChange, palletType }: WeightInputsProp
         </div>
       ))}
       <Button onClick={handleAddEntry} className="mt-2" size="sm">
-        Add Weight Group
+        Gewichtsgruppe hinzufügen
       </Button>
     </div>
   );
