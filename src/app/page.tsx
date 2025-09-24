@@ -4,7 +4,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { WeightInputs } from '@/components/WeightInputs';
-import TruckDecor from '@/components/TruckDecor';
 
 // Define the type for a single weight entry
 type WeightEntry = {
@@ -622,11 +621,27 @@ export default function HomePage() {
           </div>
 
           <div className="lg:col-span-2 bg-gray-100 p-6 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center">
-            <TruckDecor className="mb-6 mt-2" />
             <p className="text-gray-700 text-lg mb-4 font-semibold">Ladefläche Visualisierung</p>
             {palletArrangement.map((unit,index)=>(
               <div key={unit.unitId} className="mb-6 w-full flex flex-col items-center">
                 {TRUCK_TYPES[selectedTruck].units.length>1&&<p className="text-sm text-gray-700 mb-2">Einheit {index+1} ({unit.unitLength/100}m x {unit.unitWidth/100}m)</p>}
+                {index === 0 && (
+                  <svg
+                    aria-hidden
+                    role="presentation"
+                    className="block"
+                    width={unit.unitWidth*truckVisualizationScale}
+                    height={24}
+                    viewBox={`0 0 ${unit.unitWidth*truckVisualizationScale} 24`}
+                  >
+                    {/* Cab base */}
+                    <rect x="0" y="6" width={unit.unitWidth*truckVisualizationScale} height="16" rx="6" fill="#93c5fd" stroke="#60a5fa" />
+                    {/* Nose to indicate forward direction */}
+                    <path d={`M ${(unit.unitWidth*truckVisualizationScale)/2 - 12} 6 L ${(unit.unitWidth*truckVisualizationScale)/2} 0 L ${(unit.unitWidth*truckVisualizationScale)/2 + 12} 6 Z`} fill="#60a5fa" />
+                    {/* Label */}
+                    <text x={(unit.unitWidth*truckVisualizationScale)/2} y={20} textAnchor="middle" fontSize="10" fontWeight={700} fill="#1f2937">Front</text>
+                  </svg>
+                )}
                 <div className="relative bg-gray-300 border-2 border-gray-500 overflow-hidden rounded-md shadow-inner" style={{width:`${unit.unitWidth*truckVisualizationScale}px`,height:`${unit.unitLength*truckVisualizationScale}px`}}>
                   {unit.pallets.map(p=>renderPallet(p,truckVisualizationScale))}
                 </div>
