@@ -150,30 +150,28 @@ const calculateLoadingLogic = (
     
     let tempDinQty = dinQuantityToPlace;
     if (currentIsDINStackable) {
-        const allowedStackBases = (maxStackedDin === 0) ? Infinity : (maxStackedDin && !isNaN(maxStackedDin) && maxStackedDin > 0) ? Math.floor(maxStackedDin / 2) : 0;
-        const basesToStack = Math.min(allowedStackBases, Math.floor(tempDinQty / 2));
-        for (let i = 0; i < basesToStack; i++) dinToStack.push({ type: 'industrial', stacked: true });
-        tempDinQty -= basesToStack * 2;
+        const numericMaxDin = (typeof maxStackedDin === 'string' ? parseInt(maxStackedDin, 10) : maxStackedDin) || 0;
+        const allowedStackBases = (numericMaxDin === 0) ? Math.floor(tempDinQty / 2) : Math.min(Math.floor(numericMaxDin / 2), Math.floor(tempDinQty / 2));
+        for (let i = 0; i < allowedStackBases; i++) dinToStack.push({ type: 'industrial', stacked: true });
+        tempDinQty -= allowedStackBases * 2;
     }
     for (let i = 0; i < tempDinQty; i++) dinSingle.push({ type: 'industrial', stacked: false });
 
     let tempEupQty = requestedEupQuantity;
     if (currentIsEUPStackable) {
-        const allowedStackBases = (maxStackedEup === 0) ? Infinity : (maxStackedEup && !isNaN(maxStackedEup) && maxStackedEup > 0) ? Math.floor(maxStackedEup / 2) : 0;
-        const basesToStack = Math.min(allowedStackBases, Math.floor(tempEupQty / 2));
-        for (let i = 0; i < basesToStack; i++) eupToStack.push({ type: 'euro', stacked: true });
-        tempEupQty -= basesToStack * 2;
+        const numericMaxEup = (typeof maxStackedEup === 'string' ? parseInt(maxStackedEup, 10) : maxStackedEup) || 0;
+        const allowedStackBases = (numericMaxEup === 0) ? Math.floor(tempEupQty / 2) : Math.min(Math.floor(numericMaxEup / 2), Math.floor(tempEupQty / 2));
+        for (let i = 0; i < allowedStackBases; i++) eupToStack.push({ type: 'euro', stacked: true });
+        tempEupQty -= allowedStackBases * 2;
     }
     for (let i = 0; i < tempEupQty; i++) eupSingle.push({ type: 'euro', stacked: false });
     
-    // THIS IS THE RESTORED LOGIC FOR PLACEMENT ORDER
     if (placementOrder === 'EUP_FIRST') {
         palletQueue.push(...eupToStack, ...dinToStack, ...eupSingle, ...dinSingle);
     } else {
         palletQueue.push(...dinToStack, ...eupToStack, ...dinSingle, ...eupSingle);
     }
     
-    // ... The rest of the function continues as before
     let stopPlacement = false;
     for (const unit of unitsState) {
       if (stopPlacement) break;
@@ -530,24 +528,32 @@ export default function HomePage() {
             const distribute = (entries: WeightEntry[], remaining: number) => {
                 const preferred = entries.filter(e => e.id === preferredEntryId);
                 const others = entries.filter(e => e.id !== preferredEntryId);
-                const orderedEntries = [...preferred, ...others];
 
-                const result: WeightEntry[] = [];
-                for (const entry of orderedEntries) {
-                    const take = Math.min(entry.quantity, remaining);
-                    if (result.length > 0 || take > 0 || entries.length === 1) {
-                       result.push({ ...entry, quantity: take });
-                    }
-                    remaining -= take;
+                let preferredQty = preferred.reduce((sum, e) => sum + e.quantity, 0);
+                let otherQty = others.reduce((sum, e) => sum + e.quantity, 0);
+                
+                let finalPreferredQty = Math.min(preferredQty, remaining);
+                remaining -= finalPreferredQty;
+                
+                let finalOtherQty = Math.min(otherQty, remaining);
+                
+                const newEntries: WeightEntry[] = [];
+                // Reconstruct preferred
+                if (preferred.length > 0) {
+                    newEntries.push({...preferred[0], quantity: finalPreferredQty});
+                }
+                // Reconstruct others
+                if (others.length > 0) {
+                    newEntries.push({...others[0], quantity: finalOtherQty});
+                } else if (preferred.length === 0) {
+                    newEntries.push({id: Date.now(), weight: '', quantity: finalOtherQty});
                 }
 
-                if (result.length === 0 && entries.some(e=>e.quantity > 0)) {
-                    return [{ ...entries[0], quantity: 0 }];
-                }
-                if (result.length === 0) return [{id: Date.now(), weight: '', quantity: 0}];
+                if (newEntries.length === 0) return [{id: Date.now(), weight: '', quantity: 0}];
 
-                return result;
+                return newEntries;
             };
+            
             setEupWeights(distribute(eupWeights, remainingEups));
             setDinWeights(distribute(dinWeights, remainingDins));
             toast({ title: 'Ladung angepasst', description: `Paletten wurden reduziert, um in den LKW zu passen. Priorität wurde berücksichtigt.` });
