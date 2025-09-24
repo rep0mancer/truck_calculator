@@ -19,7 +19,7 @@ interface WeightInputsProps {
   groupName: string;
 }
 
-export function WeightInputs({ entries, onChange, palletType, preferredId, onSetPreferred, groupName }: WeightInputsProps) {
+export function WeightInputs({ entries, onChange, palletType, preferredId, onSetPreferred }: WeightInputsProps) {
   const handleAddEntry = () => {
     onChange([...entries, { id: Date.now(), weight: '', quantity: 0 }]);
   };
@@ -48,34 +48,17 @@ export function WeightInputs({ entries, onChange, palletType, preferredId, onSet
     onChange(newEntries);
   };
   
-  const handleSetPreferred = (id: number) => {
-    const entry = entries.find(e => e.id === id);
-    if (entry && entry.quantity > 0) {
-      onSetPreferred(id);
-    }
-  };
+  
 
 
   return (
     <div>
       <div className="flex items-center gap-2 mb-1">
-        <label className="w-10 text-center text-xs text-gray-600">Prio</label>
         <label className="w-20 text-center text-xs text-gray-600">Anzahl</label>
         <label className="w-32 text-center text-xs text-gray-600">Gewicht/{palletType} (kg)</label>
       </div>
       {entries.map((entry, index) => (
         <div key={entry.id} className="flex items-center gap-2 mt-1">
-          <div className="w-10 flex justify-center">
-            <input
-              type="radio"
-              name={groupName}
-              checked={entry.id === preferredId}
-              onChange={() => handleSetPreferred(entry.id)}
-              disabled={entry.quantity === 0}
-              className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500 disabled:opacity-50"
-              title="Priorität für Autom. Anpassen"
-            />
-          </div>
           <Input
             type="number"
             min="0"
