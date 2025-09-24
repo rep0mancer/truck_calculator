@@ -81,7 +81,7 @@ const STACKED_EUP_THRESHOLD_FOR_AXLE_WARNING = 18;
 const STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING = 16;
 const MAX_WEIGHT_PER_METER_KG = 1800;
 
-// Patched calculateLoadingLogic
+// ... (calculateLoadingLogic remains the same as the previous response)
 const calculateLoadingLogic = (
   truckKey,
   eupWeights: WeightEntry[],
@@ -92,7 +92,7 @@ const calculateLoadingLogic = (
   placementOrder = 'DIN_FIRST',
   maxStackedEup,
   maxStackedDin,
-  preferredEntryId: number | null // New parameter
+  preferredEntryId: number | null
 ) => {
   const truckConfig = JSON.parse(JSON.stringify(TRUCK_TYPES[truckKey]));
   const weightLimit = truckConfig.maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG;
@@ -108,11 +108,9 @@ const calculateLoadingLogic = (
   let allEupPallets = createPalletList(eupWeights, 'euro');
   let allDinPallets = createPalletList(dinWeights, 'industrial');
   
-  // Separate preferred pallets from others
   const preferredPallets = [...allEupPallets, ...allDinPallets].filter(p => p.id === preferredEntryId);
   const otherPallets = [...allEupPallets, ...allDinPallets].filter(p => p.id !== preferredEntryId);
 
-  // Re-create the mutable queues with preferred pallets first
   let eupPalletsWithWeight = [...preferredPallets.filter(p => p.type === 'euro'), ...otherPallets.filter(p => p.type === 'euro')];
   let dinPalletsWithWeight = [...preferredPallets.filter(p => p.type === 'industrial'), ...otherPallets.filter(p => p.type === 'industrial')];
 
@@ -168,7 +166,6 @@ const calculateLoadingLogic = (
     }
     for (let i = 0; i < tempEupQty; i++) eupSingle.push({ type: 'euro', stacked: false });
     
-    // This sorting respects the preferred pallets coming first
     const dinCombined = [...dinToStack, ...dinSingle];
     const eupCombined = [...eupToStack, ...eupSingle];
 
@@ -187,7 +184,6 @@ const calculateLoadingLogic = (
         const nextPallet = palletQueue[0];
         const isEuro = nextPallet.type === 'euro';
         const palletDef = isEuro ? PALLET_TYPES.euro : PALLET_TYPES.industrial;
-
         let palletLen, palletWid, finalLen, finalWid;
 
         if (isEuro) {
@@ -197,9 +193,7 @@ const calculateLoadingLogic = (
           palletLen = palletDef.width;
           palletWid = palletDef.length;
         }
-
         let placeable = false;
-
         if (currentY + palletWid <= unit.width && currentX + palletLen <= unit.length) {
             finalLen = palletLen;
             finalWid = palletWid;
@@ -213,12 +207,10 @@ const calculateLoadingLogic = (
                 placeable = true;
             }
         }
-
         if (!placeable) {
             currentX += currentRowHeight;
             currentY = 0;
             currentRowHeight = 0;
-
             if (currentY + palletWid <= unit.width && currentX + palletLen <= unit.length) {
                 finalLen = palletLen;
                 finalWid = palletWid;
@@ -233,7 +225,6 @@ const calculateLoadingLogic = (
                 }
             }
         }
-
         if (!placeable) break;
 
         const basePalletWeight = isEuro ? (eupPalletsQueue[0]?.weight || 0) : (dinPalletsQueue[0]?.weight || 0);
@@ -242,15 +233,12 @@ const calculateLoadingLogic = (
             const nextWeight = isEuro ? (eupPalletsQueue[1]?.weight || 0) : (dinPalletsQueue[1]?.weight || 0);
             palletWeight += nextWeight;
         }
-
         if (palletWeight > 0 && currentTotalWeight + palletWeight > weightLimit) {
           if(!tempWarnings.some(w => w.includes('Gewichtslimit'))) tempWarnings.push('Gewichtslimit erreicht.');
           stopPlacement = true;
           break;
         }
-
         const palletToPlace = palletQueue.shift();
-        
         const baseLabelId = isEuro ? ++eupLabelCounter : ++dinLabelCounter;
         const basePallet = {
             x: currentX, y: currentY, width: finalLen, height: finalWid,
@@ -258,7 +246,6 @@ const calculateLoadingLogic = (
             labelId: baseLabelId, displayBaseLabelId: baseLabelId, displayStackedLabelId: null, showAsFraction: false,
             key: `${palletToPlace.type}_${(isEuro ? finalActualEUPBase:finalActualDINBase)}`
         };
-
         if (isEuro) {
             finalActualEUPBase++;
             currentTotalWeight += eupPalletsQueue.shift()?.weight || 0;
@@ -267,14 +254,12 @@ const calculateLoadingLogic = (
             currentTotalWeight += dinPalletsQueue.shift()?.weight || 0;
         }
         finalTotalAreaBase += palletDef.area;
-        
         if (palletToPlace.stacked) {
             if (isEuro) {
                 currentTotalWeight += eupPalletsQueue.shift()?.weight || 0;
             } else {
                 currentTotalWeight += dinPalletsQueue.shift()?.weight || 0;
             }
-
             const stackedLabelId = isEuro ? ++eupLabelCounter : ++dinLabelCounter;
             basePallet.isStackedTier = 'base';
             basePallet.showAsFraction = true;
@@ -285,28 +270,23 @@ const calculateLoadingLogic = (
         } else {
             unit.palletsVisual.push(basePallet);
         }
-        
         currentY += finalWid;
         currentRowHeight = Math.max(currentRowHeight, finalLen);
       }
     }
-    
     if (palletQueue.length > 0 && !stopPlacement) {
         const remainingDin = palletQueue.filter(p => p.type === 'industrial').length;
         const remainingEup = palletQueue.filter(p => p.type === 'euro').length;
         const messageParts = [];
         if (remainingDin > 0) messageParts.push(`${remainingDin} DIN`);
         if (remainingEup > 0) messageParts.push(`${remainingEup} EUP`);
-
         if (messageParts.length > 0) {
              tempWarnings.push(`Konnte nicht alle Paletten laden. Übrig: ${messageParts.join(' und ')}.`);
         }
     }
-
     const totalVisualForAttempt = unitsState.flatMap(u => u.palletsVisual).length;
     const currentDinVisual = unitsState.flatMap(u => u.palletsVisual).filter(p => p.type === 'industrial').length;
     const currentEupVisual = unitsState.flatMap(u => u.palletsVisual).filter(p => p.type === 'euro').length;
-
     if (!bestOverallResult || totalVisualForAttempt > bestOverallResult.totalVisual) {
         bestOverallResult = {
             unitsState, totalVisual: totalVisualForAttempt,
@@ -319,8 +299,6 @@ const calculateLoadingLogic = (
         };
     }
   }
-
-    // ... (rest of the function remains the same as before)
     const finalResult = bestOverallResult;
     if (!finalResult) { 
         return { 
@@ -370,11 +348,10 @@ const calculateLoadingLogic = (
     };
 };
 
-
 export default function HomePage() {
   const [selectedTruck, setSelectedTruck] = useState('curtainSider');
   const [eupWeights, setEupWeights] = useState<WeightEntry[]>([{ id: Date.now(), weight: '', quantity: 0 }]);
-  const [dinWeights, setDinWeights] = useState<WeightEntry[]>([{ id: Date.now(), weight: '', quantity: 0 }]);
+  const [dinWeights, setDinWeights] = useState<WeightEntry[]>([{ id: Date.now() + 1, weight: '', quantity: 0 }]);
   const [eupLoadingPattern, setEupLoadingPattern] = useState('auto');
   const [isEUPStackable, setIsEUPStackable] = useState(false);
   const [isDINStackable, setIsDINStackable] = useState(false);
@@ -498,59 +475,92 @@ export default function HomePage() {
     }
   };
   
-  const handleFillRemaining = (typeToFill) => {
-    const simResults = calculateLoadingLogic(
-        selectedTruck,
-        typeToFill === 'euro' ? [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}] : eupWeights,
-        typeToFill === 'industrial' ? [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}] : dinWeights,
-        isEUPStackable, isDINStackable,
-        'auto', 'DIN_FIRST',
-        eupStackLimit, dinStackLimit,
-        preferredEntryId
-    );
-    
-    const finalEupQty = simResults.totalEuroPalletsVisual;
-    const finalDinQty = simResults.totalDinPalletsVisual;
-
-    setEupWeights(current => {
-        const totalQty = current.reduce((sum, e) => sum + e.quantity, 0);
-        return totalQty > 0 ? [{...current[0], quantity: finalEupQty}] : [{id: Date.now(), weight: '', quantity: finalEupQty}];
-    });
-    setDinWeights(current => {
-        const totalQty = current.reduce((sum, e) => sum + e.quantity, 0);
-        return totalQty > 0 ? [{...current[0], quantity: finalDinQty}] : [{id: Date.now() + 1, weight: '', quantity: finalDinQty}];
-    });
-  };
-  
-  const suggestFeasibleLoad = () => {
-    const res = calculateLoadingLogic(
-      selectedTruck, eupWeights, dinWeights,
-      isEUPStackable, isDINStackable,
-      'auto', 'DIN_FIRST', eupStackLimit, dinStackLimit,
-      preferredEntryId
-    );
-    
-    const leftoverWarning = res.warnings.find(w => w.includes("Übrig"));
-    if (leftoverWarning) {
-        // This part needs to be smarter to preserve preferred pallets.
-        // For simplicity now, we just set the total quantities.
-        // A more advanced implementation would reconstruct the weight groups.
-        setEupWeights([{id: 1, weight: '', quantity: res.totalEuroPalletsVisual}]);
-        setDinWeights([{id: 1, weight: '', quantity: res.totalDinPalletsVisual}]);
-        setPreferredEntryId(null);
-        toast({ title: 'Vorschlag übernommen', description: `LKW ist voll. ${res.totalDinPalletsVisual} DIN / ${res.totalEuroPalletsVisual} EUP geladen.` });
-    } else {
-        const isEupPreferred = eupWeights.some(e => e.id === preferredEntryId);
-        const isDinPreferred = dinWeights.some(e => e.id === preferredEntryId);
+    const handleFillRemaining = () => {
+        const preferredEupEntry = eupWeights.find(e => e.id === preferredEntryId);
+        const preferredDinEntry = dinWeights.find(e => e.id === preferredEntryId);
         
-        let fillType = 'euro'; // default
-        if (isEupPreferred) fillType = 'euro';
-        if (isDinPreferred) fillType = 'industrial';
+        if (!preferredEupEntry && !preferredDinEntry) {
+            toast({ title: 'Keine Priorität gesetzt', description: 'Bitte wählen Sie eine Palettengruppe zum Auffüllen aus.', variant: 'destructive' });
+            return;
+        }
 
-        handleFillRemaining(fillType); 
-        toast({ title: 'LKW aufgefüllt', description: `Der verbleibende Platz wurde mit Paletten der Priorität gefüllt.` });
-    }
-  };
+        const typeToFill = preferredEupEntry ? 'euro' : 'industrial';
+        const weightToFill = preferredEupEntry ? preferredEupEntry.weight : preferredDinEntry.weight;
+        
+        // Create simulation inputs by adding a large quantity of the preferred type
+        const eupSim = typeToFill === 'euro' 
+            ? [...eupWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFill }]
+            : [...eupWeights];
+        const dinSim = typeToFill === 'industrial'
+            ? [...dinWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFill }]
+            : [...dinWeights];
+
+        const res = calculateLoadingLogic(
+            selectedTruck, eupSim, dinSim,
+            isEUPStackable, isDINStackable, 'auto', 'DIN_FIRST',
+            eupStackLimit, dinStackLimit, preferredEntryId
+        );
+
+        const currentEups = eupWeights.reduce((s, e) => s + e.quantity, 0);
+        const currentDins = dinWeights.reduce((s, e) => s + e.quantity, 0);
+
+        const addedEups = res.totalEuroPalletsVisual - currentEups;
+        const addedDins = res.totalDinPalletsVisual - currentDins;
+
+        if (typeToFill === 'euro' && addedEups > 0) {
+            setEupWeights(weights => weights.map(e => 
+                e.id === preferredEntryId ? { ...e, quantity: e.quantity + addedEups } : e
+            ));
+        } else if (typeToFill === 'industrial' && addedDins > 0) {
+            setDinWeights(weights => weights.map(e => 
+                e.id === preferredEntryId ? { ...e, quantity: e.quantity + addedDins } : e
+            ));
+        }
+        toast({ title: 'LKW aufgefüllt', description: `Freier Platz wurde mit Prioritätspaletten gefüllt.` });
+    };
+
+    const suggestFeasibleLoad = () => {
+        // Run the logic with current inputs to get the "correct" loadout that fits
+        const res = calculateLoadingLogic(
+            selectedTruck, eupWeights, dinWeights,
+            isEUPStackable, isDINStackable, 'auto', 'DIN_FIRST',
+            eupStackLimit, dinStackLimit, preferredEntryId
+        );
+
+        const leftoverWarning = res.warnings.find(w => w.includes("Übrig"));
+
+        if (leftoverWarning) {
+            // Over capacity: Reduce quantities, prioritizing the preferred group.
+            let remainingEups = res.totalEuroPalletsVisual;
+            let remainingDins = res.totalDinPalletsVisual;
+
+            const distribute = (entries: WeightEntry[], remaining: number) => {
+                const preferred = entries.filter(e => e.id === preferredEntryId);
+                const others = entries.filter(e => e.id !== preferredEntryId);
+                const orderedEntries = [...preferred, ...others];
+
+                const result: WeightEntry[] = [];
+                for (const entry of orderedEntries) {
+                    const take = Math.min(entry.quantity, remaining);
+                    if (entry.quantity > 0) { // Keep the entry even if its final quantity is 0
+                        result.push({ ...entry, quantity: take });
+                    }
+                    remaining -= take;
+                }
+                if (result.length === 0) return [{id: Date.now(), weight: '', quantity: 0}];
+                return result;
+            };
+
+            setEupWeights(distribute(eupWeights, remainingEups));
+            setDinWeights(distribute(dinWeights, remainingDins));
+            toast({ title: 'Ladung angepasst', description: `Paletten wurden reduziert, um in den LKW zu passen. Priorität wurde berücksichtigt.` });
+
+        } else {
+            // Under capacity: Fill up with the preferred pallet type.
+            handleFillRemaining();
+        }
+    };
+
 
   // ... (renderPallet function and style calculations remain the same)
   const renderPallet = (pallet, displayScale = 0.3) => {
@@ -620,7 +630,7 @@ export default function HomePage() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Industriepaletten (DIN)</label>
                 <WeightInputs entries={dinWeights} onChange={setDinWeights} palletType="DIN" preferredId={preferredEntryId} onSetPreferred={setPreferredEntryId} groupName="preferred-pallet" />
                 <button onClick={() => handleMaximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 bg-gradient-to-b from-[#00b382] to-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#00906c] hover:to-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. DIN</button>
-                <button onClick={() => handleFillRemaining('industrial')} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. DIN füllen</button>
+                <button onClick={() => handleFillRemaining()} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit Prio. füllen</button>
                 <div className="flex items-center mt-2">
                     <input type="checkbox" id="dinStackable" checked={isDINStackable} onChange={e=>setIsDINStackable(e.target.checked)} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"/>
                     <label htmlFor="dinStackable" className="ml-2 text-sm text-gray-900">Stapelbar (2-fach)</label>
@@ -634,7 +644,7 @@ export default function HomePage() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Europaletten (EUP)</label>
                 <WeightInputs entries={eupWeights} onChange={setEupWeights} palletType="EUP" preferredId={preferredEntryId} onSetPreferred={setPreferredEntryId} groupName="preferred-pallet" />
                 <button onClick={() => handleMaximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 bg-gradient-to-b from-[#00b382] to-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#00906c] hover:to-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. EUP</button>
-                <button onClick={() => handleFillRemaining('euro')} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. EUP füllen</button>
+                <button onClick={() => handleFillRemaining()} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit Prio. füllen</button>
                 <div className="flex items-center mt-2">
                     <input type="checkbox" id="eupStackable" checked={isEUPStackable} onChange={e=>setIsEUPStackable(e.target.checked)} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"/>
                     <label htmlFor="eupStackable" className="ml-2 text-sm text-gray-900">Stapelbar (2-fach)</label>
