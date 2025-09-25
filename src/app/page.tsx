@@ -441,9 +441,22 @@ export default function HomePage() {
     setTotalWeightKg(primaryResults.totalWeightKg);
     setActualEupLoadingPattern(primaryResults.eupLoadingPatternUsed);
     
-    // Compute remaining capacity using specified length-per-pallet model
+    // Compute remaining capacity using specified length-per-pallet model based on entered counts and stacking limits
     const usableLengthM = (TRUCK_TYPES[selectedTruck].usableLength || 0) / 100;
-    const usedLengthM = (primaryResults.loadedIndustrialPalletsBase * 0.5) + (primaryResults.loadedEuroPalletsBase * 0.4);
+    const computeFloorPositions = (count: number, isStackableFlag: boolean, stackLimit: number): number => {
+      if (!isStackableFlag) return count;
+      const hasLimit = typeof stackLimit === 'number' && stackLimit > 0;
+      if (hasLimit) {
+        const pairsCap = Math.floor(stackLimit / 2);
+        const pairsPossible = Math.floor(count / 2);
+        const pairs = Math.min(pairsCap, pairsPossible);
+        return count - pairs;
+      }
+      return Math.ceil(count / 2);
+    };
+    const eupFloorPositions = computeFloorPositions(eupQuantity, isEUPStackable, eupStackLimit);
+    const dinFloorPositions = computeFloorPositions(dinQuantity, isDINStackable, dinStackLimit);
+    const usedLengthM = (eupFloorPositions * 0.4) + (dinFloorPositions * 0.5);
     const remainingLengthM = Math.max(0, usableLengthM - usedLengthM);
     const remainingDin = Math.max(0, Math.floor(remainingLengthM / 0.5));
     const remainingEup = Math.max(0, Math.floor(remainingLengthM / 0.4));
