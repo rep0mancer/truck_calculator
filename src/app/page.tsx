@@ -220,7 +220,7 @@ const calculateLoadingLogic = (
     warnings.push(`${truckConfig.name.trim()} maximale DIN-Kapazität ist ${maxDinBase}. Angeforderte Menge ${totalDinRequested}, es werden ${Math.min(maxDinBase, usedDinBasePositions)} platziert.`);
   }
 
-  // STAGE 2: PLACEMENT - Arrange for visualization
+  // STAGE 2: PLACEMENT - Arrange the Manifest for Visualization
   const getPlacementPriority = (pallet: any) => {
     if (pallet.isStacked && pallet.type === 'euro') return 1;
     if (pallet.isStacked && pallet.type === 'industrial') return 2;
@@ -245,26 +245,41 @@ const calculateLoadingLogic = (
   let placedDinBaseIndex = 0;
   let placedEupBaseIndex = 0;
   let totalAreaBase = 0;
-
   for (const unit of unitsState) {
     if (placementQueue.length === 0) break;
     let currentX = 0;
     let currentY = 0;
     let currentRowHeight = 0;
-    let activeEupPatternForRow: 'long' | 'broad' = currentEupLoadingPattern === 'long' ? 'long' : 'broad';
-
-    while (placementQueue.length > 0) {
-      if (currentX >= unit.length) break;
-      const palletToPlace = placementQueue[0];
+    let activeEupPatternForRow = currentEupLoadingPattern;
+    // Use a traditional for loop for stability, as we manually advance the index
+    for (let i = 0; i < placementQueue.length; /* no increment */) {
+      const palletToPlace = placementQueue[i];
       const { type, isStacked } = palletToPlace;
-
-      // Set pattern if new row and auto
-      let patternSetThisTime = false;
       if (currentY === 0 && type === 'euro' && currentEupLoadingPattern === 'auto') {
         const remainingLength = unit.length - currentX;
-        if (remainingLength < PALLET_TYPES.euro.width) break;
-        activeEupPatternForRow = remainingLength >= PALLET_TYPES.euro.length ? 'long' : 'broad';
-        patternSetThisTime = true;
+        // Count consecutive euro bases ahead
+        let countBases = 0;
+        let j = i;
+        while (j < placementQueue.length) {
+          if (placementQueue[j].type !== 'euro') break;
+          if (placementQueue[j].isStacked) {
+            countBases++;
+            j += 2;
+          } else {
+            countBases++;
+            j++;
+          }
+        }
+        if (countBases >= 3 && remainingLength >= PALLET_TYPES.euro.length) {
+          activeEupPatternForRow = 'long';
+        } else if (countBases >= 2 && remainingLength >= PALLET_TYPES.euro.width) {
+          activeEupPatternForRow = 'broad';
+        } else if (countBases >= 1 && remainingLength >= PALLET_TYPES.euro.width) {
+          activeEupPatternForRow = 'broad';
+        } else {
+          activeEupPatternForRow = 'none';
+        }
+        if (activeEupPatternForRow === 'none') break; // No more EUPs fit
       }
 
       const palletDef = type === 'euro' ? PALLET_TYPES.euro : PALLET_TYPES.industrial;
@@ -277,53 +292,34 @@ const calculateLoadingLogic = (
         palletWid = palletDef.length; // 120cm
       }
 
-      // Check fit in current row/position
-      let fits = true;
       if (currentY + palletWid > unit.width) {
-        // Start new row
         currentX += currentRowHeight;
         currentY = 0;
         currentRowHeight = 0;
-        // Reset pattern if euro auto
-        if (type === 'euro' && currentEupLoadingPattern === 'auto') {
-          const remainingLength = unit.length - currentX;
-          if (remainingLength < PALLET_TYPES.euro.width) {
-            break;
-          }
-          activeEupPatternForRow = remainingLength >= PALLET_TYPES.euro.length ? 'long' : 'broad';
-        }
-        // Check if fits in new row start
-        if (currentX + palletLen > unit.length) {
-          fits = false;
-        }
-      } else {
-        // Check length in current position
-        if (currentX + palletLen > unit.length) {
-          fits = false;
-        }
+        continue; // Re-evaluate this same pallet in the new row
+      }
+      if (currentX + palletLen > unit.length) {
+        break; // No more space in this unit
       }
 
-      if (!fits) break;
-
-      // Determine if placing as stacked
-      let isPlacingStacked = isStacked && placementQueue.length > 1 && placementQueue[1].stackGroupId === palletToPlace.stackGroupId;
-      let numToRemove = isPlacingStacked ? 2 : 1;
+      // Place the Pallet(s)
+      const itemsInThisPosition = isStacked ? [placementQueue[i], placementQueue[i + 1]] : [placementQueue[i]];
 
       // Create visual(s)
       const nextLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
       const baseKeySuffix = type === 'euro' ? placedEupBaseIndex : placedDinBaseIndex;
-      const palletArea = type === 'euro' ? PALLET_TYPES.euro.area : PALLET_TYPES.industrial.area;
       const baseVisual: any = {
         x: currentX, y: currentY, width: palletLen, height: palletWid,
         type, isStackedTier: null, unitId: unit.id,
         labelId: nextLabelId, displayBaseLabelId: nextLabelId, displayStackedLabelId: null,
-        showAsFraction: isPlacingStacked, key: `${type}_${baseKeySuffix}`
+        showAsFraction: false, key: `${type}_${baseKeySuffix}`
       };
 
-      totalAreaBase += palletArea;
+      totalAreaBase += (type === 'euro' ? PALLET_TYPES.euro.area : PALLET_TYPES.industrial.area);
 
-      if (isPlacingStacked) {
+      if (isStacked) {
         baseVisual.isStackedTier = 'base';
+        baseVisual.showAsFraction = true;
         const stackedLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
         baseVisual.displayStackedLabelId = stackedLabelId;
         unit.palletsVisual.push(baseVisual);
@@ -335,26 +331,20 @@ const calculateLoadingLogic = (
 
       if (type === 'euro') placedEupBaseIndex++; else placedDinBaseIndex++;
 
-      // Update cursors
+      // Update cursors for the next pallet in the row
       currentY += palletWid;
       currentRowHeight = Math.max(currentRowHeight, palletLen);
-
-      // Remove from queue
-      placementQueue.splice(0, numToRemove);
+      i += itemsInThisPosition.length; // Advance index by 1 for singles, 2 for stacked
     }
-  }
-
-  if (placementQueue.length > 0) {
-    warnings.push(`Konnte nicht alle ausgewählten Paletten platzieren. Übrig: ${placementQueue.length}`);
+    // Remove the placed pallets from the main queue
+    placementQueue.splice(0, unit.palletsVisual.length);
   }
 
   // Compute metrics for return
+  const totalVisual = unitsState.flatMap((u: any) => u.palletsVisual).length;
+  const totalDinPalletsVisual = unitsState.flatMap((u: any) => u.palletsVisual).filter((p: any) => p.type === 'industrial').length;
+  const totalEuroPalletsVisual = unitsState.flatMap((u: any) => u.palletsVisual).filter((p: any) => p.type === 'euro').length;
   const palletArrangement = unitsState.map((u: any) => ({ unitId: u.id, unitLength: u.length, unitWidth: u.width, pallets: u.palletsVisual }));
-  const totalVisuals = unitsState.flatMap((u: any) => u.palletsVisual);
-  const totalDinPalletsVisual = totalVisuals.filter((p: any) => p.type === 'industrial').length;
-  const totalEuroPalletsVisual = totalVisuals.filter((p: any) => p.type === 'euro').length;
-  const loadedIndustrialPalletsBase = totalVisuals.filter((p: any) => p.type === 'industrial' && p.isStackedTier !== 'top').length;
-  const loadedEuroPalletsBase = totalVisuals.filter((p: any) => p.type === 'euro' && p.isStackedTier !== 'top').length;
 
   // Utilization and weight-derived warnings
   const totalPracticalArea = (truckConfig.usableLength || 0) * (truckConfig.maxWidth || 0);
@@ -369,15 +359,15 @@ const calculateLoadingLogic = (
     const usedLengthPercentage = (usedLength / (truckConfig.usableLength || 1)) * 100;
     if (currentWeight >= 10500 && usedLengthPercentage <= 40) warnings.push('ACHTUNG – mehr als 10.5t auf weniger als 40% der Ladefläche');
   }
-  const stackedDinPallets = totalDinPalletsVisual - loadedIndustrialPalletsBase;
-  const stackedEupPallets = totalEuroPalletsVisual - loadedEuroPalletsBase;
+  const stackedDinPallets = totalDinPalletsVisual - placedDinBaseIndex;
+  const stackedEupPallets = totalEuroPalletsVisual - placedEupBaseIndex;
   if (stackedDinPallets >= STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING) warnings.push(`ACHTUNG - ACHSLAST bei DIN im AUGE BEHALTEN! (${stackedDinPallets} gestapelte DIN)`);
   if (stackedEupPallets >= STACKED_EUP_THRESHOLD_FOR_AXLE_WARNING) warnings.push(`ACHTUNG - ACHSLAST bei EUP im AUGE BEHALTEN! (${stackedEupPallets} gestapelte EUP)`);
 
   return {
     palletArrangement,
-    loadedIndustrialPalletsBase,
-    loadedEuroPalletsBase,
+    loadedIndustrialPalletsBase: placedDinBaseIndex,
+    loadedEuroPalletsBase: placedEupBaseIndex,
     totalDinPalletsVisual,
     totalEuroPalletsVisual,
     utilizationPercentage,
@@ -386,7 +376,6 @@ const calculateLoadingLogic = (
     eupLoadingPatternUsed: currentEupLoadingPattern === 'auto' ? 'auto' : (currentEupLoadingPattern || 'none'),
   };
 };
-
 
 export default function HomePage() {
   const [selectedTruck, setSelectedTruck] = useState('curtainSider');
