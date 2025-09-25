@@ -442,24 +442,26 @@ export default function HomePage() {
     setActualEupLoadingPattern(primaryResults.eupLoadingPatternUsed);
     
     // Compute remaining capacity for both types using simulation calls
+    const dinSimPlacementOrder = eupQuantity > 0 ? 'EUP_FIRST' : 'DIN_FIRST';
     const dinCapacitySim = calculateLoadingLogic(
       selectedTruck,
       eupWeights,
       [...dinWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0' }],
       isEUPStackable, isDINStackable,
-      primaryResults.eupLoadingPatternUsed,
-      'EUP_FIRST',
+      eupLoadingPattern,
+      dinSimPlacementOrder,
       eupStackLimit,
       dinStackLimit
     );
 
+    const eupSimPlacementOrder = dinQuantity > 0 ? 'DIN_FIRST' : 'EUP_FIRST';
     const eupCapacitySim = calculateLoadingLogic(
       selectedTruck,
       [...eupWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0' }],
       dinWeights,
       isEUPStackable, isDINStackable,
-      primaryResults.eupLoadingPatternUsed,
-      'DIN_FIRST',
+      eupLoadingPattern,
+      eupSimPlacementOrder,
       eupStackLimit,
       dinStackLimit
     );
