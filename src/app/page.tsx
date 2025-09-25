@@ -466,10 +466,10 @@ export default function HomePage() {
       dinStackLimit
     );
 
-    const currentPlacedDin = primaryResults.totalDinPalletsVisual;
-    const currentPlacedEup = primaryResults.totalEuroPalletsVisual;
-    const remainingDin = Math.max(0, dinCapacitySim.totalDinPalletsVisual - currentPlacedDin);
-    const remainingEup = Math.max(0, eupCapacitySim.totalEuroPalletsVisual - currentPlacedEup);
+    const currentPlacedDinBase = primaryResults.loadedIndustrialPalletsBase;
+    const currentPlacedEupBase = primaryResults.loadedEuroPalletsBase;
+    const remainingDin = Math.max(0, dinCapacitySim.loadedIndustrialPalletsBase - currentPlacedDinBase);
+    const remainingEup = Math.max(0, eupCapacitySim.loadedEuroPalletsBase - currentPlacedEupBase);
     setRemainingCapacity({ eup: remainingEup, din: remainingDin });
     
   }, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, eupStackLimit, dinStackLimit]);
