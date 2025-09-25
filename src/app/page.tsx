@@ -448,7 +448,7 @@ export default function HomePage() {
       [{ id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0' }],
       isEUPStackable, isDINStackable,
       eupLoadingPattern,
-      'DIN_FIRST',
+      'EUP_FIRST',
       eupStackLimit,
       dinStackLimit
     );
@@ -459,7 +459,7 @@ export default function HomePage() {
       dinWeights,
       isEUPStackable, isDINStackable,
       eupLoadingPattern,
-      'EUP_FIRST',
+      'DIN_FIRST',
       eupStackLimit,
       dinStackLimit
     );
