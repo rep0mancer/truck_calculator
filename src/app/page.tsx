@@ -165,6 +165,15 @@ const calculateLoadingLogic = (
     } else {
         palletQueue.push(...dinToStack, ...eupToStack, ...dinSingle, ...eupSingle);
     }
+    // Reorder palletQueue for correct visual placement: stacked EUPs, stacked DINs, standard DINs, standard EUPs
+    const getSortPriority = (pallet: { type: string; stacked: boolean }): number => {
+      if (pallet.type === 'euro' && pallet.stacked) return 1;
+      if (pallet.type === 'industrial' && pallet.stacked) return 2;
+      if (pallet.type === 'industrial' && !pallet.stacked) return 3;
+      if (pallet.type === 'euro' && !pallet.stacked) return 4;
+      return 5;
+    };
+    palletQueue.sort((a, b) => getSortPriority(a) - getSortPriority(b));
     
     let stopPlacement = false;
     for (const unit of unitsState) {
