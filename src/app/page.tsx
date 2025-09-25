@@ -256,96 +256,120 @@ const calculateLoadingLogic = (
     return { len: d.width, wid: d.length }; // 80 x 120
   };
 
-  let manifestIndex = 0;
-  for (const unit of unitsState) {
-    let currentX = 0;
-    let currentY = 0;
-    let currentRowHeight = 0;
-    let currentRowEupPattern: 'long' | 'broad' | null = null;
+  // Iterate deterministically through the sorted manifest and place into units
+  let unitIndex = 0;
+  let unit = unitsState[unitIndex];
+  let currentX = 0;
+  let currentY = 0;
+  let currentRowHeight = 0;
+  let currentRowEupPattern: 'long' | 'broad' | null = null;
 
-    while (manifestIndex < finalPalletManifest.length) {
-      let item = finalPalletManifest[manifestIndex];
+  for (let i = 0; i < finalPalletManifest.length; i++) {
+    if (!unit) break; // no more units available
+    const item = finalPalletManifest[i];
+    const type: 'euro' | 'industrial' = item.type;
 
-      // Resolve stacked pairs: place both together once
-      const isPairHead = item.stackGroupId && !processedStackGroups.has(item.stackGroupId);
-      const isStackedPlacement = Boolean(item.stackGroupId) && isPairHead;
-      const type: 'euro' | 'industrial' = item.type;
+    // Skip if this is the second member of an already placed stacked pair
+    if (item.stackGroupId && processedStackGroups.has(item.stackGroupId)) {
+      continue;
+    }
 
-      // Determine row pattern at start of row for auto EUPs
-      if (currentY === 0) {
-        if (type === 'euro') {
+    // Determine row pattern if needed
+    if (type === 'euro') {
+      if (!currentRowEupPattern) {
+        if (currentEupLoadingPattern === 'auto') {
+          const remainingLen = unit.length - currentX;
+          currentRowEupPattern = remainingLen >= 120 ? 'long' : 'broad';
+        } else {
+          currentRowEupPattern = currentEupLoadingPattern === 'long' ? 'long' : 'broad';
+        }
+      }
+    }
+
+    const eupPatternForRow = type === 'euro' ? (currentRowEupPattern || (currentEupLoadingPattern === 'long' ? 'long' : 'broad')) : 'long';
+    let { len, wid } = getDims(type, eupPatternForRow);
+
+    // If does not fit across width, start a new row
+    if (currentY + wid > unit.width) {
+      currentX += currentRowHeight;
+      currentY = 0;
+      currentRowHeight = 0;
+      currentRowEupPattern = null;
+
+      // Re-evaluate pattern and dims after starting a new row
+      if (type === 'euro') {
+        if (!currentRowEupPattern) {
           if (currentEupLoadingPattern === 'auto') {
             const remainingLen = unit.length - currentX;
             currentRowEupPattern = remainingLen >= 120 ? 'long' : 'broad';
           } else {
             currentRowEupPattern = currentEupLoadingPattern === 'long' ? 'long' : 'broad';
           }
-        } else {
-          currentRowEupPattern = currentRowEupPattern; // unchanged for DIN
         }
       }
-
-      const eupPatternForRow = (type === 'euro') ? (currentRowEupPattern || (currentEupLoadingPattern === 'long' ? 'long' : 'broad')) : 'long';
-      const { len, wid } = getDims(type, eupPatternForRow as 'long' | 'broad');
-
-      // Ensure fits into current row, otherwise start a new row
-      const fitsHere = (currentY + wid <= unit.width) && (currentX + len <= unit.length);
-      if (!fitsHere) {
-        // Move to next row
-        const advancedX = currentX + currentRowHeight;
-        if (advancedX > unit.length - 1e-9) break; // no more space in this unit
-        currentX = advancedX;
-        currentY = 0;
-        currentRowHeight = 0;
-        currentRowEupPattern = null;
-        continue;
-      }
-
-      // Prepare base visual
-      const nextLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
-      const baseKeySuffix = type === 'euro' ? placedEupBaseIndex : placedDinBaseIndex;
-      const baseVisual = {
-        x: currentX, y: currentY, width: len, height: wid,
-        type, isStackedTier: null as any, unitId: unit.id,
-        labelId: nextLabelId, displayBaseLabelId: nextLabelId, displayStackedLabelId: null as number | null,
-        showAsFraction: false, key: `${type}_${baseKeySuffix}`
-      };
-
-      // Add base area once per position
-      totalAreaBase += (type === 'euro' ? PALLET_TYPES.euro.area : PALLET_TYPES.industrial.area);
-
-      if (isStackedPlacement) {
-        // Mark processed and place both tiers
-        processedStackGroups.add(item.stackGroupId);
-        baseVisual.isStackedTier = 'base';
-        baseVisual.showAsFraction = true;
-        const stackedLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
-        baseVisual.displayStackedLabelId = stackedLabelId;
-        unit.palletsVisual.push(baseVisual);
-        const topVisual = { ...baseVisual, isStackedTier: 'top', labelId: stackedLabelId, key: `${baseVisual.key}_stack` };
-        unit.palletsVisual.push(topVisual);
-        // Advance manifest index by skipping both items of the pair
-        // Move index forward until we pass the second member of this group
-        manifestIndex++;
-        while (manifestIndex < finalPalletManifest.length && finalPalletManifest[manifestIndex].stackGroupId === item.stackGroupId) {
-          manifestIndex++;
-        }
-        if (type === 'euro') placedEupBaseIndex++; else placedDinBaseIndex++;
-      } else if (item.stackGroupId) {
-        // This is the second member of a pair we've already placed; skip it
-        manifestIndex++;
-        continue;
-      } else {
-        // Single placement
-        unit.palletsVisual.push(baseVisual);
-        manifestIndex++;
-        if (type === 'euro') placedEupBaseIndex++; else placedDinBaseIndex++;
-      }
-
-      // Advance within row
-      currentY += wid;
-      currentRowHeight = Math.max(currentRowHeight, len);
+      ({ len, wid } = getDims(type, type === 'euro' ? (currentRowEupPattern as 'long' | 'broad') : 'long'));
     }
+
+    // If does not fit in length, move to next unit
+    if (currentX + len > unit.length) {
+      unitIndex++;
+      unit = unitsState[unitIndex];
+      if (!unit) break;
+      currentX = 0;
+      currentY = 0;
+      currentRowHeight = 0;
+      currentRowEupPattern = null;
+
+      // Decide pattern for the new unit/row if EUP
+      if (type === 'euro') {
+        if (currentEupLoadingPattern === 'auto') {
+          const remainingLen = unit.length - currentX;
+          currentRowEupPattern = remainingLen >= 120 ? 'long' : 'broad';
+        } else {
+          currentRowEupPattern = currentEupLoadingPattern === 'long' ? 'long' : 'broad';
+        }
+      }
+      ({ len, wid } = getDims(type, type === 'euro' ? (currentRowEupPattern as 'long' | 'broad') : 'long'));
+    }
+
+    // Final guard: if still not fitting, stop placing
+    if (currentY + wid > unit.width || currentX + len > unit.length) {
+      break;
+    }
+
+    // Prepare base visual
+    const nextLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
+    const baseKeySuffix = type === 'euro' ? placedEupBaseIndex : placedDinBaseIndex;
+    const baseVisual = {
+      x: currentX, y: currentY, width: len, height: wid,
+      type, isStackedTier: null as any, unitId: unit.id,
+      labelId: nextLabelId, displayBaseLabelId: nextLabelId, displayStackedLabelId: null as number | null,
+      showAsFraction: false, key: `${type}_${baseKeySuffix}`
+    };
+
+    // Add base area once per position
+    totalAreaBase += (type === 'euro' ? PALLET_TYPES.euro.area : PALLET_TYPES.industrial.area);
+
+    if (item.stackGroupId) {
+      // Place stacked pair (base + top) together
+      processedStackGroups.add(item.stackGroupId);
+      baseVisual.isStackedTier = 'base';
+      baseVisual.showAsFraction = true;
+      const stackedLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
+      baseVisual.displayStackedLabelId = stackedLabelId;
+      unit.palletsVisual.push(baseVisual);
+      const topVisual = { ...baseVisual, isStackedTier: 'top', labelId: stackedLabelId, key: `${baseVisual.key}_stack` };
+      unit.palletsVisual.push(topVisual);
+      if (type === 'euro') placedEupBaseIndex++; else placedDinBaseIndex++;
+    } else {
+      // Single placement
+      unit.palletsVisual.push(baseVisual);
+      if (type === 'euro') placedEupBaseIndex++; else placedDinBaseIndex++;
+    }
+
+    // Advance within row
+    currentY += wid;
+    currentRowHeight = Math.max(currentRowHeight, len);
   }
 
   // Compute metrics for return
