@@ -237,108 +237,100 @@ const calculateLoadingLogic = (
     return 0;
   });
 
-  // Placement across units
-  const unitsState = truckConfig.units.map((u: any) => ({ ...u, occupiedRects: [], palletsVisual: [] as any[] }));
+  // STAGE 2: PLACEMENT (This is the new, correct implementation)
+  const unitsState = truckConfig.units.map((u: any) => ({ ...u, palletsVisual: [] as any[] }));
   let dinLabelCounter = 0;
   let eupLabelCounter = 0;
   let placedDinBaseIndex = 0;
   let placedEupBaseIndex = 0;
   let totalAreaBase = 0;
-  let processedStackGroups = new Set<string>();
+  let currentUnitIndex = 0;
+  let currentX = 0;
+  let currentY = 0;
+  let currentRowHeight = 0;
+  let activeEupPatternForRow: 'auto' | 'long' | 'broad' = currentEupLoadingPattern;
 
-  const getDims = (type: 'euro' | 'industrial', eupRowPattern: 'long' | 'broad') => {
-    if (type === 'industrial') {
-      const d = PALLET_TYPES.industrial; // length=120, width=100
-      return { len: d.width, wid: d.length }; // along x: 100, across y: 120
-    }
-    const d = PALLET_TYPES.euro; // length=120, width=80
-    if (eupRowPattern === 'long') return { len: d.length, wid: d.width }; // 120 x 80
-    return { len: d.width, wid: d.length }; // 80 x 120
-  };
+  // Create a copy to safely iterate while modifying the original if needed for labeling
+  let placementQueue = [...finalPalletManifest];
 
-  // STAGE 2: PLACEMENT (Robust while-loop over a queue)
-  let palletsToPlace = [...finalPalletManifest];
-  for (const unit of unitsState) {
-    let currentX = 0;
-    let currentY = 0;
-    let currentRowHeight = 0;
-    let activeEupPatternForRow: 'auto' | 'long' | 'broad' = currentEupLoadingPattern;
+  while (placementQueue.length > 0) {
+    let unit = unitsState[currentUnitIndex];
+    if (!unit) break; // No more truck units to fill
 
-    while (palletsToPlace.length > 0) {
-      const palletToPlace = palletsToPlace[0];
-      const { type, stackGroupId } = palletToPlace as any;
+    const palletToPlace = placementQueue[0] as any;
+    const { type, isStacked } = palletToPlace;
 
-      // Skip second element of a stacked pair if already processed
-      if (stackGroupId && processedStackGroups.has(stackGroupId)) {
-        palletsToPlace.shift();
+    // --- Dynamic EUP Pattern Logic at the start of a new row ---
+    if (currentY === 0 && type === 'euro' && currentEupLoadingPattern === 'auto') {
+      const remainingLength = unit.length - currentX;
+      if (remainingLength >= PALLET_TYPES.euro.length) {
+        activeEupPatternForRow = 'long';
+      } else if (remainingLength >= PALLET_TYPES.euro.width) {
+        activeEupPatternForRow = 'broad';
+      } else {
+        // No more EUP rows fit in this unit, break to move to the next unit (if any)
+        currentUnitIndex++;
+        currentX = 0; currentY = 0; currentRowHeight = 0;
         continue;
       }
-
-      // Dynamic EUP row pattern when starting a new row
-      if (currentY === 0 && type === 'euro' && currentEupLoadingPattern === 'auto') {
-        const remainingLength = unit.length - currentX;
-        if (remainingLength >= PALLET_TYPES.euro.length) {
-          activeEupPatternForRow = 'long';
-        } else if (remainingLength >= PALLET_TYPES.euro.width) {
-          activeEupPatternForRow = 'broad';
-        } else {
-          break; // cannot place any EUP in this unit anymore
-        }
-      }
-
-      const palletDef = type === 'euro' ? PALLET_TYPES.euro : PALLET_TYPES.industrial;
-      let palletLen: number, palletWid: number;
-      if (type === 'euro') {
-        palletLen = activeEupPatternForRow === 'long' ? palletDef.length : palletDef.width;
-        palletWid = activeEupPatternForRow === 'long' ? palletDef.width : palletDef.length;
-      } else {
-        palletLen = palletDef.width; // 100cm along x
-        palletWid = palletDef.length; // 120cm across y
-      }
-
-      // Row/length handling
-      if (currentY + palletWid > unit.width) {
-        currentX += currentRowHeight;
-        currentY = 0;
-        currentRowHeight = 0;
-        continue; // re-evaluate same pallet at new row
-      }
-      if (currentX + palletLen > unit.length) {
-        break; // move to next unit
-      }
-
-      // Place pallet from queue
-      palletsToPlace.shift();
-
-      const nextLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
-      const baseKeySuffix = type === 'euro' ? placedEupBaseIndex : placedDinBaseIndex;
-      const baseVisual = {
-        x: currentX, y: currentY, width: palletLen, height: palletWid,
-        type, isStackedTier: null as any, unitId: unit.id,
-        labelId: nextLabelId, displayBaseLabelId: nextLabelId, displayStackedLabelId: null as number | null,
-        showAsFraction: false, key: `${type}_${baseKeySuffix}`
-      };
-
-      totalAreaBase += (type === 'euro' ? PALLET_TYPES.euro.area : PALLET_TYPES.industrial.area);
-
-      if (stackGroupId) {
-        processedStackGroups.add(stackGroupId);
-        baseVisual.isStackedTier = 'base';
-        baseVisual.showAsFraction = true;
-        const stackedLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
-        baseVisual.displayStackedLabelId = stackedLabelId;
-        unit.palletsVisual.push(baseVisual);
-        const topVisual = { ...baseVisual, isStackedTier: 'top', labelId: stackedLabelId, key: `${baseVisual.key}_stack` };
-        unit.palletsVisual.push(topVisual);
-        if (type === 'euro') placedEupBaseIndex++; else placedDinBaseIndex++;
-      } else {
-        unit.palletsVisual.push(baseVisual);
-        if (type === 'euro') placedEupBaseIndex++; else placedDinBaseIndex++;
-      }
-
-      currentY += palletWid;
-      currentRowHeight = Math.max(currentRowHeight, palletLen);
     }
+
+    const palletDef = type === 'euro' ? PALLET_TYPES.euro : PALLET_TYPES.industrial;
+    let palletLen: number, palletWid: number;
+    if (type === 'euro') {
+      palletLen = activeEupPatternForRow === 'long' ? palletDef.length : palletDef.width;
+      palletWid = activeEupPatternForRow === 'long' ? palletDef.width : palletDef.length;
+    } else {
+      palletLen = palletDef.width;  // 100cm
+      palletWid = palletDef.length; // 120cm
+    }
+
+    // --- Boundary Checks ---
+    if (currentX + palletLen > unit.length) {
+      currentUnitIndex++; // Move to the next truck unit
+      currentX = 0; currentY = 0; currentRowHeight = 0;
+      continue; // Re-evaluate the same pallet in the new unit
+    }
+    if (currentY + palletWid > unit.width) {
+      currentX += currentRowHeight;
+      currentY = 0;
+      currentRowHeight = 0;
+      continue; // Re-evaluate the same pallet in the new row
+    }
+
+    // --- Place the Pallet(s) ---
+    const itemsToPlace = isStacked ? [placementQueue.shift(), placementQueue.shift()] : [placementQueue.shift()];
+    if (itemsToPlace.some(p => p === undefined)) break; // Safety break
+
+    // Create and push visual(s)
+    const nextLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
+    const baseKeySuffix = type === 'euro' ? placedEupBaseIndex : placedDinBaseIndex;
+    const baseVisual: any = {
+      x: currentX, y: currentY, width: palletLen, height: palletWid,
+      type, isStackedTier: null, unitId: unit.id,
+      labelId: nextLabelId, displayBaseLabelId: nextLabelId, displayStackedLabelId: null,
+      showAsFraction: false, key: `${type}_${baseKeySuffix}`
+    };
+
+    totalAreaBase += (type === 'euro' ? PALLET_TYPES.euro.area : PALLET_TYPES.industrial.area);
+
+    if (isStacked) {
+      baseVisual.isStackedTier = 'base';
+      baseVisual.showAsFraction = true;
+      const stackedLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
+      baseVisual.displayStackedLabelId = stackedLabelId;
+      unit.palletsVisual.push(baseVisual);
+      const topVisual = { ...baseVisual, isStackedTier: 'top', labelId: stackedLabelId, key: `${baseVisual.key}_stack` };
+      unit.palletsVisual.push(topVisual);
+      if (type === 'euro') placedEupBaseIndex++; else placedDinBaseIndex++;
+    } else {
+      unit.palletsVisual.push(baseVisual);
+      if (type === 'euro') placedEupBaseIndex++; else placedDinBaseIndex++;
+    }
+
+    // Update cursors for the next pallet in the row
+    currentY += palletWid;
+    currentRowHeight = Math.max(currentRowHeight, palletLen);
   }
 
   // Compute metrics for return
