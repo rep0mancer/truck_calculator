@@ -443,23 +443,21 @@ export default function HomePage() {
     
     // Compute remaining capacity using specified length-per-pallet model based on entered counts and stacking limits
     const usableLengthM = (TRUCK_TYPES[selectedTruck].usableLength || 0) / 100;
-    const computeFloorPositions = (count: number, isStackableFlag: boolean, stackLimit: number): number => {
-      if (!isStackableFlag) return count;
-      const hasLimit = typeof stackLimit === 'number' && stackLimit > 0;
-      if (hasLimit) {
-        const pairsCap = Math.floor(stackLimit / 2);
-        const pairsPossible = Math.floor(count / 2);
-        const pairs = Math.min(pairsCap, pairsPossible);
-        return count - pairs;
-      }
-      return Math.ceil(count / 2);
+    const getFloorPositions = (totalCount: number, isStackableFlag: boolean, stackableLimit: number): number => {
+      if (!isStackableFlag) return totalCount;
+      const limit = typeof stackableLimit === 'number' ? stackableLimit : 0;
+      const actualStackableCount = limit > 0 ? Math.min(totalCount, limit) : totalCount;
+      const nonStackableCount = totalCount - actualStackableCount;
+      const stackablePositions = Math.ceil(actualStackableCount / 2);
+      const nonStackablePositions = nonStackableCount;
+      return stackablePositions + nonStackablePositions;
     };
-    const eupFloorPositions = computeFloorPositions(eupQuantity, isEUPStackable, eupStackLimit);
-    const dinFloorPositions = computeFloorPositions(dinQuantity, isDINStackable, dinStackLimit);
+    const eupFloorPositions = getFloorPositions(eupQuantity, isEUPStackable, eupStackLimit);
+    const dinFloorPositions = getFloorPositions(dinQuantity, isDINStackable, dinStackLimit);
     const usedLengthM = (eupFloorPositions * 0.4) + (dinFloorPositions * 0.5);
     const remainingLengthM = Math.max(0, usableLengthM - usedLengthM);
-    const remainingDin = Math.max(0, Math.floor(remainingLengthM / 0.5));
-    const remainingEup = Math.max(0, Math.floor(remainingLengthM / 0.4));
+    const remainingDin = Math.max(0, Math.round(remainingLengthM / 0.5));
+    const remainingEup = Math.max(0, Math.round(remainingLengthM / 0.4));
     setRemainingCapacity({ eup: remainingEup, din: remainingDin });
     
   }, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, eupStackLimit, dinStackLimit]);
