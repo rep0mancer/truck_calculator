@@ -456,8 +456,11 @@ export default function HomePage() {
     const dinFloorPositions = getFloorPositions(dinQuantity, isDINStackable, dinStackLimit);
     const usedLengthM = (eupFloorPositions * 0.4) + (dinFloorPositions * 0.5);
     const remainingLengthM = Math.max(0, usableLengthM - usedLengthM);
-    const remainingDin = Math.max(0, Math.round(remainingLengthM / 0.5));
-    const remainingEup = Math.max(0, Math.round(remainingLengthM / 0.4));
+    const safeFloor = (n: number) => Math.floor(n + 1e-9);
+    const availableDinPositions = Math.max(0, safeFloor(remainingLengthM / 0.5));
+    const availableEupPositions = Math.max(0, safeFloor(remainingLengthM / 0.4));
+    const remainingDin = isDINStackable ? availableDinPositions * 2 : availableDinPositions;
+    const remainingEup = isEUPStackable ? availableEupPositions * 2 : availableEupPositions;
     setRemainingCapacity({ eup: remainingEup, din: remainingDin });
     
   }, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, eupStackLimit, dinStackLimit]);
