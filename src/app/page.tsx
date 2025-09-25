@@ -109,7 +109,7 @@ const calculateLoadingLogic = (
   const requestedEupQuantity = eupPalletsWithMeta.length;
   const requestedDinQuantity = dinPalletsWithMeta.length;
   
-  const patternsToTry = currentEupLoadingPattern === 'auto' ? ['broad', 'long'] : [currentEupLoadingPattern];
+  const patternsToTry = currentEupLoadingPattern === 'auto' ? ['auto'] : [currentEupLoadingPattern];
   let bestOverallResult = null;
 
   for (const eupPattern of patternsToTry) {
@@ -170,6 +170,7 @@ const calculateLoadingLogic = (
     for (const unit of unitsState) {
       if (stopPlacement) break;
       let currentX = 0, currentY = 0, currentRowHeight = 0;
+      let currentRowPatternAuto: 'long' | 'broad' | null = null;
 
       while (palletQueue.length > 0) {
         const nextPallet = palletQueue[0];
@@ -178,6 +179,117 @@ const calculateLoadingLogic = (
 
         let palletLen, palletWid, finalLen, finalWid;
 
+        // Dynamic row-by-row auto optimization for Europallets
+        if (isEuro && currentEupLoadingPattern === 'auto') {
+          // Decide/ensure pattern for this row
+          const remainingLength = unit.length - currentX;
+          const leftoverWidth = unit.width - currentY;
+          const longLen = palletDef.length;  // 120
+          const longWid = palletDef.width;   // 80
+          const broadLen = palletDef.width;  // 80
+          const broadWid = palletDef.length; // 120
+
+          // If no pattern yet for this row, choose one greedily based on fit and capacity
+          if (currentRowPatternAuto === null) {
+            const canFitLong = remainingLength >= longLen && leftoverWidth >= longWid;
+            const canFitBroad = remainingLength >= broadLen && leftoverWidth >= broadWid;
+
+            if (canFitLong && canFitBroad) {
+              const pprLong = Math.floor(leftoverWidth / longWid);
+              const pprBroad = Math.floor(leftoverWidth / broadWid);
+              currentRowPatternAuto = pprLong >= pprBroad ? 'long' : 'broad';
+            } else if (canFitLong) {
+              currentRowPatternAuto = 'long';
+            } else if (canFitBroad) {
+              currentRowPatternAuto = 'broad';
+            } else {
+              // Neither pattern fits in the remaining space of this unit
+              break;
+            }
+          }
+
+          // Resolve chosen dims for this row
+          const chosenLen = currentRowPatternAuto === 'long' ? longLen : broadLen;
+          const chosenWid = currentRowPatternAuto === 'long' ? longWid : broadWid;
+
+          // If nothing fits anymore at current position with the chosen pattern, advance to next row
+          if (!(currentY + chosenWid <= unit.width && currentX + chosenLen <= unit.length)) {
+            currentX += currentRowHeight;
+            currentY = 0;
+            currentRowHeight = 0;
+            currentRowPatternAuto = null;
+            continue;
+          }
+
+          // Place as many consecutive EUPs as fit for this row and remain at the queue front
+          let placedInThisPass = 0;
+          while (
+            palletQueue.length > 0 &&
+            palletQueue[0]?.type === 'euro' &&
+            currentY + chosenWid <= unit.width &&
+            currentX + chosenLen <= unit.length
+          ) {
+            // Weight limit check for the next EUP (consider stacking)
+            const basePalletWeight = eupPalletsQueue[0]?.weight || 0;
+            let palletWeight = basePalletWeight;
+            const isStackedNext = palletQueue[0]?.stacked;
+            if (isStackedNext) {
+              const nextWeight = eupPalletsQueue[1]?.weight || 0;
+              palletWeight += nextWeight;
+            }
+            if (palletWeight > 0 && currentTotalWeight + palletWeight > weightLimit) {
+              if(!tempWarnings.some(w => w.includes('Gewichtslimit'))) tempWarnings.push('Gewichtslimit erreicht.');
+              stopPlacement = true;
+              break;
+            }
+
+            const palletToPlace = palletQueue.shift();
+            const baseLabelId = ++eupLabelCounter;
+            const basePallet = {
+              x: currentX, y: currentY, width: chosenLen, height: chosenWid,
+              type: palletToPlace.type, isStackedTier: null, unitId: unit.id,
+              labelId: baseLabelId, displayBaseLabelId: baseLabelId, displayStackedLabelId: null, showAsFraction: false,
+              key: `${palletToPlace.type}_${finalActualEUPBase}`
+            };
+
+            finalActualEUPBase++;
+            currentTotalWeight += eupPalletsQueue.shift()?.weight || 0;
+            finalTotalAreaBase += palletDef.area;
+
+            if (palletToPlace.stacked) {
+              currentTotalWeight += eupPalletsQueue.shift()?.weight || 0;
+              const stackedLabelId = ++eupLabelCounter;
+              basePallet.isStackedTier = 'base';
+              basePallet.showAsFraction = true;
+              basePallet.displayStackedLabelId = stackedLabelId;
+              const stackPallet = { ...basePallet, isStackedTier: 'top', labelId: stackedLabelId, key: basePallet.key + '_stack' };
+              unit.palletsVisual.push(basePallet);
+              unit.palletsVisual.push(stackPallet);
+            } else {
+              unit.palletsVisual.push(basePallet);
+            }
+
+            currentY += chosenWid;
+            currentRowHeight = Math.max(currentRowHeight, chosenLen);
+            placedInThisPass++;
+          }
+
+          if (stopPlacement) break;
+
+          // If we could not place anything with the chosen pattern at this position, advance row and retry
+          if (placedInThisPass === 0) {
+            currentX += currentRowHeight;
+            currentY = 0;
+            currentRowHeight = 0;
+            currentRowPatternAuto = null;
+            continue;
+          }
+
+          // Otherwise, continue outer loop for the next queue item (could be DIN or more EUP)
+          continue;
+        }
+
+        // --- Original logic for DIN pallets or fixed-pattern EUPs ---
         if (isEuro) {
           palletLen = eupPattern === 'long' ? palletDef.length : palletDef.width;
           palletWid = eupPattern === 'long' ? palletDef.width : palletDef.length;
