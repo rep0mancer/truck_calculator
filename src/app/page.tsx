@@ -52,15 +52,15 @@ const TRUCK_TYPES = {
   Waggon1: {
     name: 'Waggon POE',
     units: [
-      { id: 'unit1', length: 300, width: 240, occupiedRects: [] },
-      { id: 'unit2', length: 300, width: 240, occupiedRects: [] },
-      { id: 'unit3', length: 300, width: 240, occupiedRects: [] },
-      { id: 'unit4', length: 200, width: 240, occupiedRects: [] },
-      { id: 'unit5', length: 200, width: 240, occupiedRects: [] },
+      { id: 'unit1', length: 300, width: 290, occupiedRects: [] },
+      { id: 'unit2', length: 300, width: 290, occupiedRects: [] },
+      { id: 'unit3', length: 300, width: 290, occupiedRects: [] },
+      { id: 'unit4', length: 200, width: 290, occupiedRects: [] },
+      { id: 'unit5', length: 200, width: 290, occupiedRects: [] },
     ],
     totalLength: 1390,
-    usableLength: 1300,
-    maxWidth: 240,
+    usableLength: 1370,
+    maxWidth: 290,
     maxGrossWeightKg: 28000,
   },
   Waggon2: {
