@@ -49,14 +49,19 @@ const TRUCK_TYPES = {
     maxWidth: 245,
     maxGrossWeightKg: 10000,
   },
-  Waggon: {
-    name: 'Waggon Hbbils (15,2m)',
-    units: [{ id: 'main', length: 1520, width: 290, occupiedRects: [] }],
-    totalLength: 1520,
-    usableLength: 1520,
-    maxWidth: 290,
-    maxDinPallets: 26,
-    maxGrossWeightKg: 24000,
+  Waggon1: {
+    name: 'Waggon POE',
+    units: [
+      { id: 'unit1', length: 300, width: 240, occupiedRects: [] },
+      { id: 'unit2', length: 300, width: 240, occupiedRects: [] },
+      { id: 'unit3', length: 300, width: 240, occupiedRects: [] },
+      { id: 'unit4', length: 200, width: 240, occupiedRects: [] },
+      { id: 'unit5', length: 200, width: 240, occupiedRects: [] },
+    ],
+    totalLength: 1390,
+    usableLength: 1300,
+    maxWidth: 240,
+    maxGrossWeightKg: 28000,
   },
   Waggon2: {
     name: 'Waggon KRM',
