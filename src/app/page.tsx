@@ -377,6 +377,8 @@ export default function HomePage() {
   const [palletArrangement, setPalletArrangement] = useState([]);
   const [totalWeightKg, setTotalWeightKg] = useState(0);
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
+  const [remainingCapacity, setRemainingCapacity] = useState<{ eup: number, din: number }>({ eup: 0, din: 0 });
+  const [lastEdited, setLastEdited] = useState<'eup' | 'din'>('eup');
 
   const { toast } = useToast();
 
@@ -392,14 +394,13 @@ export default function HomePage() {
       eupLoadingPattern,
       'DIN_FIRST',
       eupStackLimit,
-      dinStackLimit,
-      null // Removed priority
+      dinStackLimit
     );
     
     let multiTruckWarnings = [];
     
     if (dinQuantity > 0 && eupQuantity === 0) {
-        const dinCapacityResult = calculateLoadingLogic(selectedTruck, [], [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], isEUPStackable, isDINStackable, eupLoadingPattern, 'DIN_FIRST', eupStackLimit, dinStackLimit, null);
+        const dinCapacityResult = calculateLoadingLogic(selectedTruck, [], [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], isEUPStackable, isDINStackable, eupLoadingPattern, 'DIN_FIRST', eupStackLimit, dinStackLimit);
         const maxDinCapacity = dinCapacityResult.totalDinPalletsVisual;
 
         if (maxDinCapacity > 0 && dinQuantity > maxDinCapacity) {
@@ -414,7 +415,7 @@ export default function HomePage() {
             }
         }
     } else if (eupQuantity > 0 && dinQuantity === 0) {
-        const eupCapacityResult = calculateLoadingLogic(selectedTruck, [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], [], isEUPStackable, isDINStackable, eupLoadingPattern, 'EUP_FIRST', eupStackLimit, dinStackLimit, null);
+        const eupCapacityResult = calculateLoadingLogic(selectedTruck, [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], [], isEUPStackable, isDINStackable, eupLoadingPattern, 'EUP_FIRST', eupStackLimit, dinStackLimit);
         const maxEupCapacity = eupCapacityResult.totalEuroPalletsVisual;
 
         if (maxEupCapacity > 0 && eupQuantity > maxEupCapacity) {
@@ -439,6 +440,28 @@ export default function HomePage() {
     setWarnings(Array.from(new Set([...primaryResults.warnings, ...multiTruckWarnings])));
     setTotalWeightKg(primaryResults.totalWeightKg);
     setActualEupLoadingPattern(primaryResults.eupLoadingPatternUsed);
+    
+    // Compute remaining capacity using specified length-per-pallet model based on entered counts and stacking limits
+    const usableLengthM = (TRUCK_TYPES[selectedTruck].usableLength || 0) / 100;
+    const getFloorPositions = (totalCount: number, isStackableFlag: boolean, stackableLimit: number): number => {
+      if (!isStackableFlag) return totalCount;
+      const limit = typeof stackableLimit === 'number' ? stackableLimit : 0;
+      const actualStackableCount = limit > 0 ? Math.min(totalCount, limit) : totalCount;
+      const nonStackableCount = totalCount - actualStackableCount;
+      const stackablePositions = Math.ceil(actualStackableCount / 2);
+      const nonStackablePositions = nonStackableCount;
+      return stackablePositions + nonStackablePositions;
+    };
+    const eupFloorPositions = getFloorPositions(eupQuantity, isEUPStackable, eupStackLimit);
+    const dinFloorPositions = getFloorPositions(dinQuantity, isDINStackable, dinStackLimit);
+    const usedLengthM = (eupFloorPositions * 0.4) + (dinFloorPositions * 0.5);
+    const remainingLengthM = Math.max(0, usableLengthM - usedLengthM);
+    const safeFloor = (n: number) => Math.floor(n + 1e-9);
+    const availableDinPositions = Math.max(0, safeFloor(remainingLengthM / 0.5));
+    const availableEupPositions = Math.max(0, safeFloor(remainingLengthM / 0.4));
+    const remainingDin = isDINStackable ? availableDinPositions * 2 : availableDinPositions;
+    const remainingEup = isEUPStackable ? availableEupPositions * 2 : availableEupPositions;
+    setRemainingCapacity({ eup: remainingEup, din: remainingDin });
     
   }, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, eupStackLimit, dinStackLimit]);
 
@@ -465,8 +488,7 @@ export default function HomePage() {
         isEUPStackable, isDINStackable,
         'auto',
         palletTypeToMax === 'euro' ? 'EUP_FIRST' : 'DIN_FIRST',
-        eupStackLimit, dinStackLimit,
-        null
+        eupStackLimit, dinStackLimit
     );
 
     if (palletTypeToMax === 'industrial') {
@@ -492,7 +514,7 @@ export default function HomePage() {
       const res = calculateLoadingLogic(
           selectedTruck, eupSim, dinSim,
           isEUPStackable, isDINStackable, 'auto', 'DIN_FIRST',
-          eupStackLimit, dinStackLimit, null
+          eupStackLimit, dinStackLimit
       );
 
       const currentEups = eupWeights.reduce((s, e) => s + e.quantity, 0);
@@ -582,7 +604,7 @@ export default function HomePage() {
             
             <div className="border-t pt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Industriepaletten (DIN)</label>
-                <WeightInputs entries={dinWeights} onChange={setDinWeights} palletType="DIN" />
+                <WeightInputs entries={dinWeights} onChange={(entries)=>{ setLastEdited('din'); setDinWeights(entries); }} palletType="DIN" />
                 <button onClick={() => handleMaximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 bg-gradient-to-b from-[#00b382] to-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#00906c] hover:to-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. DIN</button>
                 <button onClick={() => handleFillRemaining('industrial')} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. DIN füllen</button>
                 <div className="flex items-center mt-2">
@@ -596,7 +618,7 @@ export default function HomePage() {
 
             <div className="border-t pt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Europaletten (EUP)</label>
-                <WeightInputs entries={eupWeights} onChange={setEupWeights} palletType="EUP" />
+                <WeightInputs entries={eupWeights} onChange={(entries)=>{ setLastEdited('eup'); setEupWeights(entries); }} palletType="EUP" />
                 <button onClick={() => handleMaximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 bg-gradient-to-b from-[#00b382] to-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#00906c] hover:to-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. EUP</button>
                 <button onClick={() => handleFillRemaining('euro')} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. EUP füllen</button>
                 <div className="flex items-center mt-2">
@@ -658,9 +680,25 @@ export default function HomePage() {
             <p className="text-xs mt-1">(Basis: {loadedIndustrialPalletsBase} DIN, {loadedEuroPalletsBase} EUP)</p>
           </div>
           <div className="bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm text-center">
-            <h3 className="font-semibold text-green-800 mb-2">Flächenausnutzung</h3>
-            <p className="font-bold text-3xl text-green-700">{utilizationPercentage}%</p>
-            <p className="text-xs mt-1">(Grundfläche)</p>
+            <h3 className="font-semibold text-green-800 mb-2">Verbleibende Kapazität</h3>
+            {(() => {
+              const firstType = lastEdited === 'din' ? 'DIN' : 'EUP';
+              const secondType = lastEdited === 'din' ? 'EUP' : 'DIN';
+              const firstValue = lastEdited === 'din' ? remainingCapacity.din : remainingCapacity.eup;
+              const secondValue = lastEdited === 'din' ? remainingCapacity.eup : remainingCapacity.din;
+              return (
+                <>
+                  <p className="font-bold text-2xl text-green-700">Platz für:</p>
+                  <p className="font-bold text-2xl text-green-700">
+                    {firstValue} weitere {firstType} {firstValue === 1 ? 'Palette' : 'Paletten'}
+                  </p>
+                  <p className="text-green-700">oder</p>
+                  <p className="font-bold text-xl text-green-700">
+                    {secondValue} weitere {secondType} {secondValue === 1 ? 'Palette' : 'Paletten'}
+                  </p>
+                </>
+              );
+            })()}
           </div>
           <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 shadow-sm text-center">
             <h3 className="font-semibold text-yellow-800 mb-2">Geschätztes Gewicht</h3>
