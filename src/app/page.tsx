@@ -447,7 +447,7 @@ export default function HomePage() {
       eupWeights,
       [...dinWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0' }],
       isEUPStackable, isDINStackable,
-      eupLoadingPattern,
+      primaryResults.eupLoadingPatternUsed,
       'EUP_FIRST',
       eupStackLimit,
       dinStackLimit
@@ -458,14 +458,16 @@ export default function HomePage() {
       [...eupWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0' }],
       dinWeights,
       isEUPStackable, isDINStackable,
-      eupLoadingPattern,
+      primaryResults.eupLoadingPatternUsed,
       'DIN_FIRST',
       eupStackLimit,
       dinStackLimit
     );
 
-    const remainingDin = Math.max(0, dinCapacitySim.totalDinPalletsVisual - dinQuantity);
-    const remainingEup = Math.max(0, eupCapacitySim.totalEuroPalletsVisual - eupQuantity);
+    const currentPlacedDin = primaryResults.totalDinPalletsVisual;
+    const currentPlacedEup = primaryResults.totalEuroPalletsVisual;
+    const remainingDin = Math.max(0, dinCapacitySim.totalDinPalletsVisual - currentPlacedDin);
+    const remainingEup = Math.max(0, eupCapacitySim.totalEuroPalletsVisual - currentPlacedEup);
     setRemainingCapacity({ eup: remainingEup, din: remainingDin });
     
   }, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, eupStackLimit, dinStackLimit]);
