@@ -50,7 +50,7 @@ const TRUCK_TYPES = {
     maxGrossWeightKg: 10000,
   },
   Waggon: {
-    name: 'Waggon Hbbils (15,2m)',
+    name: 'Waggon POE',
     units: [{ id: 'main', length: 1370, width: 290, occupiedRects: [] }],
     totalLength: 1370,
     usableLength: 1370,
