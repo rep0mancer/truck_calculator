@@ -275,6 +275,48 @@ const calculateLoadingLogic = (
         currentY += finalWid;
         currentRowHeight = Math.max(currentRowHeight, finalLen);
       }
+      // End-of-load optimization: place 1-3 leftover EUP sideways at the tail end
+      if (!stopPlacement) {
+        const euroLen = PALLET_TYPES.euro.length; // 120
+        const euroWid = PALLET_TYPES.euro.width;  // 80
+        const startX = currentX + currentRowHeight;
+        const remainingLength = unit.length - startX;
+        if (remainingLength >= euroLen) {
+          const leftoverEupSinglesCount = palletQueue.filter(p => p.type === 'euro' && p.stacked === false).length;
+          if (leftoverEupSinglesCount > 0) {
+            const maxAcrossWidth = Math.floor(unit.width / euroWid);
+            let candidates = Math.min(3, leftoverEupSinglesCount, maxAcrossWidth);
+            if (candidates > 0) {
+              // Ensure weight limit is not exceeded by this optimization
+              let addedWeight = 0;
+              for (let i = 0; i < candidates; i++) {
+                addedWeight += eupPalletsQueue[i]?.weight || 0;
+              }
+              if (currentTotalWeight + addedWeight <= weightLimit) {
+                let yPos = 0;
+                for (let i = 0; i < candidates; i++) {
+                  const idx = palletQueue.findIndex(p => p.type === 'euro' && p.stacked === false);
+                  if (idx === -1) break;
+                  palletQueue.splice(idx, 1);
+
+                  const baseLabelId = ++eupLabelCounter;
+                  const basePallet = {
+                    x: startX, y: yPos, width: euroLen, height: euroWid,
+                    type: 'euro', isStackedTier: null, unitId: unit.id,
+                    labelId: baseLabelId, displayBaseLabelId: baseLabelId, displayStackedLabelId: null, showAsFraction: false,
+                    key: `euro_${finalActualEUPBase}`
+                  };
+                  finalActualEUPBase++;
+                  currentTotalWeight += eupPalletsQueue.shift()?.weight || 0;
+                  finalTotalAreaBase += PALLET_TYPES.euro.area;
+                  unit.palletsVisual.push(basePallet);
+                  yPos += euroWid;
+                }
+              }
+            }
+          }
+        }
+      }
     }
     
     if (palletQueue.length > 0 && !stopPlacement) {
