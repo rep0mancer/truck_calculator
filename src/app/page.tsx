@@ -445,7 +445,7 @@ export default function HomePage() {
     const dinCapacitySim = calculateLoadingLogic(
       selectedTruck,
       eupWeights,
-      [{ id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0' }],
+      [...dinWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0' }],
       isEUPStackable, isDINStackable,
       eupLoadingPattern,
       'EUP_FIRST',
@@ -455,7 +455,7 @@ export default function HomePage() {
 
     const eupCapacitySim = calculateLoadingLogic(
       selectedTruck,
-      [{ id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0' }],
+      [...eupWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0' }],
       dinWeights,
       isEUPStackable, isDINStackable,
       eupLoadingPattern,
