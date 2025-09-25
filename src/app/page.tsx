@@ -403,88 +403,104 @@ export default function HomePage() {
   const { toast } = useToast();
 
   const calculateAndSetState = useCallback(() => {
-    const eupQuantity = eupWeights.reduce((sum, entry) => sum + entry.quantity, 0);
-    const dinQuantity = dinWeights.reduce((sum, entry) => sum + entry.quantity, 0);
+  const eupQuantity = eupWeights.reduce((sum, entry) => sum + entry.quantity, 0);
+  const dinQuantity = dinWeights.reduce((sum, entry) => sum + entry.quantity, 0);
 
-    const primaryResults = calculateLoadingLogic(
-      selectedTruck,
-      eupWeights,
-      dinWeights,
-      isEUPStackable, isDINStackable,
-      eupLoadingPattern,
-      'DIN_FIRST',
-      eupStackLimit,
-      dinStackLimit
-    );
-    
-    let multiTruckWarnings = [];
-    
-    if (dinQuantity > 0 && eupQuantity === 0) {
-        const dinCapacityResult = calculateLoadingLogic(selectedTruck, [], [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], isEUPStackable, isDINStackable, eupLoadingPattern, 'DIN_FIRST', eupStackLimit, dinStackLimit);
-        const maxDinCapacity = dinCapacityResult.totalDinPalletsVisual;
+  const primaryResults = calculateLoadingLogic(
+    selectedTruck,
+    eupWeights,
+    dinWeights,
+    isEUPStackable, isDINStackable,
+    eupLoadingPattern,
+    'DIN_FIRST',
+    eupStackLimit,
+    dinStackLimit
+  );
+  
+  let multiTruckWarnings = [];
+  
+  if (dinQuantity > 0 && eupQuantity === 0) {
+      const dinCapacityResult = calculateLoadingLogic(selectedTruck, [], [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], isEUPStackable, isDINStackable, eupLoadingPattern, 'DIN_FIRST', eupStackLimit, dinStackLimit);
+      const maxDinCapacity = dinCapacityResult.totalDinPalletsVisual;
 
-        if (maxDinCapacity > 0 && dinQuantity > maxDinCapacity) {
-            const totalTrucks = Math.ceil(dinQuantity / maxDinCapacity);
-            const fullTrucks = Math.floor(dinQuantity / maxDinCapacity);
-            const remainingPallets = dinQuantity % maxDinCapacity;
-            
-            if (remainingPallets === 0) {
-                multiTruckWarnings.push(`Für diesen Auftrag werden ${fullTrucks} volle LKWs benötigt.`);
-            } else {
-                multiTruckWarnings.push(`Benötigt ${totalTrucks} LKWs: ${fullTrucks} volle LKW(s) und 1 LKW mit ${remainingPallets} Paletten.`);
-            }
-        }
-    } else if (eupQuantity > 0 && dinQuantity === 0) {
-        const eupCapacityResult = calculateLoadingLogic(selectedTruck, [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], [], isEUPStackable, isDINStackable, eupLoadingPattern, 'EUP_FIRST', eupStackLimit, dinStackLimit);
-        const maxEupCapacity = eupCapacityResult.totalEuroPalletsVisual;
+      if (maxDinCapacity > 0 && dinQuantity > maxDinCapacity) {
+          const totalTrucks = Math.ceil(dinQuantity / maxDinCapacity);
+          const fullTrucks = Math.floor(dinQuantity / maxDinCapacity);
+          const remainingPallets = dinQuantity % maxDinCapacity;
+          
+          if (remainingPallets === 0) {
+              multiTruckWarnings.push(`Für diesen Auftrag werden ${fullTrucks} volle LKWs benötigt.`);
+          } else {
+              multiTruckWarnings.push(`Benötigt ${totalTrucks} LKWs: ${fullTrucks} volle LKW(s) und 1 LKW mit ${remainingPallets} Paletten.`);
+          }
+      }
+  } else if (eupQuantity > 0 && dinQuantity === 0) {
+      const eupCapacityResult = calculateLoadingLogic(selectedTruck, [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], [], isEUPStackable, isDINStackable, eupLoadingPattern, 'EUP_FIRST', eupStackLimit, dinStackLimit);
+      const maxEupCapacity = eupCapacityResult.totalEuroPalletsVisual;
 
-        if (maxEupCapacity > 0 && eupQuantity > maxEupCapacity) {
-            const totalTrucks = Math.ceil(eupQuantity / maxEupCapacity);
-            const fullTrucks = Math.floor(eupQuantity / maxEupCapacity);
-            const remainingPallets = eupQuantity % maxEupCapacity;
-            
-            if (remainingPallets === 0) {
-                multiTruckWarnings.push(`Für diesen Auftrag werden ${fullTrucks} volle LKWs benötigt.`);
-            } else {
-                multiTruckWarnings.push(`Benötigt ${totalTrucks} LKWs: ${fullTrucks} volle LKW(s) und 1 LKW mit ${remainingPallets} Paletten.`);
-            }
-        }
-    }
-    
-    setPalletArrangement(primaryResults.palletArrangement);
-    setLoadedIndustrialPalletsBase(primaryResults.loadedIndustrialPalletsBase);
-    setLoadedEuroPalletsBase(primaryResults.loadedEuroPalletsBase);
-    setTotalDinPalletsVisual(primaryResults.totalDinPalletsVisual);
-    setTotalEuroPalletsVisual(primaryResults.totalEuroPalletsVisual);
-    setUtilizationPercentage(primaryResults.utilizationPercentage);
-    setWarnings(Array.from(new Set([...primaryResults.warnings, ...multiTruckWarnings])));
-    setTotalWeightKg(primaryResults.totalWeightKg);
-    setActualEupLoadingPattern(primaryResults.eupLoadingPatternUsed);
-    
-    // Compute remaining capacity using specified length-per-pallet model based on entered counts and stacking limits
-    const usableLengthM = (TRUCK_TYPES[selectedTruck].usableLength || 0) / 100;
-    const getFloorPositions = (totalCount: number, isStackableFlag: boolean, stackableLimit: number): number => {
-      if (!isStackableFlag) return totalCount;
-      const limit = typeof stackableLimit === 'number' ? stackableLimit : 0;
-      const actualStackableCount = limit > 0 ? Math.min(totalCount, limit) : totalCount;
-      const nonStackableCount = totalCount - actualStackableCount;
-      const stackablePositions = Math.ceil(actualStackableCount / 2);
-      const nonStackablePositions = nonStackableCount;
-      return stackablePositions + nonStackablePositions;
-    };
-    const eupFloorPositions = getFloorPositions(eupQuantity, isEUPStackable, eupStackLimit);
-    const dinFloorPositions = getFloorPositions(dinQuantity, isDINStackable, dinStackLimit);
-    const usedLengthM = (eupFloorPositions * 0.4) + (dinFloorPositions * 0.5);
-    const remainingLengthM = Math.max(0, usableLengthM - usedLengthM);
-    const safeFloor = (n: number) => Math.floor(n + 1e-9);
-    const availableDinPositions = Math.max(0, safeFloor(remainingLengthM / 0.5));
-    const availableEupPositions = Math.max(0, safeFloor(remainingLengthM / 0.4));
-    const remainingDin = isDINStackable ? availableDinPositions * 2 : availableDinPositions;
-    const remainingEup = isEUPStackable ? availableEupPositions * 2 : availableEupPositions;
-    setRemainingCapacity({ eup: remainingEup, din: remainingDin });
-    
-  }, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, eupStackLimit, dinStackLimit]);
+      if (maxEupCapacity > 0 && eupQuantity > maxEupCapacity) {
+          const totalTrucks = Math.ceil(eupQuantity / maxEupCapacity);
+          const fullTrucks = Math.floor(eupQuantity / maxEupCapacity);
+          const remainingPallets = eupQuantity % maxEupCapacity;
+          
+          if (remainingPallets === 0) {
+              multiTruckWarnings.push(`Für diesen Auftrag werden ${fullTrucks} volle LKWs benötigt.`);
+          } else {
+              multiTruckWarnings.push(`Benötigt ${totalTrucks} LKWs: ${fullTrucks} volle LKW(s) und 1 LKW mit ${remainingPallets} Paletten.`);
+          }
+      }
+  }
+  
+  setPalletArrangement(primaryResults.palletArrangement);
+  setLoadedIndustrialPalletsBase(primaryResults.loadedIndustrialPalletsBase);
+  setLoadedEuroPalletsBase(primaryResults.loadedEuroPalletsBase);
+  setTotalDinPalletsVisual(primaryResults.totalDinPalletsVisual);
+  setTotalEuroPalletsVisual(primaryResults.totalEuroPalletsVisual);
+  setUtilizationPercentage(primaryResults.utilizationPercentage);
+  setWarnings(Array.from(new Set([...primaryResults.warnings, ...multiTruckWarnings])));
+  setTotalWeightKg(primaryResults.totalWeightKg);
+  setActualEupLoadingPattern(primaryResults.eupLoadingPatternUsed);
+  
+  // Compute remaining capacity using integer cm to avoid floating point issues, and incorporate weight limits
+  const truckConfig = TRUCK_TYPES[selectedTruck];
+  const usableLengthCm = truckConfig.usableLength || 0;
+  const weightLimit = truckConfig.maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG;
+  const remainingWeightKg = Math.max(0, weightLimit - primaryResults.totalWeightKg);
 
+  const getFloorPositions = (totalCount: number, isStackableFlag: boolean, stackableLimit: number): number => {
+    if (!isStackableFlag) return totalCount;
+    const limit = typeof stackableLimit === 'number' ? stackableLimit : 0;
+    const actualStackableCount = limit > 0 ? Math.min(totalCount, limit) : totalCount;
+    const nonStackableCount = totalCount - actualStackableCount;
+    const stackablePositions = Math.ceil(actualStackableCount / 2);
+    const nonStackablePositions = nonStackableCount;
+    return stackablePositions + nonStackablePositions;
+  };
+
+  const eupFloorPositions = getFloorPositions(eupQuantity, isEUPStackable, eupStackLimit);
+  const dinFloorPositions = getFloorPositions(dinQuantity, isDINStackable, dinStackLimit);
+  const usedLengthCm = (eupFloorPositions * 40) + (dinFloorPositions * 50);
+  const remainingLengthCm = Math.max(0, usableLengthCm - usedLengthCm);
+
+  const availableDinPositions = Math.max(0, Math.floor(remainingLengthCm / 50));
+  const availableEupPositions = Math.max(0, Math.floor(remainingLengthCm / 40));
+
+  let remainingDinBySpace = isDINStackable ? availableDinPositions * 2 : availableDinPositions;
+  let remainingEupBySpace = isEUPStackable ? availableEupPositions * 2 : availableEupPositions;
+
+  // Incorporate weight: compute avg weight per pallet for each type
+  const avgDinWeight = dinQuantity > 0 ? (dinWeights.reduce((sum, entry) => sum + (parseFloat(entry.weight || '0') * entry.quantity), 0) / dinQuantity) : 0;
+  const avgEupWeight = eupQuantity > 0 ? (eupWeights.reduce((sum, entry) => sum + (parseFloat(entry.weight || '0') * entry.quantity), 0) / eupQuantity) : 0;
+
+  const maxDinByWeight = avgDinWeight > 0 ? Math.floor(remainingWeightKg / avgDinWeight) : Infinity;
+  const maxEupByWeight = avgEupWeight > 0 ? Math.floor(remainingWeightKg / avgEupWeight) : Infinity;
+
+  const remainingDin = Math.min(remainingDinBySpace, maxDinByWeight);
+  const remainingEup = Math.min(remainingEupBySpace, maxEupByWeight);
+
+  setRemainingCapacity({ eup: remainingEup, din: remainingDin });
+  
+}, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, eupStackLimit, dinStackLimit]);
 
   useEffect(() => {
     calculateAndSetState();
