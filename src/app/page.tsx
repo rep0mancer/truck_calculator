@@ -441,35 +441,12 @@ export default function HomePage() {
     setTotalWeightKg(primaryResults.totalWeightKg);
     setActualEupLoadingPattern(primaryResults.eupLoadingPatternUsed);
     
-    // Compute remaining capacity for both types using simulation calls
-    const dinSimPlacementOrder = eupQuantity > 0 ? 'EUP_FIRST' : 'DIN_FIRST';
-    const dinCapacitySim = calculateLoadingLogic(
-      selectedTruck,
-      eupWeights,
-      [...dinWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0' }],
-      isEUPStackable, isDINStackable,
-      eupLoadingPattern,
-      dinSimPlacementOrder,
-      eupStackLimit,
-      dinStackLimit
-    );
-
-    const eupSimPlacementOrder = dinQuantity > 0 ? 'DIN_FIRST' : 'EUP_FIRST';
-    const eupCapacitySim = calculateLoadingLogic(
-      selectedTruck,
-      [...eupWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0' }],
-      dinWeights,
-      isEUPStackable, isDINStackable,
-      eupLoadingPattern,
-      eupSimPlacementOrder,
-      eupStackLimit,
-      dinStackLimit
-    );
-
-    const currentPlacedDinBase = primaryResults.loadedIndustrialPalletsBase;
-    const currentPlacedEupBase = primaryResults.loadedEuroPalletsBase;
-    const remainingDin = Math.max(0, dinCapacitySim.loadedIndustrialPalletsBase - currentPlacedDinBase);
-    const remainingEup = Math.max(0, eupCapacitySim.loadedEuroPalletsBase - currentPlacedEupBase);
+    // Compute remaining capacity using specified length-per-pallet model
+    const usableLengthM = (TRUCK_TYPES[selectedTruck].usableLength || 0) / 100;
+    const usedLengthM = (primaryResults.loadedIndustrialPalletsBase * 0.5) + (primaryResults.loadedEuroPalletsBase * 0.4);
+    const remainingLengthM = Math.max(0, usableLengthM - usedLengthM);
+    const remainingDin = Math.max(0, Math.floor(remainingLengthM / 0.5));
+    const remainingEup = Math.max(0, Math.floor(remainingLengthM / 0.4));
     setRemainingCapacity({ eup: remainingEup, din: remainingDin });
     
   }, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, eupStackLimit, dinStackLimit]);
