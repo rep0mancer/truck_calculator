@@ -229,8 +229,8 @@ const calculateLoadingLogic = (
 
   // STAGE 2: PLACEMENT - Arrange the Manifest for Visualization
   const getPlacementPriority = (pallet: any) => {
-    if (pallet.isStacked && pallet.type === 'euro') return 1;
-    if (pallet.isStacked && pallet.type === 'industrial') return 2;
+    if (pallet.isStacked && pallet.type === 'industrial') return 1; // FIX: DIN stacked first
+    if (pallet.isStacked && pallet.type === 'euro') return 2;       // FIX: Then EUP stacked
     if (!pallet.isStacked && pallet.type === 'industrial') return 3;
     if (!pallet.isStacked && pallet.type === 'euro') return 4;
     return 5;
@@ -567,15 +567,25 @@ export default function HomePage() {
     if (typeToFill === 'euro' && addedEups > 0) {
         setEupWeights(weights => {
             const newWeights = [...weights];
-            const lastEntry = newWeights[newWeights.length - 1];
-            lastEntry.quantity += addedEups;
+            const lastEntryIndex = newWeights.length - 1;
+            // Create a new object for the last entry to avoid direct state mutation
+            const updatedLastEntry = { 
+                ...newWeights[lastEntryIndex], 
+                quantity: newWeights[lastEntryIndex].quantity + addedEups 
+            };
+            newWeights[lastEntryIndex] = updatedLastEntry;
             return newWeights;
         });
     } else if (typeToFill === 'industrial' && addedDins > 0) {
         setDinWeights(weights => {
             const newWeights = [...weights];
-            const lastEntry = newWeights[newWeights.length - 1];
-            lastEntry.quantity += addedDins;
+            const lastEntryIndex = newWeights.length - 1;
+            // Create a new object for the last entry to avoid direct state mutation
+            const updatedLastEntry = { 
+                ...newWeights[lastEntryIndex], 
+                quantity: newWeights[lastEntryIndex].quantity + addedDins 
+            };
+            newWeights[lastEntryIndex] = updatedLastEntry;
             return newWeights;
         });
     }
