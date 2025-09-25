@@ -114,6 +114,7 @@ const calculateLoadingLogic = (
 
   for (const eupPattern of patternsToTry) {
     let unitsState = truckConfig.units.map(u => ({ ...u, occupiedRects: [], palletsVisual: [] }));
+    let currentEupRowPattern = eupPattern;
     let tempWarnings = [];
     let currentTotalWeight = 0;
     let dinLabelCounter = 0;
@@ -176,11 +177,33 @@ const calculateLoadingLogic = (
         const isEuro = nextPallet.type === 'euro';
         const palletDef = isEuro ? PALLET_TYPES.euro : PALLET_TYPES.industrial;
 
+        // Dynamic row-specific pattern decision for auto-optimized EUP at the start of a new row
+        if (currentY === 0 && palletQueue[0]?.type === 'euro' && currentEupLoadingPattern === 'auto') {
+          const remainingLength = unit.length - currentX;
+
+          const canFitLong = remainingLength >= PALLET_TYPES.euro.length;
+          const canFitBroad = remainingLength >= PALLET_TYPES.euro.width;
+
+          if (canFitLong) {
+            currentEupRowPattern = 'long';
+          } else if (canFitBroad) {
+            currentEupRowPattern = 'broad';
+          } else {
+            // Remove all remaining EUPs from the queue; continue with others if any
+            for (let i = palletQueue.length - 1; i >= 0; i--) {
+              if (palletQueue[i].type === 'euro') {
+                palletQueue.splice(i, 1);
+              }
+            }
+            if (palletQueue.length === 0) break;
+          }
+        }
+
         let palletLen, palletWid, finalLen, finalWid;
 
         if (isEuro) {
-          palletLen = eupPattern === 'long' ? palletDef.length : palletDef.width;
-          palletWid = eupPattern === 'long' ? palletDef.width : palletDef.length;
+          palletLen = currentEupRowPattern === 'long' ? palletDef.length : palletDef.width;
+          palletWid = currentEupRowPattern === 'long' ? palletDef.width : palletDef.length;
         } else {
           palletLen = palletDef.width;
           palletWid = palletDef.length;
