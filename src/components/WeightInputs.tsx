@@ -59,14 +59,34 @@ export function WeightInputs({ entries, onChange, palletType, preferredId, onSet
       </div>
       {entries.map((entry, index) => (
         <div key={entry.id} className="flex items-center gap-2 mt-1">
-          <Input
-            type="number"
-            min="0"
-            value={entry.quantity}
-            onChange={(e) => handleEntryChange(entry.id, 'quantity', e.target.value)}
-            placeholder="Anzahl"
-            className="w-20 text-center"
-          />
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="px-2"
+              onClick={() => handleEntryChange(entry.id, 'quantity', String(Math.max(0, entry.quantity - 1)))}
+            >
+              -
+            </Button>
+            <Input
+              type="number"
+              min="0"
+              value={entry.quantity}
+              onChange={(e) => handleEntryChange(entry.id, 'quantity', e.target.value)}
+              placeholder="Anzahl"
+              className="w-16 text-center"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="px-2"
+              onClick={() => handleEntryChange(entry.id, 'quantity', String(entry.quantity + 1))}
+            >
+              +
+            </Button>
+          </div>
           <Input
             type="number"
             min="0"
