@@ -742,7 +742,7 @@ export default function HomePage() {
     );
   };
 
-  const truckVisualizationScale = 0.3;
+  const truckVisualizationScale = 0.35;
 
   const warningsWithoutInfo = warnings.filter(w => !w.toLowerCase().includes('platz') && !w.toLowerCase().includes('benötigt'));
   let meldungenStyle = {
@@ -832,7 +832,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="lg:col-span-2 bg-gray-100 p-6 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center">
+          <div className="lg:col-span-2 bg-gray-100 p-6 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center justify-center">
             <p className="text-gray-700 text-lg mb-4 font-semibold">Ladefläche Visualisierung</p>
             {palletArrangement.map((unit: any,index: number)=>(
               <div key={unit.unitId} className="mb-6 w-full flex flex-col items-center">
