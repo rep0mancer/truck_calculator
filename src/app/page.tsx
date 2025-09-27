@@ -81,6 +81,10 @@ const STACKED_EUP_THRESHOLD_FOR_AXLE_WARNING = 18;
 const STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING = 16;
 const MAX_WEIGHT_PER_METER_KG = 1800;
 
+const KILOGRAM_FORMATTER = new Intl.NumberFormat('de-DE', {
+  maximumFractionDigits: 0,
+});
+
 const calculateWaggonEuroLayout = (
   eupWeights: WeightEntry[],
   truckConfig: any
@@ -533,6 +537,8 @@ export default function HomePage() {
   const [lastEdited, setLastEdited] = useState<'eup' | 'din'>('eup');
   const { toast } = useToast();
   const isWaggonSelected = ['Waggon', 'Waggon2'].includes(selectedTruck);
+  const selectedTruckConfig = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES];
+  const maxGrossWeightKg = selectedTruckConfig.maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG;
 
   const calculateAndSetState = useCallback(() => {
     const eupQuantity = eupWeights.reduce((sum, entry) => sum + entry.quantity, 0);
@@ -892,8 +898,12 @@ export default function HomePage() {
           </div>
           <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 shadow-sm text-center">
             <h3 className="font-semibold text-yellow-800 mb-2">Geschätztes Gewicht</h3>
-            <p className="font-bold text-2xl text-yellow-700">{(totalWeightKg/1000).toFixed(1)} t</p>
-            <p className="text-xs mt-1">(Max: {(TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES].maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG)/1000}t)</p>
+            <p className="font-bold text-2xl text-yellow-700">
+              {KILOGRAM_FORMATTER.format(Math.round(totalWeightKg))} kg
+            </p>
+            <p className="text-xs mt-1">
+              (Max: {KILOGRAM_FORMATTER.format(Math.round(maxGrossWeightKg))} kg)
+            </p>
           </div>
           <div className={`${meldungenStyle.bg} p-4 rounded-lg border ${meldungenStyle.border} shadow-sm`}>
             <h3 className={`font-semibold mb-2 ${meldungenStyle.header}`}>Meldungen</h3>
