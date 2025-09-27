@@ -20,6 +20,12 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## UI modes
+
+- The modern interface (UI V2) is enabled by default. Set `NEXT_PUBLIC_UI_V2=false` when starting the app to render the legacy layout (`pnpm exec NEXT_PUBLIC_UI_V2=false next dev`).
+- Presentational building blocks for the new layout live in `src/components/ui/PageShell.tsx`, `src/components/ui/Card.tsx`, `src/components/ui/KPIStat.tsx`, and the form helpers under `src/components/forms/`.
+- Canvas enhancements and legend utilities are located in `src/components/canvas/`.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

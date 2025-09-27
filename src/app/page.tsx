@@ -1,16 +1,17 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
-import { WeightInputs } from '@/components/WeightInputs';
-
-// Define the type for a single weight entry
-type WeightEntry = {
-  id: number;
-  weight: string;
-  quantity: number;
-};
+import { WeightInputs, type WeightEntry } from '@/components/WeightInputs';
+import { PageShell } from '@/components/ui/PageShell';
+import { Card } from '@/components/ui/Card';
+import { KPIStat } from '@/components/ui/KPIStat';
+import { StepperInput } from '@/components/forms/StepperInput';
+import { Switch } from '@/components/forms/Switch';
+import { Segmented } from '@/components/forms/Segmented';
+import { CanvasToolbar } from '@/components/canvas/CanvasToolbar';
+import { Legend } from '@/components/canvas/Legend';
 
 // ... (TRUCK_TYPES and PALLET_TYPES constants remain the same)
 const TRUCK_TYPES = {
@@ -516,9 +517,15 @@ const calculateLoadingLogic = (
 };
 
 export default function HomePage() {
+  const DEFAULT_CANVAS_SCALE = 0.35;
+  const weightEntryId = useRef(2);
+  const createWeightEntry = useCallback((): WeightEntry => {
+    weightEntryId.current += 1;
+    return { id: weightEntryId.current, weight: '', quantity: 0 };
+  }, []);
   const [selectedTruck, setSelectedTruck] = useState('curtainSider');
-  const [eupWeights, setEupWeights] = useState<WeightEntry[]>([{ id: Date.now(), weight: '', quantity: 0 }]);
-  const [dinWeights, setDinWeights] = useState<WeightEntry[]>([{ id: Date.now() + 1, weight: '', quantity: 0 }]);
+  const [eupWeights, setEupWeights] = useState<WeightEntry[]>([{ id: 1, weight: '', quantity: 0 }]);
+  const [dinWeights, setDinWeights] = useState<WeightEntry[]>([{ id: 2, weight: '', quantity: 0 }]);
   const [eupLoadingPattern, setEupLoadingPattern] = useState('auto');
   const [isEUPStackable, setIsEUPStackable] = useState(false);
   const [isDINStackable, setIsDINStackable] = useState(false);
@@ -535,10 +542,14 @@ export default function HomePage() {
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
   const [remainingCapacity, setRemainingCapacity] = useState<{ eup: number, din: number }>({ eup: 0, din: 0 });
   const [lastEdited, setLastEdited] = useState<'eup' | 'din'>('eup');
+  const [canvasScale, setCanvasScale] = useState(DEFAULT_CANVAS_SCALE);
+  const [liveAnnouncement, setLiveAnnouncement] = useState('');
   const { toast } = useToast();
+  const totalsRef = useRef({ euro: 0, din: 0 });
   const isWaggonSelected = ['Waggon', 'Waggon2'].includes(selectedTruck);
   const selectedTruckConfig = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES];
   const maxGrossWeightKg = selectedTruckConfig.maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG;
+  const showNewUI = process.env.NEXT_PUBLIC_UI_V2 !== 'false';
 
   const calculateAndSetState = useCallback(() => {
     const eupQuantity = eupWeights.reduce((sum, entry) => sum + entry.quantity, 0);
@@ -644,9 +655,42 @@ export default function HomePage() {
     calculateAndSetState();
   }, [calculateAndSetState]);
 
+  useEffect(() => {
+    const previous = totalsRef.current;
+    if (previous.euro !== totalEuroPalletsVisual || previous.din !== totalDinPalletsVisual) {
+      totalsRef.current = { euro: totalEuroPalletsVisual, din: totalDinPalletsVisual };
+      if (!showNewUI) return;
+      const parts: string[] = [];
+      const deltaEuro = totalEuroPalletsVisual - previous.euro;
+      const deltaDin = totalDinPalletsVisual - previous.din;
+      if (deltaEuro !== 0) {
+        parts.push(`${deltaEuro > 0 ? 'Hinzugefügt' : 'Entfernt'} ${Math.abs(deltaEuro)} EUP`);
+      }
+      if (deltaDin !== 0) {
+        parts.push(`${deltaDin > 0 ? 'Hinzugefügt' : 'Entfernt'} ${Math.abs(deltaDin)} DIN`);
+      }
+      const message = parts.length > 0
+        ? `Layout aktualisiert: ${parts.join(' und ')}.`
+        : `Layout aktualisiert: ${totalEuroPalletsVisual} EUP und ${totalDinPalletsVisual} DIN geladen.`;
+      setLiveAnnouncement(message);
+    }
+  }, [showNewUI, totalEuroPalletsVisual, totalDinPalletsVisual]);
+
+  const handleZoomIn = () => {
+    setCanvasScale(current => Math.min(current + 0.05, 0.7));
+  };
+
+  const handleZoomOut = () => {
+    setCanvasScale(current => Math.max(current - 0.05, 0.2));
+  };
+
+  const handleResetZoom = () => {
+    setCanvasScale(DEFAULT_CANVAS_SCALE);
+  };
+
   const handleClearAllPallets = () => {
-    setEupWeights([{ id: Date.now(), weight: '', quantity: 0 }]);
-    setDinWeights([{ id: Date.now() + 1, weight: '', quantity: 0 }]);
+    setEupWeights([createWeightEntry()]);
+    setDinWeights([createWeightEntry()]);
     setIsEUPStackable(false);
     setIsDINStackable(false);
     setEupStackLimit(0);
@@ -665,11 +709,13 @@ export default function HomePage() {
         eupStackLimit, dinStackLimit
     );
     if (palletTypeToMax === 'industrial') {
-        setDinWeights([{ id: Date.now(), weight: '', quantity: simResults.totalDinPalletsVisual }]);
-        setEupWeights([{ id: Date.now() + 1, weight: '', quantity: 0 }]);
+        const nextDinEntry = createWeightEntry();
+        setDinWeights([{ ...nextDinEntry, quantity: simResults.totalDinPalletsVisual }]);
+        setEupWeights([createWeightEntry()]);
     } else if (palletTypeToMax === 'euro') {
-        setEupWeights([{ id: Date.now(), weight: '', quantity: simResults.totalEuroPalletsVisual }]);
-        setDinWeights([{ id: Date.now() + 1, weight: '', quantity: 0 }]);
+        const nextEupEntry = createWeightEntry();
+        setEupWeights([{ ...nextEupEntry, quantity: simResults.totalEuroPalletsVisual }]);
+        setDinWeights([createWeightEntry()]);
     }
   };
  
@@ -727,7 +773,7 @@ export default function HomePage() {
   };
  
   // ... (renderPallet function and style calculations remain the same)
-  const renderPallet = (pallet: any, displayScale = 0.3) => {
+  const renderLegacyPallet = (pallet: any, displayScale = 0.3) => {
     if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) return null;
     const d = PALLET_TYPES[pallet.type];
     const w = pallet.height * displayScale; const h = pallet.width * displayScale;
@@ -748,7 +794,53 @@ export default function HomePage() {
     );
   };
 
-  const truckVisualizationScale = 0.35;
+  const renderModernPallet = (
+    pallet: any,
+    displayScale: number,
+    { isNearLimit, isOverLimit }: { isNearLimit: boolean; isOverLimit: boolean },
+  ) => {
+    if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) return null;
+    const d = PALLET_TYPES[pallet.type];
+    const width = pallet.height * displayScale;
+    const height = pallet.width * displayScale;
+    const left = pallet.y * displayScale;
+    const top = pallet.x * displayScale;
+    let label = pallet.showAsFraction && pallet.displayStackedLabelId
+      ? `${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId}`
+      : `${pallet.labelId}`;
+    if (pallet.labelId === 0) label = '?';
+    const titleBase = pallet.showAsFraction
+      ? `${d.name} (Stapel: ${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId})`
+      : `${d.name} #${pallet.labelId}`;
+    const title = `${titleBase}${pallet.isStackedTier ? (pallet.isStackedTier === 'top' ? ' - Oben' : ' - Basis des Stapels') : ''}`;
+
+    const classes = ['pallet-tile'];
+    if (pallet.isStackedTier) classes.push('stacked');
+    if (pallet.isStackedTier === 'top') classes.push('top-tier');
+    if (isNearLimit) classes.push('near-limit');
+    if (isOverLimit) classes.push('over-limit');
+
+    return (
+      <div
+        key={`${pallet.key}-modern`}
+        className={classes.join(' ')}
+        style={{
+          left: `${left}px`,
+          top: `${top}px`,
+          width: `${width}px`,
+          height: `${height}px`,
+          zIndex: pallet.isStackedTier === 'top' ? 10 : 5,
+        }}
+        title={title}
+        data-testid={pallet.isStackedTier ? 'stacked-pallet' : undefined}
+      >
+        <span className="select-none text-xs font-semibold">{label}</span>
+        {isOverLimit ? <span className="pallet-badge">!</span> : null}
+      </div>
+    );
+  };
+
+  const truckVisualizationScale = DEFAULT_CANVAS_SCALE;
 
   const warningsWithoutInfo = warnings.filter(w => !w.toLowerCase().includes('platz') && !w.toLowerCase().includes('benötigt'));
   let meldungenStyle = {
@@ -764,7 +856,24 @@ export default function HomePage() {
     meldungenStyle = { bg: 'bg-yellow-50', border: 'border-yellow-200', header: 'text-yellow-800', list: 'text-yellow-700' };
   }
 
-  return (
+  const totalPallets = totalEuroPalletsVisual + totalDinPalletsVisual;
+  const formattedTotalWeight = `${KILOGRAM_FORMATTER.format(totalWeightKg)} kg`;
+  const formattedMaxWeight = `${KILOGRAM_FORMATTER.format(maxGrossWeightKg)} kg`;
+  const weightMargin = maxGrossWeightKg - totalWeightKg;
+  const formattedMargin = `${weightMargin >= 0 ? '' : '−'}${KILOGRAM_FORMATTER.format(Math.abs(weightMargin))} kg`;
+  const marginHelper = weightMargin >= 0 ? 'Verfügbar bis Maximalgewicht' : 'Über dem Limit';
+  const isOverWeight = totalWeightKg > maxGrossWeightKg;
+  const isNearWeight = !isOverWeight && maxGrossWeightKg > 0 && totalWeightKg >= maxGrossWeightKg * 0.9;
+  const leftoverWarning = warnings.some(w => w.toLowerCase().includes('konnte nicht alle paletten laden'));
+  const hasStackedPallets = palletArrangement.some((unit: any) => Array.isArray(unit.pallets) && unit.pallets.some((p: any) => p.isStackedTier));
+  const patternLabels: Record<string, string> = { auto: 'Auto', long: 'Längs', broad: 'Quer', none: 'Keines', custom: 'Spezial' };
+  const actualPatternLabel = patternLabels[actualEupLoadingPattern as keyof typeof patternLabels] ?? actualEupLoadingPattern;
+  const firstType = lastEdited === 'din' ? 'DIN' : 'EUP';
+  const secondType = lastEdited === 'din' ? 'EUP' : 'DIN';
+  const firstValue = lastEdited === 'din' ? remainingCapacity.din : remainingCapacity.eup;
+  const secondValue = lastEdited === 'din' ? remainingCapacity.eup : remainingCapacity.din;
+
+  const legacyView = (
     <div className="container mx-auto p-4 font-sans bg-gray-50">
       <header className="relative bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
         <div className="absolute top-2 right-4 text-right text-xs opacity-75">
@@ -800,7 +909,12 @@ export default function HomePage() {
            
             <div className="border-t pt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Industriepaletten (DIN)</label>
-                <WeightInputs entries={dinWeights} onChange={(entries)=>{ setLastEdited('din'); setDinWeights(entries); }} palletType="DIN" />
+                <WeightInputs
+                  entries={dinWeights}
+                  onChange={(entries)=>{ setLastEdited('din'); setDinWeights(entries); }}
+                  palletType="DIN"
+                  createEntry={createWeightEntry}
+                />
                 <button onClick={() => handleMaximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 bg-gradient-to-b from-[#00b382] to-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#00906c] hover:to-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. DIN</button>
                 <button onClick={() => handleFillRemaining('industrial')} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. DIN füllen</button>
                 <div className="flex items-center mt-2">
@@ -814,7 +928,12 @@ export default function HomePage() {
 
             <div className="border-t pt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Europaletten (EUP)</label>
-                <WeightInputs entries={eupWeights} onChange={(entries)=>{ setLastEdited('eup'); setEupWeights(entries); }} palletType="EUP" />
+                <WeightInputs
+                  entries={eupWeights}
+                  onChange={(entries)=>{ setLastEdited('eup'); setEupWeights(entries); }}
+                  palletType="EUP"
+                  createEntry={createWeightEntry}
+                />
                 <button onClick={() => handleMaximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 bg-gradient-to-b from-[#00b382] to-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#00906c] hover:to-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. EUP</button>
                 <button onClick={() => handleFillRemaining('euro')} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. EUP füllen</button>
                 <div className="flex items-center mt-2">
@@ -861,7 +980,7 @@ export default function HomePage() {
                   </svg>
                 )}
                 <div className="relative bg-gray-300 border-2 border-gray-500 overflow-hidden rounded-md shadow-inner" style={{width:`${unit.unitWidth*truckVisualizationScale}px`,height:`${unit.unitLength*truckVisualizationScale}px`}}>
-                  {unit.pallets.map((p: any)=>renderPallet(p,truckVisualizationScale))}
+                  {unit.pallets.map((p: any)=>renderLegacyPallet(p,truckVisualizationScale))}
                 </div>
               </div>
             ))}
@@ -916,11 +1035,346 @@ export default function HomePage() {
             )}
           </div>
         </div>
+        <div className="sr-only">
+          <div data-testid="kpi-total-pallets">
+            <span>Geladene Paletten</span>
+            <span>{totalPallets}</span>
+          </div>
+          <div data-testid="kpi-total-weight">
+            <span>Gesamtgewicht</span>
+            <span>{formattedTotalWeight}</span>
+          </div>
+          <div data-testid="kpi-weight-margin">
+            <span>Gewichtsspielraum</span>
+            <span>{formattedMargin}</span>
+          </div>
+        </div>
       </main>
       <footer className="text-center py-4 mt-8 text-sm text-gray-500 border-t border-gray-200">
         <p>Laderaumrechner © {new Date().getFullYear()} by Andreas Steiner</p>
       </footer>
-      <Toaster />
     </div>
+  );
+  const modernView = (
+    <>
+      <PageShell
+        title="Laderaumrechner"
+        subtitle="Planung und Visualisierung von Palettenladungen"
+        onHelp={() => toast({ title: 'Hilfe', description: 'Passen Sie links die Eingaben an und sehen Sie rechts die Visualisierung.' })}
+        onReset={handleClearAllPallets}
+        rail={
+          <>
+            <Card title="Truck">
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="truckType-modern" className="mb-1 block text-sm font-medium text-[var(--text)]">
+                    LKW-Typ
+                  </label>
+                  <select
+                    id="truckType-modern"
+                    value={selectedTruck}
+                    onChange={e => {
+                      const newTruck = e.target.value;
+                      setSelectedTruck(newTruck);
+                      if (['Waggon', 'Waggon2'].includes(newTruck)) {
+                        setIsEUPStackable(false);
+                        setIsDINStackable(false);
+                      }
+                    }}
+                    className="h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2"
+                  >
+                    {Object.keys(TRUCK_TYPES).map(key => (
+                      <option key={key} value={key}>
+                        {TRUCK_TYPES[key as keyof typeof TRUCK_TYPES].name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="rounded-xl bg-[var(--surface-muted)] px-3 py-2 text-xs text-[var(--text-muted)]">
+                  <p>Max. Gewicht: {formattedMaxWeight}</p>
+                  <p>Laderaum: {(selectedTruckConfig.usableLength / 100).toFixed(1)} m × {(selectedTruckConfig.maxWidth / 100).toFixed(1)} m</p>
+                </div>
+              </div>
+            </Card>
+            <Card title="Industriepaletten (DIN)">
+              <div className="space-y-4">
+                <WeightInputs
+                  entries={dinWeights}
+                  onChange={entries => {
+                    setLastEdited('din');
+                    setDinWeights(entries);
+                  }}
+                  palletType="DIN"
+                  variant="modern"
+                  createEntry={createWeightEntry}
+                />
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => handleMaximizePallets('industrial')}
+                    className="flex-1 rounded-xl bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] shadow-sm transition hover:bg-[var(--primary)]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2"
+                  >
+                    Max. DIN
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleFillRemaining('industrial')}
+                    className="flex-1 rounded-xl border border-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary)] transition hover:bg-[var(--surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2"
+                  >
+                    Rest mit max. DIN füllen
+                  </button>
+                </div>
+                <Switch
+                  id="din-stackable-modern"
+                  checked={isDINStackable}
+                  onChange={event => setIsDINStackable(event.target.checked)}
+                  disabled={isWaggonSelected}
+                  label="Stapelbar (2-fach)"
+                  helperText={isWaggonSelected ? 'Auf dem Waggon nicht verfügbar.' : 'Zwei DIN-Paletten übereinander platzieren.'}
+                />
+                {isDINStackable && !isWaggonSelected ? (
+                  <div>
+                    <label htmlFor="din-stack-limit" className="mb-1 block text-sm font-medium text-[var(--text)]">
+                      Stapelbare DIN (0 = alle)
+                    </label>
+                    <StepperInput
+                      id="din-stack-limit"
+                      value={dinStackLimit}
+                      onChange={val => setDinStackLimit(Math.max(0, val))}
+                      min={0}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </Card>
+            <Card title="Europaletten (EUP)">
+              <div className="space-y-4">
+                <WeightInputs
+                  entries={eupWeights}
+                  onChange={entries => {
+                    setLastEdited('eup');
+                    setEupWeights(entries);
+                  }}
+                  palletType="EUP"
+                  variant="modern"
+                  createEntry={createWeightEntry}
+                />
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => handleMaximizePallets('euro')}
+                    className="flex-1 rounded-xl bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] shadow-sm transition hover:bg-[var(--primary)]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2"
+                  >
+                    Max. EUP
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleFillRemaining('euro')}
+                    className="flex-1 rounded-xl border border-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary)] transition hover:bg-[var(--surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2"
+                  >
+                    Rest mit max. EUP füllen
+                  </button>
+                </div>
+                <Switch
+                  id="eup-stackable-modern"
+                  checked={isEUPStackable}
+                  onChange={event => setIsEUPStackable(event.target.checked)}
+                  disabled={isWaggonSelected}
+                  label="Stapelbar (2-fach)"
+                  helperText={isWaggonSelected ? 'Auf dem Waggon nicht verfügbar.' : 'Zwei EUP übereinander platzieren.'}
+                />
+                {isEUPStackable && !isWaggonSelected ? (
+                  <div>
+                    <label htmlFor="eup-stack-limit" className="mb-1 block text-sm font-medium text-[var(--text)]">
+                      Stapelbare EUP (0 = alle)
+                    </label>
+                    <StepperInput
+                      id="eup-stack-limit"
+                      value={eupStackLimit}
+                      onChange={val => setEupStackLimit(Math.max(0, val))}
+                      min={0}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </Card>
+            <Card title="EUP Lade-Pattern">
+              <div className="space-y-3">
+                <Segmented
+                  options={[
+                    { label: 'Auto', value: 'auto' },
+                    { label: 'Längs', value: 'long' },
+                    { label: 'Quer', value: 'broad' },
+                  ]}
+                  value={eupLoadingPattern}
+                  onChange={value => setEupLoadingPattern(value)}
+                />
+                <p className="text-xs text-[var(--text-muted)]">Tatsächliches Muster: {actualPatternLabel}</p>
+              </div>
+            </Card>
+            <div className="sticky bottom-0 pt-2">
+              <Card title="Aktionen">
+                <div className="flex flex-col gap-3">
+                  <button
+                    type="button"
+                    onClick={calculateAndSetState}
+                    className="w-full rounded-xl bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] shadow-sm transition hover:bg-[var(--primary)]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2"
+                  >
+                    Layout optimieren
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearAllPallets}
+                    className="w-full rounded-xl border border-[var(--danger)] px-4 py-2 text-sm font-semibold text-[var(--danger)] transition hover:bg-[var(--surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--danger)] focus-visible:ring-offset-2"
+                  >
+                    Alles zurücksetzen
+                  </button>
+                </div>
+              </Card>
+            </div>
+          </>
+        }
+        canvas={
+          <>
+            <Card
+              title="Ladefläche Visualisierung"
+              actions={<CanvasToolbar onZoomIn={handleZoomIn} onZoomOut={handleZoomOut} onReset={handleResetZoom} />}
+            >
+              <div className="relative">
+                <div className="space-y-6">
+                  {palletArrangement.map((unit: any, index: number) => {
+                    const scaledWidth = unit.unitWidth * canvasScale;
+                    const scaledLength = unit.unitLength * canvasScale;
+                    const trackHeight = Math.max(0, scaledLength - 24);
+                    const usableSourceLength = selectedTruckConfig.usableLength ?? unit.unitLength;
+                    const usableRatio = Math.min(1, usableSourceLength / unit.unitLength);
+                    const usableHeight = trackHeight * usableRatio;
+                    return (
+                      <div key={unit.unitId} className="space-y-2">
+                        {TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES].units.length > 1 ? (
+                          <p className="text-sm font-medium text-[var(--text-muted)]">
+                            Einheit {index + 1} ({(unit.unitLength / 100).toFixed(1)} m × {(unit.unitWidth / 100).toFixed(1)} m)
+                          </p>
+                        ) : null}
+                        <div className="relative flex" style={{ width: `${scaledWidth + 48}px` }}>
+                          <div className="canvas-scale" style={{ height: `${scaledLength}px` }}>
+                            <span>0 m</span>
+                            <span>{(unit.unitLength / 100).toFixed(1)} m</span>
+                          </div>
+                          <div
+                            className="canvas-surface ml-12"
+                            style={{ width: `${scaledWidth}px`, height: `${scaledLength}px` }}
+                          >
+                            <div className="canvas-track">
+                              <div className="usable-length" style={{ height: `${usableHeight}px` }} />
+                            </div>
+                            <div className="canvas-front-label">Front ▸</div>
+                            {unit.pallets.map((p: any) =>
+                              renderModernPallet(p, canvasScale, { isNearLimit: isNearWeight, isOverLimit: isOverWeight }),
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {palletArrangement.length === 0 ? (
+                    <p className="text-sm text-[var(--text-muted)]">Keine Paletten zum Anzeigen.</p>
+                  ) : null}
+                </div>
+                <div className="pointer-events-none absolute bottom-4 right-4">
+                  <Legend showNearLimit={isNearWeight} showOverLimit={isOverWeight} hasStacked={hasStackedPallets} />
+                </div>
+              </div>
+            </Card>
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card title="Beladung">
+                <div className="space-y-2 text-sm text-[var(--text)]">
+                  <div className="flex justify-between">
+                    <span>Industrie (DIN)</span>
+                    <span className="font-semibold">{totalDinPalletsVisual}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Euro (EUP)</span>
+                    <span className="font-semibold">{totalEuroPalletsVisual}</span>
+                  </div>
+                  <p className="text-xs text-[var(--text-muted)]">Basis: {loadedIndustrialPalletsBase} DIN · {loadedEuroPalletsBase} EUP</p>
+                </div>
+              </Card>
+              <Card title="Restkapazität">
+                <div className="space-y-1 text-sm text-[var(--text)]">
+                  <p className="font-medium">Platz für weitere Paletten</p>
+                  <p>{firstValue} × {firstType}</p>
+                  <p>{secondValue} × {secondType}</p>
+                </div>
+              </Card>
+              <Card title="Gewicht & Auslastung">
+                <div className="space-y-1 text-sm text-[var(--text)]">
+                  <div className="flex justify-between">
+                    <span>Gesamtgewicht</span>
+                    <span className="font-semibold">{formattedTotalWeight}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Maximal</span>
+                    <span>{formattedMaxWeight}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Auslastung</span>
+                    <span>{utilizationPercentage}%</span>
+                  </div>
+                </div>
+              </Card>
+              <Card title="Meldungen">
+                {warnings.length > 0 ? (
+                  <ul className="space-y-2 text-sm text-[var(--text)]">
+                    {warnings.map((w, index) => (
+                      <li key={index} className="leading-snug">
+                        {w}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-[var(--text-muted)]">Keine Probleme erkannt.</p>
+                )}
+              </Card>
+            </div>
+          </>
+        }
+        footer={
+          <div className="grid gap-3 sm:grid-cols-3">
+            <KPIStat
+              label="Geladene Paletten"
+              value={`${totalPallets}`}
+              helper={`DIN ${totalDinPalletsVisual} · EUP ${totalEuroPalletsVisual}`}
+              status={totalPallets === 0 ? 'neutral' : leftoverWarning ? 'warn' : 'ok'}
+              data-testid="kpi-total-pallets"
+            />
+            <KPIStat
+              label="Gesamtgewicht"
+              value={formattedTotalWeight}
+              helper={`Max ${formattedMaxWeight}`}
+              status={isOverWeight ? 'error' : isNearWeight ? 'warn' : 'neutral'}
+              data-testid="kpi-total-weight"
+            />
+            <KPIStat
+              label="Gewichtsspielraum"
+              value={formattedMargin}
+              helper={marginHelper}
+              status={isOverWeight ? 'error' : isNearWeight ? 'warn' : 'ok'}
+              data-testid="kpi-weight-margin"
+            />
+          </div>
+        }
+      />
+      <div aria-live="polite" className="sr-only" data-testid="live-region">
+        {liveAnnouncement}
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      {showNewUI ? modernView : legacyView}
+      <Toaster />
+    </>
   );
 }
