@@ -899,10 +899,10 @@ export default function HomePage() {
           <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 shadow-sm text-center">
             <h3 className="font-semibold text-yellow-800 mb-2">Geschätztes Gewicht</h3>
             <p className="font-bold text-2xl text-yellow-700">
-              {KILOGRAM_FORMATTER.format(Math.round(totalWeightKg))} kg
+              {KILOGRAM_FORMATTER.format(totalWeightKg)} kg
             </p>
             <p className="text-xs mt-1">
-              (Max: {KILOGRAM_FORMATTER.format(Math.round(maxGrossWeightKg))} kg)
+              (Max: {KILOGRAM_FORMATTER.format(maxGrossWeightKg)} kg)
             </p>
           </div>
           <div className={`${meldungenStyle.bg} p-4 rounded-lg border ${meldungenStyle.border} shadow-sm`}>
