@@ -759,8 +759,8 @@ export default function HomePage() {
   }
 
   return (
-    <div className="container mx-auto p-4 font-sans bg-gray-50">
-      <header className="relative bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
+    <div className="container mx-auto p-4 font-sans bg-transparent">
+      <header className="relative bg-white/70 backdrop-blur-xl p-5 rounded-t-lg shadow-lg mb-6 border border-slate-200/80">
         <div className="absolute top-2 right-4 text-right text-xs opacity-75">
           <p>Laderaumrechner © {new Date().getFullYear()}</p>
           <p>by Andreas Steiner</p>
@@ -768,9 +768,9 @@ export default function HomePage() {
         <h1 className="text-3xl font-bold text-center tracking-tight">Laderaumrechner</h1>
         <p className="text-center text-sm opacity-90">Visualisierung der Palettenplatzierung (Europäische Standards)</p>
       </header>
-      <main className="p-6 bg-white shadow-lg rounded-b-lg">
+      <main className="p-6 bg-card backdrop-blur-xl shadow-lg rounded-b-lg border border-slate-200/80">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="lg:col-span-1 space-y-6 bg-slate-50 p-5 rounded-lg border border-slate-200 shadow-sm">
+          <div className="lg:col-span-1 space-y-6 bg-white/50 p-5 rounded-lg border border-white/80 shadow-sm">
             <div>
               <label htmlFor="truckType" className="block text-sm font-medium text-gray-700 mb-1">LKW-Typ:</label>
               <select 
@@ -832,7 +832,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="lg:col-span-2 bg-gray-100 p-6 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center justify-center">
+          <div className="lg:col-span-2 bg-black/5 p-6 rounded-lg border border-white/80 shadow-sm flex flex-col items-center justify-center">
             <p className="text-gray-700 text-lg mb-4 font-semibold">Ladefläche Visualisierung</p>
             {palletArrangement.map((unit: any,index: number)=>(
               <div key={unit.unitId} className="mb-6 w-full flex flex-col items-center">
