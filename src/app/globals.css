@@ -360,7 +360,7 @@ footer.text-center.py-4 {
   main.p-6.bg-white.shadow-lg.rounded-b-lg,
   .glass-overlay,
   main select,
-  main input,
+  main input:not([type="checkbox"]):not([type="radio"]),
   main button,
   main .bg-slate-50,
   main .bg-gray-100,
