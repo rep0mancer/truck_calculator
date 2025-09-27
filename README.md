@@ -20,6 +20,11 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+### UI modes
+
+- Set `NEXT_PUBLIC_UI_V2="false"` to render the legacy interface. Any other value (or omitting the variable) enables the Vetropack themed UI.
+- Brand and functional color tokens live in `src/styles/globals.css`. Update the variables there to adjust the palette across the app.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

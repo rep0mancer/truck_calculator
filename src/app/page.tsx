@@ -1,9 +1,15 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
+import clsx from 'clsx';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { WeightInputs } from '@/components/WeightInputs';
+import { PageShell } from '@/components/ui/PageShell';
+import { TypeCard } from '@/components/ui/TypeCard';
+import { KPIStat } from '@/components/ui/KPIStat';
+import { Legend } from '@/components/canvas/Legend';
+import { Button } from '@/components/ui/button';
 
 // Define the type for a single weight entry
 type WeightEntry = {
@@ -536,6 +542,7 @@ export default function HomePage() {
   const [remainingCapacity, setRemainingCapacity] = useState<{ eup: number, din: number }>({ eup: 0, din: 0 });
   const [lastEdited, setLastEdited] = useState<'eup' | 'din'>('eup');
   const { toast } = useToast();
+  const isUiV2Enabled = (process.env.NEXT_PUBLIC_UI_V2 ?? 'true') !== 'false';
   const isWaggonSelected = ['Waggon', 'Waggon2'].includes(selectedTruck);
   const selectedTruckConfig = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES];
   const maxGrossWeightKg = selectedTruckConfig.maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG;
@@ -727,7 +734,7 @@ export default function HomePage() {
   };
  
   // ... (renderPallet function and style calculations remain the same)
-  const renderPallet = (pallet: any, displayScale = 0.3) => {
+  const renderLegacyPallet = (pallet: any, displayScale = 0.3) => {
     if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) return null;
     const d = PALLET_TYPES[pallet.type];
     const w = pallet.height * displayScale; const h = pallet.width * displayScale;
@@ -748,179 +755,584 @@ export default function HomePage() {
     );
   };
 
-  const truckVisualizationScale = 0.35;
+  const renderPalletTile = (pallet: any, scale: number) => {
+    if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) return null;
+    const definition = PALLET_TYPES[pallet.type];
+    const width = pallet.height * scale;
+    const height = pallet.width * scale;
+    const left = pallet.y * scale;
+    const top = pallet.x * scale;
+    const isStacked = Boolean(pallet.isStackedTier);
+    const typeLabel = pallet.type === 'industrial' ? 'DIN' : 'EUP';
+    let labelText = pallet.showAsFraction && pallet.displayStackedLabelId
+      ? `${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId}`
+      : `${pallet.labelId}`;
+    if (!labelText || labelText === '0') labelText = '?';
+    let title = `${definition.name} #${pallet.labelId}`;
+    if (pallet.showAsFraction) {
+      title = `${definition.name} (Stapel: ${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId})`;
+    }
+    if (pallet.isStackedTier === 'top') title += ' – Oben';
+    if (pallet.isStackedTier === 'base') title += ' – Basis des Stapels';
 
-  const warningsWithoutInfo = warnings.filter(w => !w.toLowerCase().includes('platz') && !w.toLowerCase().includes('benötigt'));
-  let meldungenStyle = {
-    bg: 'bg-gray-50', border: 'border-gray-200',
-    header: 'text-gray-800', list: 'text-gray-700'
+    const statusClass = clsx({
+      'near-limit': pallet.nearLimit,
+      'over-limit': pallet.overLimit,
+    });
+
+    return (
+      <div
+        key={pallet.key}
+        role="img"
+        aria-label={title}
+        title={title}
+        data-type={typeLabel}
+        data-stacked={isStacked ? 1 : 0}
+        className={clsx('pallet text-xs', statusClass, {
+          'opacity-80': pallet.isStackedTier === 'top',
+        })}
+        style={{
+          left: `${left}px`,
+          top: `${top}px`,
+          width: `${width}px`,
+          height: `${height}px`,
+          zIndex: pallet.isStackedTier === 'top' ? 3 : 2,
+        }}
+      >
+        <span aria-hidden className="select-none text-[var(--text)]">
+          {labelText}
+        </span>
+      </div>
+    );
   };
 
-  if (warningsWithoutInfo.length === 0 && (totalDinPalletsVisual > 0 || totalEuroPalletsVisual > 0)) {
-    meldungenStyle = { bg: 'bg-green-50', border: 'border-green-200', header: 'text-green-800', list: 'text-green-700' };
-  } else if (warningsWithoutInfo.some(w => w.toLowerCase().includes('konnte nicht'))) {
-    meldungenStyle = { bg: 'bg-red-50', border: 'border-red-200', header: 'text-red-800', list: 'text-red-700' };
-  } else if (warningsWithoutInfo.length > 0) {
-    meldungenStyle = { bg: 'bg-yellow-50', border: 'border-yellow-200', header: 'text-yellow-800', list: 'text-yellow-700' };
+  if (!isUiV2Enabled) {
+    const truckVisualizationScale = 0.35;
+    const warningsWithoutInfo = warnings.filter(w => !w.toLowerCase().includes('platz') && !w.toLowerCase().includes('benötigt'));
+    let meldungenStyle = {
+      bg: 'bg-gray-50', border: 'border-gray-200',
+      header: 'text-gray-800', list: 'text-gray-700'
+    };
+
+    if (warningsWithoutInfo.length === 0 && (totalDinPalletsVisual > 0 || totalEuroPalletsVisual > 0)) {
+      meldungenStyle = { bg: 'bg-green-50', border: 'border-green-200', header: 'text-green-800', list: 'text-green-700' };
+    } else if (warningsWithoutInfo.some(w => w.toLowerCase().includes('konnte nicht'))) {
+      meldungenStyle = { bg: 'bg-red-50', border: 'border-red-200', header: 'text-red-800', list: 'text-red-700' };
+    } else if (warningsWithoutInfo.length > 0) {
+      meldungenStyle = { bg: 'bg-yellow-50', border: 'border-yellow-200', header: 'text-yellow-800', list: 'text-yellow-700' };
+    }
+
+    return (
+      <div className="container mx-auto p-4 font-sans bg-gray-50">
+        <header className="relative bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
+          <div className="absolute top-2 right-4 text-right text-xs opacity-75">
+            <p>Laderaumrechner © {new Date().getFullYear()}</p>
+            <p>by Andreas Steiner</p>
+          </div>
+          <h1 className="text-3xl font-bold text-center tracking-tight">Laderaumrechner</h1>
+          <p className="text-center text-sm opacity-90">Visualisierung der Palettenplatzierung (Europäische Standards)</p>
+        </header>
+        <main className="p-6 bg-white shadow-lg rounded-b-lg">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div className="lg:col-span-1 space-y-6 bg-slate-50 p-5 rounded-lg border border-slate-200 shadow-sm">
+              <div>
+                <label htmlFor="truckType" className="block text-sm font-medium text-gray-700 mb-1">LKW-Typ:</label>
+                <select
+                  id="truckType"
+                  value={selectedTruck}
+                  onChange={e => {
+                    const newTruck = e.target.value;
+                    setSelectedTruck(newTruck);
+                    if (['Waggon', 'Waggon2'].includes(newTruck)) {
+                      setIsEUPStackable(false);
+                      setIsDINStackable(false);
+                    }
+                  }}
+                  className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+                  {Object.keys(TRUCK_TYPES).map(key => (
+                    <option key={key} value={key}>
+                      {TRUCK_TYPES[key as keyof typeof TRUCK_TYPES].name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="pt-4">
+                <button
+                  onClick={handleClearAllPallets}
+                  className="w-full py-2 px-4 bg-[#00906c] text-white font-semibold rounded-md shadow-sm hover:bg-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50 transition duration-150 ease-in-out"
+                >
+                  Alles zurücksetzen
+                </button>
+              </div>
+
+              <div className="border-t pt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Industriepaletten (DIN)</label>
+                <WeightInputs
+                  entries={dinWeights}
+                  onChange={(entries)=>{ setLastEdited('din'); setDinWeights(entries); }}
+                  palletType="DIN"
+                  variant="legacy"
+                />
+                <button onClick={() => handleMaximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 bg-gradient-to-b from-[#00b382] to-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#00906c] hover:to-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. DIN</button>
+                <button onClick={() => handleFillRemaining('industrial')} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. DIN füllen</button>
+                <div className="flex items-center mt-2">
+                  <input type="checkbox" id="dinStackable" checked={isDINStackable} onChange={e=>setIsDINStackable(e.target.checked)} disabled={isWaggonSelected} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"/>
+                  <label htmlFor="dinStackable" className={`ml-2 text-sm text-gray-900 ${isWaggonSelected && 'text-gray-400'}`}>Stapelbar (2-fach)</label>
+                </div>
+                {isDINStackable && !isWaggonSelected && (
+                  <input type="number" min="0" value={dinStackLimit} onChange={e=>setDinStackLimit(Math.max(0, parseInt(e.target.value,10)||0))} className="mt-1 block w-full py-1 px-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs" placeholder="Stapelbare Paletten (0 = alle)"/>
+                )}
+              </div>
+
+              <div className="border-t pt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Europaletten (EUP)</label>
+                <WeightInputs
+                  entries={eupWeights}
+                  onChange={(entries)=>{ setLastEdited('eup'); setEupWeights(entries); }}
+                  palletType="EUP"
+                  variant="legacy"
+                />
+                <button onClick={() => handleMaximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 bg-gradient-to-b from-[#00b382] to-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#00906c] hover:to-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. EUP</button>
+                <button onClick={() => handleFillRemaining('euro')} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. EUP füllen</button>
+                <div className="flex items-center mt-2">
+                  <input type="checkbox" id="eupStackable" checked={isEUPStackable} onChange={e=>setIsEUPStackable(e.target.checked)} disabled={isWaggonSelected} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"/>
+                  <label htmlFor="eupStackable" className={`ml-2 text-sm text-gray-900 ${isWaggonSelected && 'text-gray-400'}`}>Stapelbar (2-fach)</label>
+                </div>
+                {isEUPStackable && !isWaggonSelected && (
+                  <input type="number" min="0" value={eupStackLimit} onChange={e=>setEupStackLimit(Math.max(0, parseInt(e.target.value,10)||0))} className="mt-1 block w-full py-1 px-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs" placeholder="Stapelbare Paletten (0 = alle)"/>
+                )}
+              </div>
+
+              <div className="border-t pt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  EUP Lade-Pattern:
+                  <span className="text-xs text-gray-500"> (Gewählt: {actualEupLoadingPattern === 'none' ? 'Keines' : actualEupLoadingPattern})</span>
+                </label>
+                <div className="flex flex-col space-y-1">
+                  <label className="flex items-center">
+                    <input type="radio" name="eupLoadingPattern" value="auto" checked={eupLoadingPattern==='auto'} onChange={e=>setEupLoadingPattern(e.target.value)} className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"/>
+                    <span className="ml-2 text-sm text-gray-700">Auto-Optimieren</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input type="radio" name="eupLoadingPattern" value="long" checked={eupLoadingPattern==='long'} onChange={e=>setEupLoadingPattern(e.target.value)} className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"/>
+                    <span className="ml-2 text-sm text-gray-700">Längs (3 nebeneinander)</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input type="radio" name="eupLoadingPattern" value="broad" checked={eupLoadingPattern==='broad'} onChange={e=>setEupLoadingPattern(e.target.value)} className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"/>
+                    <span className="ml-2 text-sm text-gray-700">Quer (2 nebeneinander)</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="lg:col-span-2 bg-gray-100 p-6 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center justify-center">
+              <p className="text-gray-700 text-lg mb-4 font-semibold">Ladefläche Visualisierung</p>
+              {palletArrangement.map((unit: any,index: number)=>(
+                <div key={unit.unitId} className="mb-6 w-full flex flex-col items-center">
+                  {TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES].units.length>1&&<p className="text-sm text-gray-700 mb-2">Einheit {index+1} ({unit.unitLength/100}m x {unit.unitWidth/100}m)</p>}
+                  {index === 0 && (
+                    <svg
+                      aria-hidden
+                      role="presentation"
+                      className="block"
+                      width={unit.unitWidth*truckVisualizationScale}
+                      height={24}
+                      viewBox={`0 0 ${unit.unitWidth*truckVisualizationScale} 24`}
+                    >
+                      <rect x="0" y="6" width={unit.unitWidth*truckVisualizationScale} height="16" rx="6" fill="#93c5fd" stroke="#60a5fa" />
+                      <path d={`M ${(unit.unitWidth*truckVisualizationScale)/2 - 12} 6 L ${(unit.unitWidth*truckVisualizationScale)/2} 0 L ${(unit.unitWidth*truckVisualizationScale)/2 + 12} 6 Z`} fill="#60a5fa" />
+                      <text x={(unit.unitWidth*truckVisualizationScale)/2} y={20} textAnchor="middle" fontSize="10" fontWeight={700} fill="#1f2937">Front</text>
+                    </svg>
+                  )}
+                  <div className="relative bg-gray-300 border-2 border-gray-500 overflow-hidden rounded-md shadow-inner" style={{width:`${unit.unitWidth*truckVisualizationScale}px`,height:`${unit.unitLength*truckVisualizationScale}px`}}>
+                    {unit.pallets.map((p: any)=>renderLegacyPallet(p,truckVisualizationScale))}
+                  </div>
+                </div>
+              ))}
+              {palletArrangement.length === 0 && <p className="text-gray-500">Keine Paletten zum Anzeigen.</p>}
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 shadow-sm text-center">
+              <h3 className="font-semibold text-blue-800 mb-2">Geladene Paletten (Visuell)</h3>
+              <p>Industrie (DIN): <span className="font-bold text-lg">{totalDinPalletsVisual}</span></p>
+              <p>Euro (EUP): <span className="font-bold text-lg">{totalEuroPalletsVisual}</span></p>
+              <p className="text-xs mt-1">(Basis: {loadedIndustrialPalletsBase} DIN, {loadedEuroPalletsBase} EUP)</p>
+            </div>
+            <div className="bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm text-center">
+              <h3 className="font-semibold text-green-800 mb-2">Verbleibende Kapazität</h3>
+              {(() => {
+                const firstType = lastEdited === 'din' ? 'DIN' : 'EUP';
+                const secondType = lastEdited === 'din' ? 'EUP' : 'DIN';
+                const firstValue = lastEdited === 'din' ? remainingCapacity.din : remainingCapacity.eup;
+                const secondValue = lastEdited === 'din' ? remainingCapacity.eup : remainingCapacity.din;
+                return (
+                  <>
+                    <p className="font-bold text-2xl text-green-700">Platz für:</p>
+                    <p className="font-bold text-2xl text-green-700">
+                      {firstValue} weitere {firstType} {firstValue === 1 ? 'Palette' : 'Paletten'}
+                    </p>
+                    <p className="text-green-700">oder</p>
+                    <p className="font-bold text-xl text-green-700">
+                      {secondValue} weitere {secondType} {secondValue === 1 ? 'Palette' : 'Paletten'}
+                    </p>
+                  </>
+                );
+              })()}
+            </div>
+            <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 shadow-sm text-center">
+              <h3 className="font-semibold text-yellow-800 mb-2">Geschätztes Gewicht</h3>
+              <p className="font-bold text-2xl text-yellow-700">
+                {KILOGRAM_FORMATTER.format(totalWeightKg)} kg
+              </p>
+              <p className="text-xs mt-1">
+                (Max: {KILOGRAM_FORMATTER.format(maxGrossWeightKg)} kg)
+              </p>
+            </div>
+            <div className={`${meldungenStyle.bg} p-4 rounded-lg border ${meldungenStyle.border} shadow-sm`}>
+              <h3 className={`font-semibold mb-2 ${meldungenStyle.header}`}>Meldungen</h3>
+              {warnings.length > 0 ? (
+                <ul className={`list-disc list-inside text-sm space-y-1 ${meldungenStyle.list}`}>
+                  {warnings.map((w, i) => <li key={i}>{w}</li>)}
+                </ul>
+              ) : (
+                <p className={`text-sm ${meldungenStyle.list}`}>Keine Probleme erkannt.</p>
+              )}
+            </div>
+          </div>
+        </main>
+        <footer className="text-center py-4 mt-8 text-sm text-gray-500 border-t border-gray-200">
+          <p>Laderaumrechner © {new Date().getFullYear()} by Andreas Steiner</p>
+        </footer>
+        <Toaster />
+      </div>
+    );
   }
 
+  const totalLoadedPallets = totalDinPalletsVisual + totalEuroPalletsVisual;
+  const remainingForPrimary = lastEdited === 'din' ? remainingCapacity.din : remainingCapacity.eup;
+  const remainingForSecondary = lastEdited === 'din' ? remainingCapacity.eup : remainingCapacity.din;
+  const remainingPrimaryLabel = lastEdited === 'din' ? 'DIN' : 'EUP';
+  const remainingSecondaryLabel = lastEdited === 'din' ? 'EUP' : 'DIN';
+  const layoutScale = 0.4;
+  const eupPatternLabel = actualEupLoadingPattern === 'none' ? 'Keines' : actualEupLoadingPattern;
+
   return (
-    <div className="container mx-auto p-4 font-sans bg-gray-50">
-      <header className="relative bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
-        <div className="absolute top-2 right-4 text-right text-xs opacity-75">
-          <p>Laderaumrechner © {new Date().getFullYear()}</p>
-          <p>by Andreas Steiner</p>
+    <PageShell
+      header={(
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-[var(--text-muted)]">Vetropack Laderaumrechner</p>
+            <h1 className="text-2xl font-semibold text-[var(--text)]">Layout optimieren</h1>
+            <p className="text-sm text-[var(--text-muted)]">{selectedTruckConfig.name}</p>
+          </div>
+          <Button
+            type="button"
+            onClick={calculateAndSetState}
+            className="button-primary rounded-xl px-4 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:ring-0"
+            style={{ outlineColor: 'var(--brand-blue)' }}
+          >
+            Layout optimieren
+          </Button>
         </div>
-        <h1 className="text-3xl font-bold text-center tracking-tight">Laderaumrechner</h1>
-        <p className="text-center text-sm opacity-90">Visualisierung der Palettenplatzierung (Europäische Standards)</p>
-      </header>
-      <main className="p-6 bg-white shadow-lg rounded-b-lg">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="lg:col-span-1 space-y-6 bg-slate-50 p-5 rounded-lg border border-slate-200 shadow-sm">
-            <div>
-              <label htmlFor="truckType" className="block text-sm font-medium text-gray-700 mb-1">LKW-Typ:</label>
-              <select 
-                id="truckType" 
-                value={selectedTruck} 
-                onChange={e => {
-                  const newTruck = e.target.value;
+      )}
+      leftRail={(
+        <>
+          <section
+            className="space-y-4 rounded-2xl border bg-[var(--surface)] p-4 shadow-sm lg:sticky lg:top-6"
+            style={{ borderColor: 'var(--border)' }}
+          >
+            <div className="space-y-2">
+              <label htmlFor="truck-select" className="text-sm font-medium text-[var(--text)]">
+                Fahrzeugtyp
+              </label>
+              <select
+                id="truck-select"
+                value={selectedTruck}
+                onChange={event => {
+                  const newTruck = event.target.value;
                   setSelectedTruck(newTruck);
                   if (['Waggon', 'Waggon2'].includes(newTruck)) {
                     setIsEUPStackable(false);
                     setIsDINStackable(false);
                   }
-                }} 
-                className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-                {Object.keys(TRUCK_TYPES).map(key=><option key={key} value={key}>{TRUCK_TYPES[key as keyof typeof TRUCK_TYPES].name}</option>)}
+                }}
+                className="h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:ring-0"
+                style={{ outlineColor: 'var(--brand-blue)' }}
+              >
+                {Object.keys(TRUCK_TYPES).map(key => (
+                  <option key={key} value={key}>
+                    {TRUCK_TYPES[key as keyof typeof TRUCK_TYPES].name}
+                  </option>
+                ))}
               </select>
+              <p className="text-xs text-[var(--text-muted)]">
+                Max. Gesamtgewicht: {KILOGRAM_FORMATTER.format(maxGrossWeightKg)} kg
+              </p>
             </div>
-            <div className="pt-4">
-              <button onClick={handleClearAllPallets} className="w-full py-2 px-4 bg-[#00906c] text-white font-semibold rounded-md shadow-sm hover:bg-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50 transition duration-150 ease-in-out">Alles zurücksetzen</button>
-            </div>
-           
-            <div className="border-t pt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Industriepaletten (DIN)</label>
-                <WeightInputs entries={dinWeights} onChange={(entries)=>{ setLastEdited('din'); setDinWeights(entries); }} palletType="DIN" />
-                <button onClick={() => handleMaximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 bg-gradient-to-b from-[#00b382] to-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#00906c] hover:to-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. DIN</button>
-                <button onClick={() => handleFillRemaining('industrial')} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. DIN füllen</button>
-                <div className="flex items-center mt-2">
-                    <input type="checkbox" id="dinStackable" checked={isDINStackable} onChange={e=>setIsDINStackable(e.target.checked)} disabled={isWaggonSelected} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"/>
-                    <label htmlFor="dinStackable" className={`ml-2 text-sm text-gray-900 ${isWaggonSelected && 'text-gray-400'}`}>Stapelbar (2-fach)</label>
-                </div>
-                {isDINStackable && !isWaggonSelected && (
-                    <input type="number" min="0" value={dinStackLimit} onChange={e=>setDinStackLimit(Math.max(0, parseInt(e.target.value,10)||0))} className="mt-1 block w-full py-1 px-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs" placeholder="Stapelbare Paletten (0 = alle)"/>
-                )}
-            </div>
+            <Button
+              type="button"
+              onClick={handleClearAllPallets}
+              variant="outline"
+              className="w-full rounded-xl border-[var(--border)] bg-[var(--surface-muted)] py-2 text-sm font-semibold text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:ring-0"
+              style={{ outlineColor: 'var(--brand-blue)' }}
+            >
+              Eingaben zurücksetzen
+            </Button>
+          </section>
 
-            <div className="border-t pt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Europaletten (EUP)</label>
-                <WeightInputs entries={eupWeights} onChange={(entries)=>{ setLastEdited('eup'); setEupWeights(entries); }} palletType="EUP" />
-                <button onClick={() => handleMaximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 bg-gradient-to-b from-[#00b382] to-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#00906c] hover:to-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. EUP</button>
-                <button onClick={() => handleFillRemaining('euro')} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. EUP füllen</button>
-                <div className="flex items-center mt-2">
-                    <input type="checkbox" id="eupStackable" checked={isEUPStackable} onChange={e=>setIsEUPStackable(e.target.checked)} disabled={isWaggonSelected} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"/>
-                    <label htmlFor="eupStackable" className={`ml-2 text-sm text-gray-900 ${isWaggonSelected && 'text-gray-400'}`}>Stapelbar (2-fach)</label>
-                </div>
-                {isEUPStackable && !isWaggonSelected && (
-                    <input type="number" min="0" value={eupStackLimit} onChange={e=>setEupStackLimit(Math.max(0, parseInt(e.target.value,10)||0))} className="mt-1 block w-full py-1 px-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs" placeholder="Stapelbare Paletten (0 = alle)"/>
-                )}
-            </div>
-
-            <div className="border-t pt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">EUP Lade-Pattern:
-                <span className="text-xs text-gray-500"> (Gewählt: {actualEupLoadingPattern === 'none' ? 'Keines' : actualEupLoadingPattern})</span>
-              </label>
-              <div className="flex flex-col space-y-1">
-                <label className="flex items-center"><input type="radio" name="eupLoadingPattern" value="auto" checked={eupLoadingPattern==='auto'} onChange={e=>setEupLoadingPattern(e.target.value)} className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"/><span className="ml-2 text-sm text-gray-700">Auto-Optimieren</span></label>
-                <label className="flex items-center"><input type="radio" name="eupLoadingPattern" value="long" checked={eupLoadingPattern==='long'} onChange={e=>setEupLoadingPattern(e.target.value)} className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"/><span className="ml-2 text-sm text-gray-700">Längs (3 nebeneinander)</span></label>
-                <label className="flex items-center"><input type="radio" name="eupLoadingPattern" value="broad" checked={eupLoadingPattern==='broad'} onChange={e=>setEupLoadingPattern(e.target.value)} className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"/><span className="ml-2 text-sm text-gray-700">Quer (2 nebeneinander)</span></label>
+          <TypeCard
+            type="DIN"
+            title="Industriepaletten (DIN)"
+            actions={(
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  onClick={() => handleMaximizePallets('industrial')}
+                  className="button-primary rounded-lg px-3 py-1.5 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:ring-0"
+                  style={{ outlineColor: 'var(--accent-din)' }}
+                >
+                  Max. DIN
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleFillRemaining('industrial')}
+                  className="rounded-lg border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:ring-0"
+                  style={{ outlineColor: 'var(--accent-din)' }}
+                >
+                  Rest füllen
+                </Button>
               </div>
-            </div>
-          </div>
-
-          <div className="lg:col-span-2 bg-gray-100 p-6 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center justify-center">
-            <p className="text-gray-700 text-lg mb-4 font-semibold">Ladefläche Visualisierung</p>
-            {palletArrangement.map((unit: any,index: number)=>(
-              <div key={unit.unitId} className="mb-6 w-full flex flex-col items-center">
-                {TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES].units.length>1&&<p className="text-sm text-gray-700 mb-2">Einheit {index+1} ({unit.unitLength/100}m x {unit.unitWidth/100}m)</p>}
-                {index === 0 && (
-                  <svg
-                    aria-hidden
-                    role="presentation"
-                    className="block"
-                    width={unit.unitWidth*truckVisualizationScale}
-                    height={24}
-                    viewBox={`0 0 ${unit.unitWidth*truckVisualizationScale} 24`}
-                  >
-                    {/* Cab base */}
-                    <rect x="0" y="6" width={unit.unitWidth*truckVisualizationScale} height="16" rx="6" fill="#93c5fd" stroke="#60a5fa" />
-                    {/* Nose to indicate forward direction */}
-                    <path d={`M ${(unit.unitWidth*truckVisualizationScale)/2 - 12} 6 L ${(unit.unitWidth*truckVisualizationScale)/2} 0 L ${(unit.unitWidth*truckVisualizationScale)/2 + 12} 6 Z`} fill="#60a5fa" />
-                    {/* Label */}
-                    <text x={(unit.unitWidth*truckVisualizationScale)/2} y={20} textAnchor="middle" fontSize="10" fontWeight={700} fill="#1f2937">Front</text>
-                  </svg>
-                )}
-                <div className="relative bg-gray-300 border-2 border-gray-500 overflow-hidden rounded-md shadow-inner" style={{width:`${unit.unitWidth*truckVisualizationScale}px`,height:`${unit.unitLength*truckVisualizationScale}px`}}>
-                  {unit.pallets.map((p: any)=>renderPallet(p,truckVisualizationScale))}
-                </div>
-              </div>
-            ))}
-             {palletArrangement.length === 0 && <p className="text-gray-500">Keine Paletten zum Anzeigen.</p>}
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 shadow-sm text-center">
-            <h3 className="font-semibold text-blue-800 mb-2">Geladene Paletten (Visuell)</h3>
-            <p>Industrie (DIN): <span className="font-bold text-lg">{totalDinPalletsVisual}</span></p>
-            <p>Euro (EUP): <span className="font-bold text-lg">{totalEuroPalletsVisual}</span></p>
-            <p className="text-xs mt-1">(Basis: {loadedIndustrialPalletsBase} DIN, {loadedEuroPalletsBase} EUP)</p>
-          </div>
-          <div className="bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm text-center">
-            <h3 className="font-semibold text-green-800 mb-2">Verbleibende Kapazität</h3>
-            {(() => {
-              const firstType = lastEdited === 'din' ? 'DIN' : 'EUP';
-              const secondType = lastEdited === 'din' ? 'EUP' : 'DIN';
-              const firstValue = lastEdited === 'din' ? remainingCapacity.din : remainingCapacity.eup;
-              const secondValue = lastEdited === 'din' ? remainingCapacity.eup : remainingCapacity.din;
-              return (
-                <>
-                  <p className="font-bold text-2xl text-green-700">Platz für:</p>
-                  <p className="font-bold text-2xl text-green-700">
-                    {firstValue} weitere {firstType} {firstValue === 1 ? 'Palette' : 'Paletten'}
-                  </p>
-                  <p className="text-green-700">oder</p>
-                  <p className="font-bold text-xl text-green-700">
-                    {secondValue} weitere {secondType} {secondValue === 1 ? 'Palette' : 'Paletten'}
-                  </p>
-                </>
-              );
-            })()}
-          </div>
-          <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 shadow-sm text-center">
-            <h3 className="font-semibold text-yellow-800 mb-2">Geschätztes Gewicht</h3>
-            <p className="font-bold text-2xl text-yellow-700">
-              {KILOGRAM_FORMATTER.format(totalWeightKg)} kg
-            </p>
-            <p className="text-xs mt-1">
-              (Max: {KILOGRAM_FORMATTER.format(maxGrossWeightKg)} kg)
-            </p>
-          </div>
-          <div className={`${meldungenStyle.bg} p-4 rounded-lg border ${meldungenStyle.border} shadow-sm`}>
-            <h3 className={`font-semibold mb-2 ${meldungenStyle.header}`}>Meldungen</h3>
-            {warnings.length > 0 ? (
-                <ul className={`list-disc list-inside text-sm space-y-1 ${meldungenStyle.list}`}>
-                {warnings.map((w, i) => <li key={i}>{w}</li>)}
-                </ul>
-            ) : (
-                <p className={`text-sm ${meldungenStyle.list}`}>Keine Probleme erkannt.</p>
             )}
+          >
+            <WeightInputs
+              entries={dinWeights}
+              onChange={entries => {
+                setLastEdited('din');
+                setDinWeights(entries);
+              }}
+              palletType="DIN"
+              accentColor="var(--accent-din)"
+            />
+            <div className="mt-4 space-y-3">
+              <label className="flex items-center gap-3 text-sm text-[var(--text)]">
+                <input
+                  type="checkbox"
+                  checked={isDINStackable}
+                  onChange={event => setIsDINStackable(event.target.checked)}
+                  disabled={isWaggonSelected}
+                  className="h-4 w-4 rounded border-[var(--border)] bg-[var(--surface)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:ring-0 disabled:opacity-50"
+                  style={{ outlineColor: 'var(--accent-din)' }}
+                />
+                <span>Stapelbar (2-fach)</span>
+              </label>
+              {isDINStackable && !isWaggonSelected && (
+                <div className="space-y-1">
+                  <label className="text-xs text-[var(--text-muted)]" htmlFor="din-stack-limit">
+                    Stapelbare Paletten (0 = alle)
+                  </label>
+                  <input
+                    id="din-stack-limit"
+                    type="number"
+                    min="0"
+                    value={dinStackLimit}
+                    onChange={event => setDinStackLimit(Math.max(0, parseInt(event.target.value, 10) || 0))}
+                    className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:ring-0"
+                    style={{ outlineColor: 'var(--accent-din)' }}
+                  />
+                </div>
+              )}
+            </div>
+          </TypeCard>
+
+          <TypeCard
+            type="EUP"
+            title="Europaletten (EUP)"
+            actions={(
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  onClick={() => handleMaximizePallets('euro')}
+                  className="button-primary rounded-lg px-3 py-1.5 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:ring-0"
+                  style={{ outlineColor: 'var(--accent-eup)' }}
+                >
+                  Max. EUP
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleFillRemaining('euro')}
+                  className="rounded-lg border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:ring-0"
+                  style={{ outlineColor: 'var(--accent-eup)' }}
+                >
+                  Rest füllen
+                </Button>
+              </div>
+            )}
+          >
+            <WeightInputs
+              entries={eupWeights}
+              onChange={entries => {
+                setLastEdited('eup');
+                setEupWeights(entries);
+              }}
+              palletType="EUP"
+              accentColor="var(--accent-eup)"
+            />
+            <div className="mt-4 space-y-3">
+              <label className="flex items-center gap-3 text-sm text-[var(--text)]">
+                <input
+                  type="checkbox"
+                  checked={isEUPStackable}
+                  onChange={event => setIsEUPStackable(event.target.checked)}
+                  disabled={isWaggonSelected}
+                  className="h-4 w-4 rounded border-[var(--border)] bg-[var(--surface)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:ring-0 disabled:opacity-50"
+                  style={{ outlineColor: 'var(--accent-eup)' }}
+                />
+                <span>Stapelbar (2-fach)</span>
+              </label>
+              {isEUPStackable && !isWaggonSelected && (
+                <div className="space-y-1">
+                  <label className="text-xs text-[var(--text-muted)]" htmlFor="eup-stack-limit">
+                    Stapelbare Paletten (0 = alle)
+                  </label>
+                  <input
+                    id="eup-stack-limit"
+                    type="number"
+                    min="0"
+                    value={eupStackLimit}
+                    onChange={event => setEupStackLimit(Math.max(0, parseInt(event.target.value, 10) || 0))}
+                    className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:ring-0"
+                    style={{ outlineColor: 'var(--accent-eup)' }}
+                  />
+                </div>
+              )}
+            </div>
+          </TypeCard>
+
+          <section
+            className="rounded-2xl border bg-[var(--surface)] p-4 shadow-sm"
+            style={{ borderColor: 'var(--border)' }}
+          >
+            <h2 className="text-base font-semibold text-[var(--text)]">EUP Lademuster</h2>
+            <p className="text-xs text-[var(--text-muted)]">Aktiv: {eupPatternLabel}</p>
+            <div className="mt-4 space-y-2 text-sm text-[var(--text)]">
+              {[
+                { value: 'auto', label: 'Automatisch optimieren' },
+                { value: 'long', label: 'Längs (3 nebeneinander)' },
+                { value: 'broad', label: 'Quer (2 nebeneinander)' },
+              ].map(option => (
+                <label key={option.value} className="flex items-center gap-3">
+                  <input
+                    type="radio"
+                    name="eup-pattern"
+                    value={option.value}
+                    checked={eupLoadingPattern === option.value}
+                    onChange={event => setEupLoadingPattern(event.target.value)}
+                    className="h-4 w-4 rounded-full border-[var(--border)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:ring-0"
+                    style={{ outlineColor: 'var(--brand-blue)' }}
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
+    >
+      <section
+        className="overflow-hidden rounded-3xl border bg-[var(--surface)] shadow-sm"
+        style={{ borderColor: 'var(--border)' }}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b px-6 py-4" style={{ borderColor: 'var(--border)' }}>
+          <div>
+            <h2 className="text-lg font-semibold text-[var(--text)]">Ladefläche</h2>
+            <p className="text-sm text-[var(--text-muted)]">Stacked DIN: {Math.max(0, totalDinPalletsVisual - loadedIndustrialPalletsBase)} · Stacked EUP: {Math.max(0, totalEuroPalletsVisual - loadedEuroPalletsBase)}</p>
           </div>
+          <Legend />
         </div>
-      </main>
-      <footer className="text-center py-4 mt-8 text-sm text-gray-500 border-t border-gray-200">
-        <p>Laderaumrechner © {new Date().getFullYear()} by Andreas Steiner</p>
-      </footer>
+        <div className="space-y-8 px-6 py-6">
+          {palletArrangement.length === 0 && (
+            <p className="text-sm text-[var(--text-muted)]">Keine Paletten zum Anzeigen.</p>
+          )}
+          {palletArrangement.map((unit: any, index: number) => (
+            <div key={unit.unitId} className="space-y-3">
+              {TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES].units.length > 1 && (
+                <div className="flex items-center justify-between text-sm text-[var(--text-muted)]">
+                  <span>
+                    Einheit {index + 1} · {unit.unitLength / 100} m × {unit.unitWidth / 100} m
+                  </span>
+                  {index === 0 && <span className="text-xs uppercase tracking-wide">Front</span>}
+                </div>
+              )}
+              <div className="overflow-x-auto">
+                <div
+                  className="relative mx-auto rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface-muted)]"
+                  style={{ width: `${unit.unitWidth * layoutScale}px`, height: `${unit.unitLength * layoutScale}px` }}
+                >
+                  {unit.pallets.map((p: any) => renderPalletTile(p, layoutScale))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <KPIStat
+          title="Geladene Paletten"
+          value={totalLoadedPallets}
+          breakdown={[
+            { label: 'DIN', color: 'var(--accent-din)', value: loadedIndustrialPalletsBase },
+            { label: 'EUP', color: 'var(--accent-eup)', value: loadedEuroPalletsBase },
+          ]}
+          caption={`Gesamt visuell: DIN ${totalDinPalletsVisual}, EUP ${totalEuroPalletsVisual}`}
+        />
+        <KPIStat
+          title="Verbleibende Kapazität"
+          value={`${remainingForPrimary} ${remainingPrimaryLabel}`}
+          breakdown={[
+            {
+              label: remainingSecondaryLabel,
+              color: remainingSecondaryLabel === 'DIN' ? 'var(--accent-din)' : 'var(--accent-eup)',
+              value: remainingForSecondary,
+            },
+          ]}
+          caption="Freie Stellplätze bei aktueller Konfiguration"
+        />
+        <KPIStat
+          title="Gesamtgewicht"
+          value={`${KILOGRAM_FORMATTER.format(totalWeightKg)} kg`}
+          caption={`Maximal ${KILOGRAM_FORMATTER.format(maxGrossWeightKg)} kg`}
+        />
+        <KPIStat
+          title="Flächenauslastung"
+          value={`${utilizationPercentage.toFixed(1)} %`}
+          caption={`EUP-Muster: ${eupPatternLabel}`}
+        />
+      </div>
+
+      <section
+        className="rounded-2xl border bg-[var(--surface)] p-4 shadow-sm"
+        style={{ borderColor: 'var(--border)' }}
+      >
+        <h2 className="text-base font-semibold text-[var(--text)]">Meldungen</h2>
+        {warnings.length > 0 ? (
+          <ul className="mt-3 space-y-2 text-sm text-[var(--text)]">
+            {warnings.map((warning, index) => (
+              <li key={index} className="rounded-xl bg-[var(--surface-muted)] px-3 py-2">
+                {warning}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-sm text-[var(--text-muted)]">Keine Meldungen vorhanden.</p>
+        )}
+      </section>
+
       <Toaster />
-    </div>
+    </PageShell>
   );
 }
