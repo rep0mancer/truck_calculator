@@ -20,6 +20,16 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Modern UI toggle
+
+The updated cockpit experience is enabled by default. Set the `NEXT_PUBLIC_UI_V2` environment variable to `false` to render the legacy interface:
+
+```bash
+NEXT_PUBLIC_UI_V2=false pnpm dev
+```
+
+When UI v2 is active, the layout is composed with the `TruckCalculatorNewUI` component (see `src/components/TruckCalculatorNewUI.tsx`). It consumes the existing calculation logic and only adjusts presentation.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

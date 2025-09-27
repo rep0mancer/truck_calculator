@@ -61,6 +61,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250109.0",
+    "@playwright/test": "^1.41.2",
     "@eslint/eslintrc": "^3",
     "@opennextjs/cloudflare": "^0.3.8",
     "@types/jest": "^30.0.0",

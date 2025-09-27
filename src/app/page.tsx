@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { WeightInputs } from '@/components/WeightInputs';
+import { TruckCalculatorNewUI } from '@/components/TruckCalculatorNewUI';
 
 // Define the type for a single weight entry
 type WeightEntry = {
@@ -80,6 +81,8 @@ const MAX_PALLET_SIMULATION_QUANTITY = 300;
 const STACKED_EUP_THRESHOLD_FOR_AXLE_WARNING = 18;
 const STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING = 16;
 const MAX_WEIGHT_PER_METER_KG = 1800;
+
+const DEFAULT_CANVAS_SCALE = 0.35;
 
 const KILOGRAM_FORMATTER = new Intl.NumberFormat('de-DE', {
   maximumFractionDigits: 0,
@@ -388,7 +391,7 @@ const calculateLoadingLogic = (
     let currentX = 0;
     let currentY = 0;
     let currentRowHeight = 0;
-    let activeEupPatternForRow = currentEupLoadingPattern;
+    let activeEupPatternForRow: 'auto' | 'long' | 'broad' | 'none' = currentEupLoadingPattern;
     // Use a traditional for loop for stability, as we manually advance the index
     for (let i = 0; i < placementQueue.length; /* no increment */) {
       const palletToPlace = placementQueue[i];
@@ -535,6 +538,8 @@ export default function HomePage() {
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
   const [remainingCapacity, setRemainingCapacity] = useState<{ eup: number, din: number }>({ eup: 0, din: 0 });
   const [lastEdited, setLastEdited] = useState<'eup' | 'din'>('eup');
+  const [canvasScale, setCanvasScale] = useState(DEFAULT_CANVAS_SCALE);
+  const [liveAnnouncement, setLiveAnnouncement] = useState('');
   const { toast } = useToast();
   const isWaggonSelected = ['Waggon', 'Waggon2'].includes(selectedTruck);
   const selectedTruckConfig = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES];
@@ -644,6 +649,20 @@ export default function HomePage() {
     calculateAndSetState();
   }, [calculateAndSetState]);
 
+  useEffect(() => {
+    setCanvasScale(DEFAULT_CANVAS_SCALE);
+  }, [selectedTruck]);
+
+  useEffect(() => {
+    if (!palletArrangement || (Array.isArray(palletArrangement) && palletArrangement.length === 0)) {
+      setLiveAnnouncement('Beladung wurde zurückgesetzt.');
+      return;
+    }
+    setLiveAnnouncement(
+      `Beladung aktualisiert: ${totalDinPalletsVisual} DIN und ${totalEuroPalletsVisual} EUP geladen.`
+    );
+  }, [palletArrangement, totalDinPalletsVisual, totalEuroPalletsVisual]);
+
   const handleClearAllPallets = () => {
     setEupWeights([{ id: Date.now(), weight: '', quantity: 0 }]);
     setDinWeights([{ id: Date.now() + 1, weight: '', quantity: 0 }]);
@@ -652,6 +671,7 @@ export default function HomePage() {
     setEupStackLimit(0);
     setDinStackLimit(0);
     setEupLoadingPattern('auto');
+    setCanvasScale(DEFAULT_CANVAS_SCALE);
   };
 
   const handleMaximizePallets = (palletTypeToMax: 'euro' | 'industrial') => {
@@ -725,11 +745,65 @@ export default function HomePage() {
     }
     toast({ title: 'LKW aufgefüllt', description: `Freier Platz wurde mit ${typeToFill.toUpperCase()} Paletten gefüllt.` });
   };
+
+  const handleWeightEntryChange = useCallback(
+    (type: 'eup' | 'din', id: number, field: 'quantity' | 'weight', newValue: number | string) => {
+      const setter = type === 'eup' ? setEupWeights : setDinWeights;
+      setter(prev =>
+        prev.map(entry => {
+          if (entry.id !== id) return entry;
+          if (field === 'quantity') {
+            const parsed = typeof newValue === 'number' ? newValue : parseInt(String(newValue), 10) || 0;
+            return { ...entry, quantity: Math.max(0, parsed) };
+          }
+          return { ...entry, weight: String(newValue) };
+        })
+      );
+      setLastEdited(type);
+    },
+    []
+  );
+
+  const handleAddWeightGroup = useCallback((type: 'eup' | 'din') => {
+    const setter = type === 'eup' ? setEupWeights : setDinWeights;
+    setter(prev => [...prev, { id: Date.now(), weight: '', quantity: 0 }]);
+    setLastEdited(type);
+  }, []);
+
+  const handleRemoveWeightGroup = useCallback((type: 'eup' | 'din', id: number) => {
+    const setter = type === 'eup' ? setEupWeights : setDinWeights;
+    setter(prev => {
+      if (prev.length === 1) return prev;
+      return prev.filter(entry => entry.id !== id);
+    });
+    setLastEdited(type);
+  }, []);
+
+  const handleSelectTruck = useCallback((value: string) => {
+    setSelectedTruck(value);
+    if (['Waggon', 'Waggon2'].includes(value)) {
+      setIsEUPStackable(false);
+      setIsDINStackable(false);
+    }
+  }, []);
+
+  const handleZoomIn = useCallback(() => {
+    setCanvasScale(scale => Math.min(scale + 0.05, 0.6));
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setCanvasScale(scale => Math.max(scale - 0.05, 0.2));
+  }, []);
+
+  const handleResetView = useCallback(() => {
+    setCanvasScale(DEFAULT_CANVAS_SCALE);
+  }, []);
  
   // ... (renderPallet function and style calculations remain the same)
-  const renderPallet = (pallet: any, displayScale = 0.3) => {
-    if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) return null;
-    const d = PALLET_TYPES[pallet.type];
+  const renderLegacyPallet = (pallet: any, displayScale = 0.3) => {
+    if (!pallet || !pallet.type || !(pallet.type in PALLET_TYPES)) return null;
+    const typeKey = pallet.type as keyof typeof PALLET_TYPES;
+    const d = PALLET_TYPES[typeKey];
     const w = pallet.height * displayScale; const h = pallet.width * displayScale;
     const x = pallet.y * displayScale; const y = pallet.x * displayScale;
     let txt = pallet.showAsFraction && pallet.displayStackedLabelId ? `${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId}` : `${pallet.labelId}`;
@@ -747,6 +821,135 @@ export default function HomePage() {
       </div>
     );
   };
+
+  const renderModernPallet = (
+    pallet: any,
+    displayScale: number,
+    { showNear, showOver }: { showNear: boolean; showOver: boolean }
+  ) => {
+    if (!pallet || !pallet.type || !(pallet.type in PALLET_TYPES)) return null;
+    const typeKey = pallet.type as keyof typeof PALLET_TYPES;
+    const def = PALLET_TYPES[typeKey];
+    const width = pallet.height * displayScale;
+    const height = pallet.width * displayScale;
+    const left = pallet.y * displayScale;
+    const top = pallet.x * displayScale;
+
+    let label = pallet.showAsFraction && pallet.displayStackedLabelId
+      ? `${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId}`
+      : `${pallet.labelId}`;
+    if (pallet.labelId === 0) label = '?';
+
+    let title = `${def.name} #${pallet.labelId}`;
+    if (pallet.showAsFraction) {
+      title = `${def.name} (Stapel: ${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId})`;
+    }
+    if (pallet.isStackedTier === 'top') title += ' - Oben';
+    if (pallet.isStackedTier === 'base') title += ' - Basis des Stapels';
+
+    const classes = ['pallet-tile'];
+    if (pallet.isStackedTier) classes.push('pallet--stacked');
+    if (showOver) classes.push('pallet--over-limit');
+    else if (showNear) classes.push('pallet--near-limit');
+
+    return (
+      <div
+        key={pallet.key}
+        title={title}
+        className={classes.join(' ')}
+        style={{
+          left: `${left}px`,
+          top: `${top}px`,
+          width: `${width}px`,
+          height: `${height}px`,
+          opacity: pallet.isStackedTier === 'top' ? 0.82 : 1,
+          zIndex: pallet.isStackedTier === 'top' ? 10 : 5,
+          fontSize: '10px',
+        }}
+        aria-label={title}
+      >
+        <span className="select-none text-[var(--text)]">{label}</span>
+        {showOver ? <span className="pallet--badge" aria-hidden /> : null}
+      </div>
+    );
+  };
+
+  const shouldForceLegacy = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('ui') === 'legacy';
+  const uiV2Enabled = !shouldForceLegacy && process.env.NEXT_PUBLIC_UI_V2 !== 'false';
+
+  if (uiV2Enabled) {
+    const handleHelpClick = () => {
+      toast({
+        title: 'Tipps zur Bedienung',
+        description:
+          'Passe Palettenanzahlen und Gewichte links an. Die Visualisierung aktualisiert sich nach jeder Änderung automatisch.',
+      });
+    };
+
+    return (
+      <>
+        <TruckCalculatorNewUI
+          selectedTruck={selectedTruck}
+          onSelectTruck={handleSelectTruck}
+          truckTypes={TRUCK_TYPES}
+          selectedTruckConfig={selectedTruckConfig}
+          isWaggonSelected={isWaggonSelected}
+          dinWeights={dinWeights}
+          eupWeights={eupWeights}
+          onWeightChange={handleWeightEntryChange}
+          onAddWeightGroup={handleAddWeightGroup}
+          onRemoveWeightGroup={handleRemoveWeightGroup}
+          onMaximize={handleMaximizePallets}
+          onFillRemaining={handleFillRemaining}
+          isDINStackable={isDINStackable}
+          isEUPStackable={isEUPStackable}
+          onToggleDINStackable={checked => {
+            setIsDINStackable(checked);
+            setLastEdited('din');
+          }}
+          onToggleEUPStackable={checked => {
+            setIsEUPStackable(checked);
+            setLastEdited('eup');
+          }}
+          dinStackLimit={dinStackLimit}
+          eupStackLimit={eupStackLimit}
+          onChangeDinStackLimit={value => {
+            setDinStackLimit(value);
+            setLastEdited('din');
+          }}
+          onChangeEupStackLimit={value => {
+            setEupStackLimit(value);
+            setLastEdited('eup');
+          }}
+          eupLoadingPattern={eupLoadingPattern as 'auto' | 'long' | 'broad'}
+          onChangeEupLoadingPattern={value => setEupLoadingPattern(value)}
+          actualEupLoadingPattern={actualEupLoadingPattern}
+          onOptimize={calculateAndSetState}
+          onResetAll={handleClearAllPallets}
+          onHelp={handleHelpClick}
+          palletArrangement={palletArrangement}
+          renderPallet={renderModernPallet}
+          canvasScale={canvasScale}
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
+          onResetView={handleResetView}
+          totalDinPalletsVisual={totalDinPalletsVisual}
+          totalEuroPalletsVisual={totalEuroPalletsVisual}
+          loadedIndustrialPalletsBase={loadedIndustrialPalletsBase}
+          loadedEuroPalletsBase={loadedEuroPalletsBase}
+          remainingCapacity={remainingCapacity}
+          lastEdited={lastEdited}
+          totalWeightKg={totalWeightKg}
+          maxGrossWeightKg={maxGrossWeightKg}
+          utilizationPercentage={utilizationPercentage}
+          warnings={warnings}
+          liveAnnouncement={liveAnnouncement}
+          formatKilograms={value => KILOGRAM_FORMATTER.format(value)}
+        />
+        <Toaster />
+      </>
+    );
+  }
 
   const truckVisualizationScale = 0.35;
 
@@ -782,14 +985,7 @@ export default function HomePage() {
               <select 
                 id="truckType" 
                 value={selectedTruck} 
-                onChange={e => {
-                  const newTruck = e.target.value;
-                  setSelectedTruck(newTruck);
-                  if (['Waggon', 'Waggon2'].includes(newTruck)) {
-                    setIsEUPStackable(false);
-                    setIsDINStackable(false);
-                  }
-                }} 
+                onChange={e => handleSelectTruck(e.target.value)}
                 className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
                 {Object.keys(TRUCK_TYPES).map(key=><option key={key} value={key}>{TRUCK_TYPES[key as keyof typeof TRUCK_TYPES].name}</option>)}
               </select>
@@ -861,7 +1057,7 @@ export default function HomePage() {
                   </svg>
                 )}
                 <div className="relative bg-gray-300 border-2 border-gray-500 overflow-hidden rounded-md shadow-inner" style={{width:`${unit.unitWidth*truckVisualizationScale}px`,height:`${unit.unitLength*truckVisualizationScale}px`}}>
-                  {unit.pallets.map((p: any)=>renderPallet(p,truckVisualizationScale))}
+                  {unit.pallets.map((p: any)=>renderLegacyPallet(p,truckVisualizationScale))}
                 </div>
               </div>
             ))}
