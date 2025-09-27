@@ -1,9 +1,21 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { WeightInputs } from '@/components/WeightInputs';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { PageShell } from '@/components/ui/PageShell';
+import { Card } from '@/components/ui/Card';
+import { KPIStat } from '@/components/ui/KPIStat';
+import { StepperInput } from '@/components/forms/StepperInput';
+import { Switch as StackSwitch } from '@/components/forms/Switch';
+import { Segmented } from '@/components/forms/Segmented';
+import { CanvasToolbar } from '@/components/canvas/CanvasToolbar';
+import { Legend } from '@/components/canvas/Legend';
+import { HelpCircle, RefreshCcw, AlertTriangle, Layers3, PlusCircle, Trash2, CheckCircle2 } from 'lucide-react';
 
 // Define the type for a single weight entry
 type WeightEntry = {
@@ -11,6 +23,99 @@ type WeightEntry = {
   weight: string;
   quantity: number;
 };
+
+interface WeightGroupEditorProps {
+  entries: WeightEntry[];
+  onEntriesChange: (entries: WeightEntry[]) => void;
+  idPrefix: string;
+  onInteract?: () => void;
+}
+
+function WeightGroupEditor({ entries, onEntriesChange, idPrefix, onInteract }: WeightGroupEditorProps) {
+  const handleQuantityChange = (id: number, value: number) => {
+    onEntriesChange(entries.map(entry => (entry.id === id ? { ...entry, quantity: value } : entry)));
+    onInteract?.();
+  };
+
+  const handleWeightChange = (id: number, value: string) => {
+    onEntriesChange(entries.map(entry => (entry.id === id ? { ...entry, weight: value } : entry)));
+    onInteract?.();
+  };
+
+  const handleAddGroup = () => {
+    const newEntry = { id: Date.now() + Math.floor(Math.random() * 1000), weight: '', quantity: 0 };
+    onEntriesChange([...entries, newEntry]);
+    onInteract?.();
+  };
+
+  const handleRemove = (id: number) => {
+    if (entries.length === 1) return;
+    onEntriesChange(entries.filter(entry => entry.id !== id));
+    onInteract?.();
+  };
+
+  return (
+    <div className="space-y-4">
+      {entries.map((entry, index) => {
+        const quantityId = `${idPrefix}-quantity-${entry.id}`;
+        const weightId = `${idPrefix}-weight-${entry.id}`;
+        const describedBy = `${weightId}-hint`;
+        return (
+          <div key={entry.id} className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)]/60 p-3">
+            <div className="flex items-start gap-3">
+              <div className="flex-1 space-y-2">
+                <div>
+                  <Label htmlFor={quantityId} className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
+                    Anzahl
+                  </Label>
+                  <StepperInput
+                    id={quantityId}
+                    value={entry.quantity}
+                    min={0}
+                    onChange={value => handleQuantityChange(entry.id, value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor={weightId} className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
+                    Gewicht pro Palette (kg)
+                  </Label>
+                  <Input
+                    id={weightId}
+                    type="number"
+                    min="0"
+                    value={entry.weight}
+                    aria-describedby={describedBy}
+                    onChange={event => handleWeightChange(entry.id, event.target.value)}
+                    className="mt-2 h-10 rounded-xl border-[var(--border)] bg-[var(--surface)] text-sm text-[var(--text)]"
+                  />
+                  <p id={describedBy} className="mt-1 text-xs text-[var(--text-muted)]">
+                    Optional: Leer lassen, um Standardgewichte zu nutzen.
+                  </p>
+                </div>
+              </div>
+              {entries.length > 1 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Gruppe entfernen"
+                  onClick={() => handleRemove(entry.id)}
+                  className="mt-6 h-9 w-9 rounded-full text-[var(--danger)] hover:bg-[var(--danger)]/10"
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden />
+                </Button>
+              ) : null}
+            </div>
+            {index < entries.length - 1 ? <div className="mt-3 border-t border-dashed border-[var(--border)]" /> : null}
+          </div>
+        );
+      })}
+      <Button type="button" variant="link" className="px-0 text-sm" onClick={handleAddGroup}>
+        <PlusCircle className="mr-2 h-4 w-4" aria-hidden /> Gruppe hinzufügen
+      </Button>
+    </div>
+  );
+}
 
 // ... (TRUCK_TYPES and PALLET_TYPES constants remain the same)
 const TRUCK_TYPES = {
@@ -80,6 +185,7 @@ const MAX_PALLET_SIMULATION_QUANTITY = 300;
 const STACKED_EUP_THRESHOLD_FOR_AXLE_WARNING = 18;
 const STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING = 16;
 const MAX_WEIGHT_PER_METER_KG = 1800;
+const BASE_CANVAS_SCALE = 0.35;
 
 const KILOGRAM_FORMATTER = new Intl.NumberFormat('de-DE', {
   maximumFractionDigits: 0,
@@ -388,7 +494,7 @@ const calculateLoadingLogic = (
     let currentX = 0;
     let currentY = 0;
     let currentRowHeight = 0;
-    let activeEupPatternForRow = currentEupLoadingPattern;
+    let activeEupPatternForRow: 'auto' | 'long' | 'broad' | null = currentEupLoadingPattern;
     // Use a traditional for loop for stability, as we manually advance the index
     for (let i = 0; i < placementQueue.length; /* no increment */) {
       const palletToPlace = placementQueue[i];
@@ -415,9 +521,9 @@ const calculateLoadingLogic = (
         } else if (countBases >= 1 && remainingLength >= PALLET_TYPES.euro.width) {
           activeEupPatternForRow = 'broad';
         } else {
-          activeEupPatternForRow = 'none';
+          activeEupPatternForRow = null;
         }
-        if (activeEupPatternForRow === 'none') break; // No more EUPs fit
+        if (activeEupPatternForRow === null) break; // No more EUPs fit
       }
 
       const palletDef = type === 'euro' ? PALLET_TYPES.euro : PALLET_TYPES.industrial;
@@ -535,6 +641,9 @@ export default function HomePage() {
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
   const [remainingCapacity, setRemainingCapacity] = useState<{ eup: number, din: number }>({ eup: 0, din: 0 });
   const [lastEdited, setLastEdited] = useState<'eup' | 'din'>('eup');
+  const [canvasScale, setCanvasScale] = useState(BASE_CANVAS_SCALE);
+  const [liveMessage, setLiveMessage] = useState('');
+  const previousCountsRef = useRef({ din: 0, eup: 0 });
   const { toast } = useToast();
   const isWaggonSelected = ['Waggon', 'Waggon2'].includes(selectedTruck);
   const selectedTruckConfig = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES];
@@ -644,6 +753,30 @@ export default function HomePage() {
     calculateAndSetState();
   }, [calculateAndSetState]);
 
+  useEffect(() => {
+    setCanvasScale(BASE_CANVAS_SCALE);
+  }, [selectedTruck]);
+
+  useEffect(() => {
+    const previous = previousCountsRef.current;
+    if (previous.din === totalDinPalletsVisual && previous.eup === totalEuroPalletsVisual) {
+      return;
+    }
+    const changes: string[] = [];
+    const dinDiff = totalDinPalletsVisual - previous.din;
+    const eupDiff = totalEuroPalletsVisual - previous.eup;
+    if (dinDiff !== 0) {
+      changes.push(`${dinDiff > 0 ? '+' : ''}${dinDiff} DIN`);
+    }
+    if (eupDiff !== 0) {
+      changes.push(`${eupDiff > 0 ? '+' : ''}${eupDiff} EUP`);
+    }
+    if (changes.length > 0) {
+      setLiveMessage(`Layout aktualisiert: ${changes.join(' und ')}.`);
+    }
+    previousCountsRef.current = { din: totalDinPalletsVisual, eup: totalEuroPalletsVisual };
+  }, [totalDinPalletsVisual, totalEuroPalletsVisual]);
+
   const handleClearAllPallets = () => {
     setEupWeights([{ id: Date.now(), weight: '', quantity: 0 }]);
     setDinWeights([{ id: Date.now() + 1, weight: '', quantity: 0 }]);
@@ -727,9 +860,11 @@ export default function HomePage() {
   };
  
   // ... (renderPallet function and style calculations remain the same)
-  const renderPallet = (pallet: any, displayScale = 0.3) => {
-    if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) return null;
-    const d = PALLET_TYPES[pallet.type];
+  const renderLegacyPallet = (pallet: any, displayScale = 0.3) => {
+    if (!pallet || !pallet.type) return null;
+    const palletType = pallet.type as keyof typeof PALLET_TYPES;
+    if (!PALLET_TYPES[palletType]) return null;
+    const d = PALLET_TYPES[palletType];
     const w = pallet.height * displayScale; const h = pallet.width * displayScale;
     const x = pallet.y * displayScale; const y = pallet.x * displayScale;
     let txt = pallet.showAsFraction && pallet.displayStackedLabelId ? `${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId}` : `${pallet.labelId}`;
@@ -748,7 +883,59 @@ export default function HomePage() {
     );
   };
 
-  const truckVisualizationScale = 0.35;
+  const renderModernPallet = (pallet: any) => {
+    if (!pallet || !pallet.type) return null;
+    const palletType = pallet.type as keyof typeof PALLET_TYPES;
+    if (!PALLET_TYPES[palletType]) return null;
+    const definition = PALLET_TYPES[palletType];
+    const width = pallet.height * canvasScale;
+    const height = pallet.width * canvasScale;
+    const left = pallet.y * canvasScale;
+    const top = pallet.x * canvasScale;
+    let label = pallet.showAsFraction && pallet.displayStackedLabelId
+      ? `${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId}`
+      : `${pallet.labelId}`;
+    if (pallet.labelId === 0) label = '?';
+    let title = `${definition.name} #${pallet.labelId}`;
+    if (pallet.showAsFraction) {
+      title = `${definition.name} (Stapel: ${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId})`;
+    }
+    if (pallet.isStackedTier === 'top') title += ' - Oben';
+    if (pallet.isStackedTier === 'base') title += ' - Basis des Stapels';
+
+    const isOverLimit = totalWeightKg > maxGrossWeightKg;
+    const isNearLimit = !isOverLimit && totalWeightKg >= maxGrossWeightKg * 0.9;
+
+    const classes = [
+      'absolute flex items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[10px] font-semibold text-[var(--text)] shadow-sm transition-all duration-150',
+      pallet.isStackedTier
+        ? '[background-image:repeating-linear-gradient(90deg,rgba(15,23,42,0.08)_0_2px,transparent_2px_6px)]'
+        : 'bg-[var(--surface)]',
+      pallet.isStackedTier === 'top' ? 'opacity-90 backdrop-blur-sm' : '',
+      isOverLimit
+        ? 'shadow-[0_0_0_2px_var(--danger)] after:absolute after:content-[""] after:right-1 after:top-1 after:h-2 after:w-2 after:rounded-full after:bg-[var(--danger)]'
+        : '',
+      !isOverLimit && isNearLimit ? 'shadow-[0_0_0_2px_var(--warning)]' : '',
+    ].filter(Boolean).join(' ');
+
+    return (
+      <div
+        key={pallet.key}
+        title={title}
+        className={classes}
+        style={{ left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px`, zIndex: pallet.isStackedTier === 'top' ? 10 : 5 }}
+        aria-label={title}
+      >
+        <span>{label}</span>
+      </div>
+    );
+  };
+  const truckVisualizationScale = BASE_CANVAS_SCALE;
+
+  const totalPalletsVisualCount = totalDinPalletsVisual + totalEuroPalletsVisual;
+  const weightMarginKg = maxGrossWeightKg - totalWeightKg;
+  const marginStatus = weightMarginKg < 0 ? 'error' : weightMarginKg <= maxGrossWeightKg * 0.1 ? 'warn' : 'ok';
+  const isUIV2Enabled = process.env.NEXT_PUBLIC_UI_V2 !== 'false';
 
   const warningsWithoutInfo = warnings.filter(w => !w.toLowerCase().includes('platz') && !w.toLowerCase().includes('benötigt'));
   let meldungenStyle = {
@@ -764,19 +951,47 @@ export default function HomePage() {
     meldungenStyle = { bg: 'bg-yellow-50', border: 'border-yellow-200', header: 'text-yellow-800', list: 'text-yellow-700' };
   }
 
-  return (
-    <div className="container mx-auto p-4 font-sans bg-gray-50">
-      <header className="relative bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
-        <div className="absolute top-2 right-4 text-right text-xs opacity-75">
-          <p>Laderaumrechner © {new Date().getFullYear()}</p>
-          <p>by Andreas Steiner</p>
-        </div>
-        <h1 className="text-3xl font-bold text-center tracking-tight">Laderaumrechner</h1>
-        <p className="text-center text-sm opacity-90">Visualisierung der Palettenplatzierung (Europäische Standards)</p>
-      </header>
-      <main className="p-6 bg-white shadow-lg rounded-b-lg">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="lg:col-span-1 space-y-6 bg-slate-50 p-5 rounded-lg border border-slate-200 shadow-sm">
+  const remainingPrimaryType = lastEdited === 'din' ? 'DIN' : 'EUP';
+  const remainingSecondaryType = lastEdited === 'din' ? 'EUP' : 'DIN';
+  const remainingPrimaryValue = lastEdited === 'din' ? remainingCapacity.din : remainingCapacity.eup;
+  const remainingSecondaryValue = lastEdited === 'din' ? remainingCapacity.eup : remainingCapacity.din;
+  const eupPatternLabel = actualEupLoadingPattern === 'none' ? 'Keines' : actualEupLoadingPattern;
+
+  const handleZoomIn = () => {
+    setCanvasScale(prev => Math.min(0.65, parseFloat((prev + 0.05).toFixed(2))));
+  };
+
+  const handleZoomOut = () => {
+    setCanvasScale(prev => Math.max(0.2, parseFloat((prev - 0.05).toFixed(2))));
+  };
+
+  const handleResetZoom = () => {
+    setCanvasScale(BASE_CANVAS_SCALE);
+  };
+
+  const scalePercent = Math.round((canvasScale / BASE_CANVAS_SCALE) * 100);
+
+  const handleShowHelp = () => {
+    toast({
+      title: 'Schnellhilfe',
+      description: 'Wählen Sie einen LKW aus, tragen Sie Palettenmengen und Gewichte ein und nutzen Sie die Aktionen zur Optimierung.',
+    });
+  };
+
+  if (!isUIV2Enabled) {
+    return (
+      <div className="container mx-auto p-4 font-sans bg-gray-50">
+        <header className="relative bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
+          <div className="absolute top-2 right-4 text-right text-xs opacity-75">
+            <p>Laderaumrechner © {new Date().getFullYear()}</p>
+            <p>by Andreas Steiner</p>
+          </div>
+          <h1 className="text-3xl font-bold text-center tracking-tight">Laderaumrechner</h1>
+          <p className="text-center text-sm opacity-90">Visualisierung der Palettenplatzierung (Europäische Standards)</p>
+        </header>
+        <main className="p-6 bg-white shadow-lg rounded-b-lg">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div className="lg:col-span-1 space-y-6 bg-slate-50 p-5 rounded-lg border border-slate-200 shadow-sm">
             <div>
               <label htmlFor="truckType" className="block text-sm font-medium text-gray-700 mb-1">LKW-Typ:</label>
               <select 
@@ -861,7 +1076,7 @@ export default function HomePage() {
                   </svg>
                 )}
                 <div className="relative bg-gray-300 border-2 border-gray-500 overflow-hidden rounded-md shadow-inner" style={{width:`${unit.unitWidth*truckVisualizationScale}px`,height:`${unit.unitLength*truckVisualizationScale}px`}}>
-                  {unit.pallets.map((p: any)=>renderPallet(p,truckVisualizationScale))}
+                  {unit.pallets.map((p: any)=>renderLegacyPallet(p,truckVisualizationScale))}
                 </div>
               </div>
             ))}
@@ -922,5 +1137,370 @@ export default function HomePage() {
       </footer>
       <Toaster />
     </div>
+  );
+  }
+
+  return (
+    <>
+      <PageShell
+        title="Laderaumrechner"
+        subtitle={selectedTruckConfig.name}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Schnellhilfe anzeigen"
+              onClick={handleShowHelp}
+            >
+              <HelpCircle className="h-4 w-4" aria-hidden />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label="Alles zurücksetzen"
+              onClick={handleClearAllPallets}
+            >
+              <RefreshCcw className="h-4 w-4" aria-hidden />
+            </Button>
+          </div>
+        }
+        leftRail={
+          <>
+            <Card title="Truck">
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="truckType" className="text-sm font-medium text-[var(--text)]">
+                    LKW-Typ
+                  </Label>
+                  <select
+                    id="truckType"
+                    value={selectedTruck}
+                    onChange={event => {
+                      const newTruck = event.target.value;
+                      setSelectedTruck(newTruck);
+                      if (['Waggon', 'Waggon2'].includes(newTruck)) {
+                        setIsEUPStackable(false);
+                        setIsDINStackable(false);
+                      }
+                    }}
+                    className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                  >
+                    {Object.keys(TRUCK_TYPES).map(key => (
+                      <option key={key} value={key}>
+                        {TRUCK_TYPES[key as keyof typeof TRUCK_TYPES].name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs text-[var(--text-muted)]">
+                  <div>
+                    <span className="font-semibold text-[var(--text)]">Gesamtlänge</span>
+                    <p>{(selectedTruckConfig.totalLength / 100).toFixed(2)} m</p>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-[var(--text)]">Nutzlänge</span>
+                    <p>{((selectedTruckConfig.usableLength ?? selectedTruckConfig.totalLength) / 100).toFixed(2)} m</p>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-[var(--text)]">Max. Breite</span>
+                    <p>{(selectedTruckConfig.maxWidth / 100).toFixed(2)} m</p>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-[var(--text)]">Gewichtslimit</span>
+                    <p>{KILOGRAM_FORMATTER.format(maxGrossWeightKg)} kg</p>
+                  </div>
+                </div>
+              </div>
+            </Card>
+            <Card
+              title="Industriepaletten (DIN)"
+              footer={
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" onClick={() => handleMaximizePallets('industrial')}>
+                    Max. DIN
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleFillRemaining('industrial')}
+                  >
+                    Rest mit max. DIN füllen
+                  </Button>
+                </div>
+              }
+            >
+              <div className="space-y-4">
+                <WeightGroupEditor
+                  entries={dinWeights}
+                  onEntriesChange={(entries) => {
+                    setLastEdited('din');
+                    setDinWeights(entries);
+                  }}
+                  idPrefix="din"
+                  onInteract={() => setLastEdited('din')}
+                />
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <StackSwitch
+                      id="dinStackable"
+                      checked={isDINStackable}
+                      onChange={checked => {
+                        setIsDINStackable(checked);
+                        setLastEdited('din');
+                      }}
+                      disabled={isWaggonSelected}
+                      label="Stapelbar (2-fach)"
+                      ariaDescribedBy="din-stack-hint"
+                    />
+                    <span className="text-xs text-[var(--text-muted)]">
+                      {isWaggonSelected ? 'Im Waggon deaktiviert' : 'Verdoppelt verfügbare DIN-Plätze'}
+                    </span>
+                  </div>
+                  {isDINStackable && !isWaggonSelected ? (
+                    <div>
+                      <Label htmlFor="dinStackLimit" className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
+                        Stapelbare Paletten (0 = alle)
+                      </Label>
+                      <StepperInput
+                        id="dinStackLimit"
+                        value={dinStackLimit}
+                        min={0}
+                        onChange={value => setDinStackLimit(value)}
+                      />
+                    </div>
+                  ) : null}
+                  <p id="din-stack-hint" className="text-xs text-[var(--text-muted)]">
+                    Stapeln ist nur verfügbar, wenn der LKW das zulässt.
+                  </p>
+                </div>
+              </div>
+            </Card>
+            <Card
+              title="Europaletten (EUP)"
+              footer={
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" onClick={() => handleMaximizePallets('euro')}>
+                    Max. EUP
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => handleFillRemaining('euro')}>
+                    Rest mit max. EUP füllen
+                  </Button>
+                </div>
+              }
+            >
+              <div className="space-y-4">
+                <WeightGroupEditor
+                  entries={eupWeights}
+                  onEntriesChange={(entries) => {
+                    setLastEdited('eup');
+                    setEupWeights(entries);
+                  }}
+                  idPrefix="eup"
+                  onInteract={() => setLastEdited('eup')}
+                />
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <StackSwitch
+                      id="eupStackable"
+                      checked={isEUPStackable}
+                      onChange={checked => {
+                        setIsEUPStackable(checked);
+                        setLastEdited('eup');
+                      }}
+                      disabled={isWaggonSelected}
+                      label="Stapelbar (2-fach)"
+                      ariaDescribedBy="eup-stack-hint"
+                    />
+                    <span className="text-xs text-[var(--text-muted)]">
+                      {isWaggonSelected ? 'Im Waggon deaktiviert' : 'Doppellagige Beladung' }
+                    </span>
+                  </div>
+                  {isEUPStackable && !isWaggonSelected ? (
+                    <div>
+                      <Label htmlFor="eupStackLimit" className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
+                        Stapelbare Paletten (0 = alle)
+                      </Label>
+                      <StepperInput
+                        id="eupStackLimit"
+                        value={eupStackLimit}
+                        min={0}
+                        onChange={value => setEupStackLimit(value)}
+                      />
+                    </div>
+                  ) : null}
+                  <p id="eup-stack-hint" className="text-xs text-[var(--text-muted)]">
+                    Stapeln beschleunigt die Beladung, erhöht aber die Achslast.
+                  </p>
+                </div>
+              </div>
+            </Card>
+            <Card title="EUP Lade-Pattern">
+              <div className="space-y-3">
+                <Segmented
+                  options={[
+                    { label: 'Auto', value: 'auto' },
+                    { label: 'Längs', value: 'long' },
+                    { label: 'Quer', value: 'broad' },
+                  ]}
+                  value={eupLoadingPattern}
+                  onChange={value => setEupLoadingPattern(value)}
+                  ariaLabel="EUP-Lade-Pattern wählen"
+                />
+                <p className="text-xs text-[var(--text-muted)]">
+                  Aktuelles Muster: {eupPatternLabel}
+                </p>
+              </div>
+            </Card>
+            <Card
+              title="Aktionen"
+              className="lg:mt-auto lg:sticky lg:bottom-6"
+              footer={
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button type="button" className="flex-1" onClick={calculateAndSetState}>
+                    <Layers3 className="mr-2 h-4 w-4" aria-hidden /> Layout optimieren
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 border-[var(--danger)] text-[var(--danger)] hover:bg-[var(--danger)]/10"
+                    onClick={handleClearAllPallets}
+                  >
+                    Alles zurücksetzen
+                  </Button>
+                </div>
+              }
+            >
+              <p className="text-xs text-[var(--text-muted)]">
+                Optimiert die Beladung mit den aktuellen Eingaben oder setzt alle Felder zurück.
+              </p>
+            </Card>
+          </>
+        }
+        rightColumn={
+          <>
+            <Card
+              title="Ladefläche Visualisierung"
+              actions={
+                <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
+                  <span>Maßstab: {scalePercent}%</span>
+                  <CanvasToolbar onZoomIn={handleZoomIn} onZoomOut={handleZoomOut} onReset={handleResetZoom} />
+                </div>
+              }
+            >
+              <div className="space-y-6">
+                {palletArrangement.length > 0 ? (
+                  palletArrangement.map((unit: any, index: number) => {
+                    const unitWidthPx = unit.unitWidth * canvasScale;
+                    const unitLengthPx = unit.unitLength * canvasScale;
+                    const unitLabel = `Einheit ${index + 1}`;
+                    return (
+                      <div key={unit.unitId} className="space-y-3">
+                        {TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES].units.length > 1 ? (
+                          <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+                            <span>{unitLabel}</span>
+                            <span>{(unit.unitLength / 100).toFixed(2)} m × {(unit.unitWidth / 100).toFixed(2)} m</span>
+                          </div>
+                        ) : null}
+                        <div className="relative">
+                          <div className="absolute -left-10 top-0 flex h-full w-8 flex-col justify-between text-[10px] text-[var(--text-muted)]">
+                            <span>{(unit.unitLength / 100).toFixed(1)} m</span>
+                            <span>0 m</span>
+                          </div>
+                          <div
+                            className="relative overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--canvas)] shadow-inner"
+                            style={{ width: `${unitWidthPx}px`, height: `${unitLengthPx}px`, backgroundImage: 'repeating-linear-gradient(0deg,var(--gridline)_0_1px,transparent_1px_40px), repeating-linear-gradient(90deg,var(--gridline)_0_1px,transparent_1px_40px)' }}
+                          >
+                            <div className="absolute inset-3 rounded-2xl border border-dashed border-[var(--primary)]/40" aria-hidden />
+                            <div className="absolute left-1/2 -top-6 flex -translate-x-1/2 items-center gap-1 text-[10px] font-medium text-[var(--text-muted)]">
+                              <span className="inline-block rotate-180 text-[var(--primary)]">▲</span>
+                              <span>Front</span>
+                            </div>
+                            {unit.pallets.map((p: any) => renderModernPallet(p))}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface-muted)]/60 p-6 text-center text-sm text-[var(--text-muted)]">
+                    Noch keine Paletten platziert.
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+                  <span>Nutzlast-Auslastung: {utilizationPercentage.toFixed(1)}%</span>
+                  <Legend />
+                </div>
+              </div>
+            </Card>
+            <Card title="Kapazität">
+              <div className="grid gap-4 text-sm text-[var(--text)]">
+                <div>
+                  <span className="text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">Freie Plätze</span>
+                  <p className="mt-1 font-semibold text-[var(--text)]">
+                    {remainingPrimaryValue} × {remainingPrimaryType}
+                  </p>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    oder {remainingSecondaryValue} × {remainingSecondaryType}
+                  </p>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-[var(--surface-muted)]/60 px-3 py-2 text-xs text-[var(--text-muted)]">
+                  <span>Basis DIN: {loadedIndustrialPalletsBase}</span>
+                  <span>Basis EUP: {loadedEuroPalletsBase}</span>
+                </div>
+                <div className="text-xs text-[var(--text-muted)]">
+                  Muster genutzt: {eupPatternLabel}
+                </div>
+              </div>
+            </Card>
+            <Card title="Meldungen">
+              {warnings.length > 0 ? (
+                <ul className="space-y-2 text-sm text-[var(--text)]">
+                  {warnings.map((warning, index) => (
+                    <li key={index} className="flex items-start gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)]/70 p-3">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 text-[var(--warning)]" aria-hidden />
+                      <span>{warning}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)]/70 p-3 text-sm text-[var(--text)]">
+                  <CheckCircle2 className="h-4 w-4 text-[var(--success)]" aria-hidden />
+                  <span>Keine Probleme erkannt.</span>
+                </div>
+              )}
+            </Card>
+          </>
+        }
+        footer={
+          <div className="grid gap-4 md:grid-cols-3">
+            <KPIStat
+              label="Geladene Paletten"
+              value={`${totalPalletsVisualCount}`}
+              status={totalPalletsVisualCount === 0 ? 'neutral' : 'ok'}
+              helper={`DIN ${totalDinPalletsVisual} · EUP ${totalEuroPalletsVisual}`}
+            />
+            <KPIStat
+              label="Gesamtgewicht"
+              value={`${KILOGRAM_FORMATTER.format(totalWeightKg)} kg`}
+              status={weightMarginKg < 0 ? 'error' : weightMarginKg <= maxGrossWeightKg * 0.1 ? 'warn' : 'ok'}
+              helper={`Maximal ${KILOGRAM_FORMATTER.format(maxGrossWeightKg)} kg`}
+            />
+            <KPIStat
+              label="Gewichtsmarge"
+              value={`${weightMarginKg >= 0 ? KILOGRAM_FORMATTER.format(weightMarginKg) : '-' + KILOGRAM_FORMATTER.format(Math.abs(weightMarginKg))} kg`}
+              status={marginStatus as 'neutral' | 'warn' | 'error' | 'ok'}
+              helper={weightMarginKg >= 0 ? 'Restkapazität' : 'Überladung prüfen'}
+            />
+          </div>
+        }
+      />
+      <div role="status" aria-live="polite" className="sr-only">
+        {liveMessage}
+      </div>
+      <Toaster />
+    </>
   );
 }

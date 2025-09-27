@@ -14,19 +14,19 @@ interface WeightInputsProps {
   entries: WeightEntry[];
   onChange: (entries: WeightEntry[]) => void;
   palletType: 'EUP' | 'DIN';
-  preferredId: number | null;
-  onSetPreferred: (id: number | null) => void;
-  groupName: string;
+  preferredId?: number | null;
+  onSetPreferred?: (id: number | null) => void;
+  groupName?: string;
 }
 
-export function WeightInputs({ entries, onChange, palletType, preferredId, onSetPreferred }: WeightInputsProps) {
+export function WeightInputs({ entries, onChange, palletType, preferredId = null, onSetPreferred }: WeightInputsProps) {
   const handleAddEntry = () => {
     onChange([...entries, { id: Date.now(), weight: '', quantity: 0 }]);
   };
 
   const handleRemoveEntry = (id: number) => {
     // If the removed entry was the preferred one, reset the preference
-    if (id === preferredId) {
+    if (id === preferredId && onSetPreferred) {
       onSetPreferred(null);
     }
     onChange(entries.filter(entry => entry.id !== id));
@@ -38,7 +38,7 @@ export function WeightInputs({ entries, onChange, palletType, preferredId, onSet
         const newQuantity = field === 'quantity' ? parseInt(value, 10) || 0 : entry.quantity;
         const newWeight = field === 'weight' ? value : entry.weight;
         // If quantity is set to 0, and it's the preferred item, reset preference
-        if (newQuantity === 0 && id === preferredId) {
+        if (newQuantity === 0 && id === preferredId && onSetPreferred) {
             onSetPreferred(null);
         }
         return { ...entry, quantity: newQuantity, weight: newWeight };
