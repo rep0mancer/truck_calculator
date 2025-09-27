@@ -61,9 +61,6 @@
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
   body {
     /* Add a subtle gradient background to be seen through the blur */
     @apply bg-gray-100;
