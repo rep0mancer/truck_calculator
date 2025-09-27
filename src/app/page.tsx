@@ -752,9 +752,9 @@ export default function HomePage() {
 
   const warningsWithoutInfo = warnings.filter(w => !w.toLowerCase().includes('platz') && !w.toLowerCase().includes('benötigt'));
   let meldungenStyle = {
-    accent: 'border border-[var(--glass-border)]',
+    accent: 'border border-[var(--edge)]',
     header: 'text-[var(--text)]',
-    list: 'text-[var(--text-muted)]'
+    list: 'text-[var(--text-2)]'
   };
 
   if (warningsWithoutInfo.length === 0 && (totalDinPalletsVisual > 0 || totalEuroPalletsVisual > 0)) {
@@ -778,20 +778,20 @@ export default function HomePage() {
   }
 
   return (
-    <div className="container mx-auto min-h-screen p-6 font-sans bg-app text-[var(--text)]">
-      <header className="relative glass-strong rounded-3xl p-6 shadow-xl mb-6 border border-[var(--glass-border)] text-center">
-        <div className="absolute top-4 right-6 text-right text-xs text-[var(--text-muted)] opacity-80">
+    <div className="container mx-auto min-h-screen p-6 font-sans bg-darkmist">
+      <header className="relative panel p-6 rounded-3xl shadow-xl mb-6 text-center">
+        <div className="absolute top-4 right-6 text-right text-xs text-[var(--text-2)] opacity-80">
           <p>Laderaumrechner © {new Date().getFullYear()}</p>
           <p>by Andreas Steiner</p>
         </div>
-        <h1 className="text-3xl font-semibold tracking-tight text-[var(--primary-ink)]">Laderaumrechner</h1>
-        <p className="mt-1 text-sm text-[var(--text-muted)]">Visualisierung der Palettenplatzierung (Europäische Standards)</p>
+        <h1 className="text-3xl font-semibold tracking-tight text-[var(--text)]">Laderaumrechner</h1>
+        <p className="mt-1 text-sm text-[var(--text-2)]">Visualisierung der Palettenplatzierung (Europäische Standards)</p>
       </header>
-      <main className="glass rounded-3xl border border-[var(--glass-border)] p-6 shadow-lg">
+      <main className="panel rounded-3xl p-6 shadow-lg">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="lg:col-span-1 space-y-6">
-            <div className="glass rounded-2xl p-4 border border-[var(--glass-border)] space-y-3">
-              <label htmlFor="truckType" className="block text-sm font-semibold text-[var(--text-muted)]">LKW-Typ</label>
+            <div className="panel p-4 rounded-2xl space-y-3">
+              <label htmlFor="truckType" className="block text-sm font-semibold text-[var(--text-2)]">LKW-Typ</label>
               <select
                 id="truckType"
                 value={selectedTruck}
@@ -803,7 +803,7 @@ export default function HomePage() {
                     setIsDINStackable(false);
                   }
                 }}
-                className="inp h-10 rounded-md px-3 text-sm w-full"
+                className="select-dark h-10 px-3 w-full text-sm"
               >
                 {Object.keys(TRUCK_TYPES).map(key => (
                   <option key={key} value={key}>{TRUCK_TYPES[key as keyof typeof TRUCK_TYPES].name}</option>
@@ -811,20 +811,20 @@ export default function HomePage() {
               </select>
             </div>
 
-            <div className="glass rounded-2xl p-4 border border-[var(--glass-border)] space-y-3">
-              <p className="text-sm font-semibold text-[var(--text-muted)]">Aktionen</p>
+            <div className="panel p-4 rounded-2xl space-y-3">
+              <p className="text-sm font-semibold text-[var(--text-2)]">Aktionen</p>
               <button
                 onClick={handleClearAllPallets}
-                className="btn-secondary rounded-lg px-4 py-2 font-medium w-full"
+                className="btn-ghost px-4 py-2 font-medium w-full"
               >
                 Alles zurücksetzen
               </button>
             </div>
 
-            <div className="glass rounded-2xl p-4 border border-[var(--glass-border)] space-y-3">
+            <div className="panel p-4 rounded-2xl space-y-3">
               <div className="flex items-center gap-2">
-                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: 'var(--accent-din)' }} />
-                <p className="text-sm font-semibold text-[var(--text-muted)]">Industriepaletten (DIN)</p>
+                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: 'var(--text-2)' }} />
+                <p className="text-sm font-semibold text-[var(--text-2)]">Industriepaletten (DIN)</p>
               </div>
               <WeightInputs
                 entries={dinWeights}
@@ -837,13 +837,13 @@ export default function HomePage() {
               <div className="space-y-2">
                 <button
                   onClick={() => handleMaximizePallets('industrial')}
-                  className="btn-primary rounded-lg px-4 py-2 font-medium text-sm w-full"
+                  className="btn-green px-4 py-2 font-medium text-sm w-full"
                 >
                   Max. DIN
                 </button>
                 <button
                   onClick={() => handleFillRemaining('industrial')}
-                  className="btn-secondary rounded-lg px-4 py-2 text-sm w-full"
+                  className="btn-ghost px-4 py-2 text-sm w-full"
                 >
                   Rest mit max. DIN füllen
                 </button>
@@ -855,12 +855,12 @@ export default function HomePage() {
                   checked={isDINStackable}
                   onChange={e => setIsDINStackable(e.target.checked)}
                   disabled={isWaggonSelected}
-                  className="h-4 w-4 rounded border border-[var(--border)] focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ accentColor: 'var(--primary)' }}
+                  className="h-4 w-4 rounded border border-[var(--edge)] focus:ring-2 focus:ring-[var(--ring)] focus:ring-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ accentColor: 'var(--green-2)' }}
                 />
                 <label
                   htmlFor="dinStackable"
-                  className={`text-sm font-medium ${isWaggonSelected ? 'text-[var(--text-muted)] opacity-60' : 'text-[var(--text)]'}`}
+                  className={`text-sm font-medium ${isWaggonSelected ? 'text-[var(--text-2)] opacity-60' : 'text-[var(--text)]'}`}
                 >
                   Stapelbar (2-fach)
                 </label>
@@ -871,16 +871,16 @@ export default function HomePage() {
                   min="0"
                   value={dinStackLimit}
                   onChange={e => setDinStackLimit(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                  className="inp h-10 rounded-md px-3 text-right w-full text-sm"
+                  className="input-dark h-10 px-3 text-right w-full text-sm"
                   placeholder="Stapelbare Paletten (0 = alle)"
                 />
               )}
             </div>
 
-            <div className="glass rounded-2xl p-4 border border-[var(--glass-border)] space-y-3">
+            <div className="panel p-4 rounded-2xl space-y-3">
               <div className="flex items-center gap-2">
-                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: 'var(--accent-eup)' }} />
-                <p className="text-sm font-semibold text-[var(--text-muted)]">Europaletten (EUP)</p>
+                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: 'var(--green-1)' }} />
+                <p className="text-sm font-semibold text-[var(--text-2)]">Europaletten (EUP)</p>
               </div>
               <WeightInputs
                 entries={eupWeights}
@@ -893,13 +893,13 @@ export default function HomePage() {
               <div className="space-y-2">
                 <button
                   onClick={() => handleMaximizePallets('euro')}
-                  className="btn-primary rounded-lg px-4 py-2 font-medium text-sm w-full"
+                  className="btn-green px-4 py-2 font-medium text-sm w-full"
                 >
                   Max. EUP
                 </button>
                 <button
                   onClick={() => handleFillRemaining('euro')}
-                  className="btn-secondary rounded-lg px-4 py-2 text-sm w-full"
+                  className="btn-ghost px-4 py-2 text-sm w-full"
                 >
                   Rest mit max. EUP füllen
                 </button>
@@ -911,12 +911,12 @@ export default function HomePage() {
                   checked={isEUPStackable}
                   onChange={e => setIsEUPStackable(e.target.checked)}
                   disabled={isWaggonSelected}
-                  className="h-4 w-4 rounded border border-[var(--border)] focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ accentColor: 'var(--primary)' }}
+                  className="h-4 w-4 rounded border border-[var(--edge)] focus:ring-2 focus:ring-[var(--ring)] focus:ring-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ accentColor: 'var(--green-2)' }}
                 />
                 <label
                   htmlFor="eupStackable"
-                  className={`text-sm font-medium ${isWaggonSelected ? 'text-[var(--text-muted)] opacity-60' : 'text-[var(--text)]'}`}
+                  className={`text-sm font-medium ${isWaggonSelected ? 'text-[var(--text-2)] opacity-60' : 'text-[var(--text)]'}`}
                 >
                   Stapelbar (2-fach)
                 </label>
@@ -927,16 +927,16 @@ export default function HomePage() {
                   min="0"
                   value={eupStackLimit}
                   onChange={e => setEupStackLimit(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                  className="inp h-10 rounded-md px-3 text-right w-full text-sm"
+                  className="input-dark h-10 px-3 text-right w-full text-sm"
                   placeholder="Stapelbare Paletten (0 = alle)"
                 />
               )}
             </div>
 
-            <div className="glass rounded-2xl p-4 border border-[var(--glass-border)] space-y-3">
-              <p className="text-sm font-semibold text-[var(--text-muted)]">
+            <div className="panel p-4 rounded-2xl space-y-3">
+              <p className="text-sm font-semibold text-[var(--text-2)]">
                 EUP Lade-Pattern:
-                <span className="ml-1 text-xs text-[var(--text-muted)] opacity-80">
+                <span className="ml-1 text-xs text-[var(--text-2)] opacity-80">
                   (Gewählt: {actualEupLoadingPattern === 'none' ? 'Keines' : actualEupLoadingPattern})
                 </span>
               </p>
@@ -948,8 +948,8 @@ export default function HomePage() {
                     value="auto"
                     checked={eupLoadingPattern === 'auto'}
                     onChange={e => setEupLoadingPattern(e.target.value)}
-                    className="h-4 w-4 rounded border border-[var(--border)] focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-0"
-                    style={{ accentColor: 'var(--primary)' }}
+                    className="h-4 w-4 rounded border border-[var(--edge)] focus:ring-2 focus:ring-[var(--ring)] focus:ring-offset-0"
+                    style={{ accentColor: 'var(--green-2)' }}
                   />
                   <span className="font-medium">Auto-Optimieren</span>
                 </label>
@@ -960,8 +960,8 @@ export default function HomePage() {
                     value="long"
                     checked={eupLoadingPattern === 'long'}
                     onChange={e => setEupLoadingPattern(e.target.value)}
-                    className="h-4 w-4 rounded border border-[var(--border)] focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-0"
-                    style={{ accentColor: 'var(--primary)' }}
+                    className="h-4 w-4 rounded border border-[var(--edge)] focus:ring-2 focus:ring-[var(--ring)] focus:ring-offset-0"
+                    style={{ accentColor: 'var(--green-2)' }}
                   />
                   <span className="font-medium">Längs (3 nebeneinander)</span>
                 </label>
@@ -972,19 +972,19 @@ export default function HomePage() {
                     value="broad"
                     checked={eupLoadingPattern === 'broad'}
                     onChange={e => setEupLoadingPattern(e.target.value)}
-                    className="h-4 w-4 rounded border border-[var(--border)] focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-0"
-                    style={{ accentColor: 'var(--primary)' }}
+                    className="h-4 w-4 rounded border border-[var(--edge)] focus:ring-2 focus:ring-[var(--ring)] focus:ring-offset-0"
+                    style={{ accentColor: 'var(--green-2)' }}
                   />
                   <span className="font-medium">Quer (2 nebeneinander)</span>
                 </label>
               </div>
             </div>
           </div>
-          <div className="lg:col-span-2 canvas-panel rounded-2xl p-4 border border-[var(--glass-border)] shadow-lg flex flex-col items-center justify-center">
+          <div className="lg:col-span-2 panel p-4 rounded-2xl shadow-lg flex flex-col items-center justify-center">
             <p className="text-lg font-semibold text-[var(--text)] mb-4">Ladefläche Visualisierung</p>
             {palletArrangement.map((unit: any,index: number)=>(
               <div key={unit.unitId} className="mb-6 w-full flex flex-col items-center">
-                {TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES].units.length>1&&<p className="text-sm text-[var(--text-muted)] mb-2">Einheit {index+1} ({unit.unitLength/100}m x {unit.unitWidth/100}m)</p>}
+                {TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES].units.length>1&&<p className="text-sm text-[var(--text-2)] mb-2">Einheit {index+1} ({unit.unitLength/100}m x {unit.unitWidth/100}m)</p>}
                 {index === 0 && (
                   <svg
                     aria-hidden
@@ -1002,27 +1002,32 @@ export default function HomePage() {
                     <text x={(unit.unitWidth*truckVisualizationScale)/2} y={20} textAnchor="middle" fontSize="10" fontWeight={700} fill="#1f2937">Front</text>
                   </svg>
                 )}
-                <div className="relative canvas-grid rounded-xl p-4 border border-[var(--glass-border)] bg-white/70 overflow-hidden shadow-inner" style={{width:`${unit.unitWidth*truckVisualizationScale}px`,height:`${unit.unitLength*truckVisualizationScale}px`}}>
-                  {unit.pallets.map((p: any)=>renderPallet(p,truckVisualizationScale))}
+                <div className="canvas-slab p-3 w-full flex justify-center">
+                  <div
+                    className="relative canvas-grid overflow-hidden shadow-inner"
+                    style={{width:`${unit.unitWidth*truckVisualizationScale}px`,height:`${unit.unitLength*truckVisualizationScale}px`}}
+                  >
+                    {unit.pallets.map((p: any)=>renderPallet(p,truckVisualizationScale))}
+                  </div>
                 </div>
               </div>
             ))}
-             {palletArrangement.length === 0 && <p className="text-[var(--text-muted)]">Keine Paletten zum Anzeigen.</p>}
+             {palletArrangement.length === 0 && <p className="text-[var(--text-2)]">Keine Paletten zum Anzeigen.</p>}
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <div className="glass-muted rounded-xl p-4 border border-[var(--glass-border)] text-center">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--text-muted)]">Geladene Paletten (Visuell)</h3>
-            <p className="mt-3 text-[var(--text-muted)]">
+          <div className="panel-muted rounded-xl p-4 text-center">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--text-2)]">Geladene Paletten (Visuell)</h3>
+            <p className="mt-3 text-[var(--text-2)]">
               Industrie (DIN): <span className="font-bold text-lg text-[var(--text)]">{totalDinPalletsVisual}</span>
             </p>
-            <p className="text-[var(--text-muted)]">
+            <p className="text-[var(--text-2)]">
               Euro (EUP): <span className="font-bold text-lg text-[var(--text)]">{totalEuroPalletsVisual}</span>
             </p>
-            <p className="text-xs mt-2 text-[var(--text-muted)]">(Basis: {loadedIndustrialPalletsBase} DIN, {loadedEuroPalletsBase} EUP)</p>
+            <p className="text-xs mt-2 text-[var(--text-2)]">(Basis: {loadedIndustrialPalletsBase} DIN, {loadedEuroPalletsBase} EUP)</p>
           </div>
-          <div className="glass-muted rounded-xl p-4 border border-[var(--glass-border)] text-center">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--text-muted)]">Verbleibende Kapazität</h3>
+          <div className="panel-muted rounded-xl p-4 text-center">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--text-2)]">Verbleibende Kapazität</h3>
             {(() => {
               const firstType = lastEdited === 'din' ? 'DIN' : 'EUP';
               const secondType = lastEdited === 'din' ? 'EUP' : 'DIN';
@@ -1030,28 +1035,28 @@ export default function HomePage() {
               const secondValue = lastEdited === 'din' ? remainingCapacity.eup : remainingCapacity.din;
               return (
                 <>
-                  <p className="mt-3 text-sm text-[var(--text-muted)]">Platz für</p>
-                  <p className="font-bold text-2xl text-[var(--primary)]">
+                  <p className="mt-3 text-sm text-[var(--text-2)]">Platz für</p>
+                  <p className="font-bold text-2xl text-[var(--green-1)]">
                     {firstValue} weitere {firstType} {firstValue === 1 ? 'Palette' : 'Paletten'}
                   </p>
-                  <p className="text-sm text-[var(--text-muted)]">oder</p>
-                  <p className="font-semibold text-xl text-[var(--primary)]">
+                  <p className="text-sm text-[var(--text-2)]">oder</p>
+                  <p className="font-semibold text-xl text-[var(--green-1)]">
                     {secondValue} weitere {secondType} {secondValue === 1 ? 'Palette' : 'Paletten'}
                   </p>
                 </>
               );
             })()}
           </div>
-          <div className="glass-muted rounded-xl p-4 border border-[var(--glass-border)] text-center">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--text-muted)]">Geschätztes Gewicht</h3>
-            <p className="mt-3 font-bold text-2xl text-[var(--warning)]">
+          <div className="panel-muted rounded-xl p-4 text-center">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--text-2)]">Geschätztes Gewicht</h3>
+            <p className="mt-3 font-bold text-2xl text-orange-300">
               {KILOGRAM_FORMATTER.format(totalWeightKg)} kg
             </p>
-            <p className="text-xs mt-2 text-[var(--text-muted)]">
+            <p className="text-xs mt-2 text-[var(--text-2)]">
               (Max: {KILOGRAM_FORMATTER.format(maxGrossWeightKg)} kg)
             </p>
           </div>
-          <div className={`glass-muted rounded-xl p-4 ${meldungenStyle.accent}`}>
+          <div className={`panel-muted rounded-xl p-4 ${meldungenStyle.accent}`}>
             <h3 className={`font-semibold mb-2 ${meldungenStyle.header}`}>Meldungen</h3>
             {warnings.length > 0 ? (
               <ul className={`list-disc list-inside text-sm space-y-1 ${meldungenStyle.list}`}>
@@ -1063,7 +1068,7 @@ export default function HomePage() {
           </div>
         </div>
       </main>
-      <footer className="text-center py-4 mt-8 text-sm text-[var(--text-muted)] border-t border-[var(--glass-border)]">
+      <footer className="text-center py-4 mt-8 text-sm text-[var(--text-2)]">
         <p>Laderaumrechner © {new Date().getFullYear()} by Andreas Steiner</p>
       </footer>
       <Toaster />

@@ -53,7 +53,7 @@ export function WeightInputs({ entries, onChange, palletType, preferredId, onSet
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-2 text-xs text-[var(--text-muted)]">
+      <div className="flex items-center gap-3 mb-2 text-xs text-[var(--text-2)]">
         <span className="w-20 text-center">Anzahl</span>
         <span className="w-32 text-center">Gewicht/{palletType} (kg)</span>
       </div>
@@ -64,7 +64,7 @@ export function WeightInputs({ entries, onChange, palletType, preferredId, onSet
               type="button"
               variant="outline"
               size="sm"
-              className="h-10 w-10 rounded-full border border-[var(--glass-border)] bg-white/70 text-lg text-[var(--text)] hover:bg-white/80"
+              className="stepper-btn flex items-center justify-center text-lg"
               onClick={() => handleEntryChange(entry.id, 'quantity', String(Math.max(0, entry.quantity - 1)))}
             >
               -
@@ -75,13 +75,13 @@ export function WeightInputs({ entries, onChange, palletType, preferredId, onSet
               value={entry.quantity}
               onChange={(e) => handleEntryChange(entry.id, 'quantity', e.target.value)}
               placeholder="Anzahl"
-              className="inp h-10 rounded-md px-3 text-right w-full max-w-[4.5rem]"
+              className="input-dark h-10 px-3 text-right w-full max-w-[4.5rem]"
             />
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="h-10 w-10 rounded-full border border-[var(--glass-border)] bg-white/70 text-lg text-[var(--text)] hover:bg-white/80"
+              className="stepper-btn flex items-center justify-center text-lg"
               onClick={() => handleEntryChange(entry.id, 'quantity', String(entry.quantity + 1))}
             >
               +
@@ -93,7 +93,7 @@ export function WeightInputs({ entries, onChange, palletType, preferredId, onSet
             value={entry.weight}
             onChange={(e) => handleEntryChange(entry.id, 'weight', e.target.value)}
             placeholder={`Gewicht/${palletType}`}
-            className="inp h-10 rounded-md px-3 text-right w-full max-w-[6.5rem]"
+            className="input-dark h-10 px-3 text-right w-full max-w-[6.5rem]"
           />
           {entries.length > 1 && (
             <Button onClick={() => handleRemoveEntry(entry.id)} variant="destructive" size="sm" className="h-10 w-10 rounded-full">
@@ -102,7 +102,7 @@ export function WeightInputs({ entries, onChange, palletType, preferredId, onSet
           )}
         </div>
       ))}
-      <Button onClick={handleAddEntry} className="mt-3 btn-secondary rounded-lg px-4 py-2 text-sm font-medium" size="sm">
+      <Button onClick={handleAddEntry} className="mt-3 btn-ghost px-4 py-2 text-sm font-medium" size="sm">
         Gewichtsgruppe hinzufügen
       </Button>
     </div>
