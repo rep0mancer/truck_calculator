@@ -1,2 +1,4 @@
-# Ignore node_modules across the repo
-node_modules/
+node_modules
+.next
+.turbo
+.ui-parity.json
