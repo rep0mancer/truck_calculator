@@ -327,7 +327,7 @@ main .flex.flex-col.space-y-1 input[type="radio"]:checked {
   border-color: rgba(59, 130, 246, 0.6);
 }
 
-main .grid > div.bg-gray-100 {
+main.p-6.bg-white.shadow-lg.rounded-b-lg .grid > div.bg-gray-100 {
   background: rgba(15, 23, 42, 0.18) !important;
   border: 1px solid rgba(148, 163, 184, 0.25) !important;
   color: #f1f5f9;
