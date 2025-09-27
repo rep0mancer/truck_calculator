@@ -40,3 +40,15 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 When calculating the loading plan the app estimates an axle load by dividing the
 total weight by the truck's usable length in meters. If this value exceeds
 2,500&nbsp;kg per meter a warning is added to the messages list.
+
+## UI version toggle
+
+The updated Vetropack user interface is controlled by the `NEXT_PUBLIC_UI_V2`
+environment variable. The new layout is enabled by default; set
+`NEXT_PUBLIC_UI_V2="false"` to render the legacy experience.
+
+## Theme tokens
+
+Brand and functional color tokens can be updated in `src/app/globals.css`. The
+`--brand-blue`, `--brand-grey`, and related accent variables provide a single
+source of truth for light and dark mode styling.
