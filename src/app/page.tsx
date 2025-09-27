@@ -760,7 +760,7 @@ export default function HomePage() {
 
   return (
     <div className="container mx-auto p-4 font-sans bg-transparent">
-      <header className="relative bg-white/70 backdrop-blur-xl p-5 rounded-t-lg shadow-lg mb-6 border border-slate-200/80">
+      <header className="relative bg-blue-950/20 backdrop-blur-xl text-white p-5 rounded-t-lg shadow-lg mb-6 border border-slate-200/80">
         <div className="absolute top-2 right-4 text-right text-xs opacity-75">
           <p>Laderaumrechner © {new Date().getFullYear()}</p>
           <p>by Andreas Steiner</p>
@@ -789,14 +789,14 @@ export default function HomePage() {
               </select>
             </div>
             <div className="pt-4">
-              <button onClick={handleClearAllPallets} className="w-full py-2 px-4 bg-[#00906c] text-white font-semibold rounded-md shadow-sm hover:bg-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50 transition duration-150 ease-in-out">Alles zurücksetzen</button>
+              <button onClick={handleClearAllPallets} className="w-full py-2 px-4 bg-slate-200/20 backdrop-blur-sm border border-slate-900/10 hover:bg-slate-200/30 shadow-md text-slate-900 font-semibold rounded-md focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50 transition duration-150 ease-in-out">Alles zurücksetzen</button>
             </div>
            
             <div className="border-t pt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Industriepaletten (DIN)</label>
                 <WeightInputs entries={dinWeights} onChange={(entries)=>{ setLastEdited('din'); setDinWeights(entries); }} palletType="DIN" />
-                <button onClick={() => handleMaximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 bg-gradient-to-b from-[#00b382] to-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#00906c] hover:to-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. DIN</button>
-                <button onClick={() => handleFillRemaining('industrial')} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. DIN füllen</button>
+                <button onClick={() => handleMaximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 bg-slate-200/20 backdrop-blur-sm border border-slate-900/10 hover:bg-slate-200/30 shadow-md text-slate-900 text-xs font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. DIN</button>
+                <button onClick={() => handleFillRemaining('industrial')} className="mt-1 w-full py-1.5 px-3 bg-slate-200/20 backdrop-blur-sm border border-slate-900/10 hover:bg-slate-200/30 shadow-md text-slate-900 text-xs font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. DIN füllen</button>
                 <div className="flex items-center mt-2">
                     <input type="checkbox" id="dinStackable" checked={isDINStackable} onChange={e=>setIsDINStackable(e.target.checked)} disabled={isWaggonSelected} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"/>
                     <label htmlFor="dinStackable" className={`ml-2 text-sm text-gray-900 ${isWaggonSelected && 'text-gray-400'}`}>Stapelbar (2-fach)</label>
@@ -809,8 +809,8 @@ export default function HomePage() {
             <div className="border-t pt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Europaletten (EUP)</label>
                 <WeightInputs entries={eupWeights} onChange={(entries)=>{ setLastEdited('eup'); setEupWeights(entries); }} palletType="EUP" />
-                <button onClick={() => handleMaximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 bg-gradient-to-b from-[#00b382] to-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#00906c] hover:to-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. EUP</button>
-                <button onClick={() => handleFillRemaining('euro')} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. EUP füllen</button>
+                <button onClick={() => handleMaximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 bg-slate-200/20 backdrop-blur-sm border border-slate-900/10 hover:bg-slate-200/30 shadow-md text-slate-900 text-xs font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. EUP</button>
+                <button onClick={() => handleFillRemaining('euro')} className="mt-1 w-full py-1.5 px-3 bg-slate-200/20 backdrop-blur-sm border border-slate-900/10 hover:bg-slate-200/30 shadow-md text-slate-900 text-xs font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. EUP füllen</button>
                 <div className="flex items-center mt-2">
                     <input type="checkbox" id="eupStackable" checked={isEUPStackable} onChange={e=>setIsEUPStackable(e.target.checked)} disabled={isWaggonSelected} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"/>
                     <label htmlFor="eupStackable" className={`ml-2 text-sm text-gray-900 ${isWaggonSelected && 'text-gray-400'}`}>Stapelbar (2-fach)</label>
