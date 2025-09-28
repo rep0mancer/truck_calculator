@@ -742,16 +742,16 @@ export default function HomePage() {
       shadow: '0 16px 32px -22px rgba(37, 99, 235, 0.85)'
     },
     industrial: {
-      background: 'linear-gradient(135deg, hsla(142, 96%, 60%, 0.9), hsla(142, 98%, 46%, 0.97))',
-      borderColor: 'hsla(140, 98%, 38%, 0.9)',
-      textColor: 'rgba(15, 23, 42, 0.92)',
-      highlightBorder: 'hsla(142, 95%, 78%, 0.6)',
-      shadow: '0 16px 32px -22px rgba(22, 163, 74, 0.85)'
+      background: 'linear-gradient(135deg, hsla(142, 82%, 64%, 0.88), hsla(142, 84%, 48%, 0.95))',
+      borderColor: 'hsla(142, 78%, 42%, 0.88)',
+      textColor: 'rgba(15, 23, 42, 0.9)',
+      highlightBorder: 'hsla(142, 80%, 76%, 0.55)',
+      shadow: '0 16px 32px -24px rgba(22, 163, 74, 0.75)'
     }
   };
 
   const CAPACITY_ACCENT_STYLES: Record<'DIN' | 'EUP', { color: string; textShadow: string }> = {
-    DIN: { color: 'hsl(142, 96%, 38%)', textShadow: '0 1px 3px rgba(15, 23, 42, 0.4)' },
+    DIN: { color: 'hsl(142, 78%, 38%)', textShadow: '0 1px 3px rgba(15, 23, 42, 0.4)' },
     EUP: { color: 'hsl(217, 96%, 52%)', textShadow: '0 1px 3px rgba(15, 23, 42, 0.35)' }
   };
 
