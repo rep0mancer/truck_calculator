@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 type WeightEntry = {
@@ -14,12 +13,12 @@ interface WeightInputsProps {
   entries: WeightEntry[];
   onChange: (entries: WeightEntry[]) => void;
   palletType: 'EUP' | 'DIN';
-  preferredId: number | null;
-  onSetPreferred: (id: number | null) => void;
-  groupName: string;
+  preferredId?: number | null;
+  onSetPreferred?: (id: number | null) => void;
+  groupName?: string;
 }
 
-export function WeightInputs({ entries, onChange, palletType, preferredId, onSetPreferred }: WeightInputsProps) {
+export function WeightInputs({ entries, onChange, palletType, preferredId = null, onSetPreferred = () => {} }: WeightInputsProps) {
   const handleAddEntry = () => {
     onChange([...entries, { id: Date.now(), weight: '', quantity: 0 }]);
   };
@@ -52,40 +51,36 @@ export function WeightInputs({ entries, onChange, palletType, preferredId, onSet
 
 
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-1">
-        <label className="w-20 text-center text-xs text-gray-600">Anzahl</label>
-        <label className="w-32 text-center text-xs text-gray-600">Gewicht/{palletType} (kg)</label>
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 mb-1 text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-slate-600/90">
+        <span className="w-20 text-center">Anzahl</span>
+        <span className="w-32 text-center">Gewicht/{palletType} (kg)</span>
       </div>
       {entries.map((entry, index) => (
         <div key={entry.id} className="flex items-center gap-2 mt-1">
           <div className="flex items-center gap-1">
-            <Button
+            <button
               type="button"
-              variant="outline"
-              size="sm"
-              className="px-2"
               onClick={() => handleEntryChange(entry.id, 'quantity', String(Math.max(0, entry.quantity - 1)))}
+              className="flex h-8 w-8 items-center justify-center text-lg font-semibold text-emerald-900/90"
             >
-              -
-            </Button>
+              −
+            </button>
             <Input
               type="number"
               min="0"
               value={entry.quantity}
               onChange={(e) => handleEntryChange(entry.id, 'quantity', e.target.value)}
               placeholder="Anzahl"
-              className="w-16 text-center"
+              className="w-20 text-center text-sm font-semibold tracking-wide text-slate-900"
             />
-            <Button
+            <button
               type="button"
-              variant="outline"
-              size="sm"
-              className="px-2"
               onClick={() => handleEntryChange(entry.id, 'quantity', String(entry.quantity + 1))}
+              className="flex h-8 w-8 items-center justify-center text-lg font-semibold text-emerald-900/90"
             >
               +
-            </Button>
+            </button>
           </div>
           <Input
             type="number"
@@ -93,18 +88,22 @@ export function WeightInputs({ entries, onChange, palletType, preferredId, onSet
             value={entry.weight}
             onChange={(e) => handleEntryChange(entry.id, 'weight', e.target.value)}
             placeholder={`Gewicht/${palletType}`}
-            className="w-32 text-center"
+            className="w-36 text-center text-sm font-semibold tracking-wide text-slate-900"
           />
           {entries.length > 1 && (
-            <Button onClick={() => handleRemoveEntry(entry.id)} variant="destructive" size="sm">
-              -
-            </Button>
+            <button
+              type="button"
+              onClick={() => handleRemoveEntry(entry.id)}
+              className="flex h-8 w-8 items-center justify-center text-lg font-semibold text-rose-900/90"
+            >
+              ×
+            </button>
           )}
         </div>
       ))}
-      <Button onClick={handleAddEntry} className="mt-2" size="sm">
+      <button onClick={handleAddEntry} className="mt-3 w-full rounded-xl py-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-900/90">
         Gewichtsgruppe hinzufügen
-      </Button>
+      </button>
     </div>
   );
 }
