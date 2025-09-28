@@ -738,12 +738,25 @@ export default function HomePage() {
     if (pallet.showAsFraction) title = `${d.name} (Stapel: ${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId})`;
     if (pallet.isStackedTier === 'top') title += ' - Oben';
     if (pallet.isStackedTier === 'base') title += ' - Basis des Stapels';
+    const palletBgColor = d.type === 'euro' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(34, 197, 94, 0.15)';
+    const palletBorderColor = d.type === 'euro' ? 'rgba(59, 130, 246, 0.35)' : 'rgba(34, 197, 94, 0.35)';
     return (
       <div key={pallet.key} title={title}
-        className={`absolute ${d.color} ${d.borderColor} border flex items-center justify-center rounded-sm shadow-sm`}
-        style={{ left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px`, opacity: pallet.isStackedTier==='top'?0.7:1, zIndex: pallet.isStackedTier==='top'?10:5,fontSize:'10px' }}>
-        <span className="text-black font-semibold select-none">{txt}</span>
-        {pallet.isStackedTier==='top'&&<div className="absolute top-0 left-0 w-full h-full border-t-2 border-l-2 border-black opacity-30 pointer-events-none rounded-sm"/>}
+        className={`absolute border flex items-center justify-center rounded-md shadow-sm backdrop-blur-sm`}
+        style={{ 
+          left: `${x}px`, 
+          top: `${y}px`, 
+          width: `${w}px`, 
+          height: `${h}px`, 
+          opacity: pallet.isStackedTier==='top'?0.8:1, 
+          zIndex: pallet.isStackedTier==='top'?10:5,
+          fontSize:'10px',
+          backgroundColor: palletBgColor,
+          borderColor: palletBorderColor,
+          boxShadow: pallet.isStackedTier==='top' ? '0 2px 8px rgba(0,0,0,0.2)' : '0 1px 4px rgba(0,0,0,0.1)'
+        }}>
+        <span className="text-slate-900 font-semibold select-none" style={{textShadow: '0 1px 2px rgba(255,255,255,0.5)'}}>{txt}</span>
+        {pallet.isStackedTier==='top'&&<div className="absolute top-0 left-0 w-full h-full border-t-2 border-l-2 border-white/30 opacity-50 pointer-events-none rounded-md"/>}
       </div>
     );
   };
@@ -752,20 +765,20 @@ export default function HomePage() {
 
   const warningsWithoutInfo = warnings.filter(w => !w.toLowerCase().includes('platz') && !w.toLowerCase().includes('benötigt'));
   let meldungenStyle = {
-    bg: 'bg-gray-50', border: 'border-gray-200',
-    header: 'text-gray-800', list: 'text-gray-700'
+    bg: 'bg-gray-50', border: 'border-white/24',
+    header: 'text-slate-900', list: 'text-slate-800'
   };
 
   if (warningsWithoutInfo.length === 0 && (totalDinPalletsVisual > 0 || totalEuroPalletsVisual > 0)) {
-    meldungenStyle = { bg: 'bg-green-50', border: 'border-green-200', header: 'text-green-800', list: 'text-green-700' };
+    meldungenStyle = { bg: 'bg-green-50', border: 'border-white/24', header: 'text-slate-900', list: 'text-slate-800' };
   } else if (warningsWithoutInfo.some(w => w.toLowerCase().includes('konnte nicht'))) {
-    meldungenStyle = { bg: 'bg-red-50', border: 'border-red-200', header: 'text-red-800', list: 'text-red-700' };
+    meldungenStyle = { bg: 'bg-red-50', border: 'border-white/24', header: 'text-slate-900', list: 'text-slate-800' };
   } else if (warningsWithoutInfo.length > 0) {
-    meldungenStyle = { bg: 'bg-yellow-50', border: 'border-yellow-200', header: 'text-yellow-800', list: 'text-yellow-700' };
+    meldungenStyle = { bg: 'bg-yellow-50', border: 'border-white/24', header: 'text-slate-900', list: 'text-slate-800' };
   }
 
   return (
-    <div className="container mx-auto p-4 font-sans bg-gray-50">
+    <div className="container mx-auto p-4 font-sans">
       <header className="relative bg-gradient-to-r from-blue-700 to-blue-900 text-white p-5 rounded-t-lg shadow-lg mb-6">
         <div className="absolute top-2 right-4 text-right text-xs opacity-75">
           <p>Laderaumrechner © {new Date().getFullYear()}</p>
@@ -776,9 +789,9 @@ export default function HomePage() {
       </header>
       <main className="p-6 bg-white shadow-lg rounded-b-lg">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="lg:col-span-1 space-y-6 bg-slate-50 p-5 rounded-lg border border-slate-200 shadow-sm">
+          <div className="lg:col-span-1 space-y-6 bg-slate-50 p-5 rounded-2xl border border-white/24 shadow-sm backdrop-blur-lg">
             <div>
-              <label htmlFor="truckType" className="block text-sm font-medium text-gray-700 mb-1">LKW-Typ:</label>
+              <label htmlFor="truckType" className="block text-sm font-medium text-slate-800 mb-1">LKW-Typ:</label>
               <select 
                 id="truckType" 
                 value={selectedTruck} 
@@ -790,59 +803,59 @@ export default function HomePage() {
                     setIsDINStackable(false);
                   }
                 }} 
-                className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                className="mt-1 block w-full py-2 px-3 border border-white/30 bg-white/20 rounded-xl shadow-sm focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500/50 sm:text-sm backdrop-blur-md transition-all duration-300">
                 {Object.keys(TRUCK_TYPES).map(key=><option key={key} value={key}>{TRUCK_TYPES[key as keyof typeof TRUCK_TYPES].name}</option>)}
               </select>
             </div>
             <div className="pt-4">
-              <button onClick={handleClearAllPallets} className="w-full py-2 px-4 bg-[#00906c] text-white font-semibold rounded-md shadow-sm hover:bg-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50 transition duration-150 ease-in-out">Alles zurücksetzen</button>
+              <button onClick={handleClearAllPallets} className="w-full py-2 px-4 bg-green-500/15 border border-green-500/35 text-green-800 font-semibold rounded-full shadow-sm hover:bg-green-500/22 hover:border-green-500/45 hover:transform hover:translateY-[-1px] hover:shadow-md focus:outline-none focus:ring-4 focus:ring-green-500/20 transition-all duration-300 backdrop-blur-md">Alles zurücksetzen</button>
             </div>
            
             <div className="border-t pt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Industriepaletten (DIN)</label>
+                <label className="block text-sm font-medium text-slate-800 mb-2">Industriepaletten (DIN)</label>
                 <WeightInputs entries={dinWeights} onChange={(entries)=>{ setLastEdited('din'); setDinWeights(entries); }} palletType="DIN" />
-                <button onClick={() => handleMaximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 bg-gradient-to-b from-[#00b382] to-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#00906c] hover:to-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. DIN</button>
-                <button onClick={() => handleFillRemaining('industrial')} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. DIN füllen</button>
+                <button onClick={() => handleMaximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 bg-green-500/15 border border-green-500/35 text-green-800 text-xs font-medium rounded-full shadow-sm hover:bg-green-500/22 hover:border-green-500/45 hover:transform hover:translateY-[-1px] hover:shadow-md focus:outline-none focus:ring-4 focus:ring-green-500/20 transition-all duration-300 backdrop-blur-md">Max. DIN</button>
+                <button onClick={() => handleFillRemaining('industrial')} className="mt-1 w-full py-1.5 px-3 bg-green-500/15 border border-green-500/35 text-green-800 text-xs font-medium rounded-full shadow-sm hover:bg-green-500/22 hover:border-green-500/45 hover:transform hover:translateY-[-1px] hover:shadow-md focus:outline-none focus:ring-4 focus:ring-green-500/20 transition-all duration-300 backdrop-blur-md">Rest mit max. DIN füllen</button>
                 <div className="flex items-center mt-2">
-                    <input type="checkbox" id="dinStackable" checked={isDINStackable} onChange={e=>setIsDINStackable(e.target.checked)} disabled={isWaggonSelected} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"/>
-                    <label htmlFor="dinStackable" className={`ml-2 text-sm text-gray-900 ${isWaggonSelected && 'text-gray-400'}`}>Stapelbar (2-fach)</label>
+                    <input type="checkbox" id="dinStackable" checked={isDINStackable} onChange={e=>setIsDINStackable(e.target.checked)} disabled={isWaggonSelected} className="h-4 w-4 accent-green-500 bg-white/20 border-green-500/45 rounded-lg focus:ring-4 focus:ring-green-500/20 disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"/>
+                    <label htmlFor="dinStackable" className={`ml-2 text-sm ${isWaggonSelected ? 'text-slate-500' : 'text-slate-800'}`}>Stapelbar (2-fach)</label>
                 </div>
                 {isDINStackable && !isWaggonSelected && (
-                    <input type="number" min="0" value={dinStackLimit} onChange={e=>setDinStackLimit(Math.max(0, parseInt(e.target.value,10)||0))} className="mt-1 block w-full py-1 px-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs" placeholder="Stapelbare Paletten (0 = alle)"/>
+                    <input type="number" min="0" value={dinStackLimit} onChange={e=>setDinStackLimit(Math.max(0, parseInt(e.target.value,10)||0))} className="mt-1 block w-full py-1 px-2 border border-white/30 bg-white/20 rounded-xl shadow-sm focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500/50 sm:text-xs backdrop-blur-md transition-all duration-300" placeholder="Stapelbare Paletten (0 = alle)"/>
                 )}
             </div>
 
             <div className="border-t pt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Europaletten (EUP)</label>
+                <label className="block text-sm font-medium text-slate-800 mb-2">Europaletten (EUP)</label>
                 <WeightInputs entries={eupWeights} onChange={(entries)=>{ setLastEdited('eup'); setEupWeights(entries); }} palletType="EUP" />
-                <button onClick={() => handleMaximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 bg-gradient-to-b from-[#00b382] to-[#00906c] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#00906c] hover:to-[#007e5e] focus:outline-none focus:ring-2 focus:ring-[#00906c] focus:ring-opacity-50">Max. EUP</button>
-                <button onClick={() => handleFillRemaining('euro')} className="mt-1 w-full py-1.5 px-3 bg-gradient-to-b from-[#008c6b] to-[#006951] text-white text-xs font-medium rounded-md shadow-sm hover:from-[#007e5e] hover:to-[#005f49] focus:outline-none focus:ring-2 focus:ring-[#008c6b] focus:ring-opacity-50">Rest mit max. EUP füllen</button>
+                <button onClick={() => handleMaximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 bg-green-500/15 border border-green-500/35 text-green-800 text-xs font-medium rounded-full shadow-sm hover:bg-green-500/22 hover:border-green-500/45 hover:transform hover:translateY-[-1px] hover:shadow-md focus:outline-none focus:ring-4 focus:ring-green-500/20 transition-all duration-300 backdrop-blur-md">Max. EUP</button>
+                <button onClick={() => handleFillRemaining('euro')} className="mt-1 w-full py-1.5 px-3 bg-green-500/15 border border-green-500/35 text-green-800 text-xs font-medium rounded-full shadow-sm hover:bg-green-500/22 hover:border-green-500/45 hover:transform hover:translateY-[-1px] hover:shadow-md focus:outline-none focus:ring-4 focus:ring-green-500/20 transition-all duration-300 backdrop-blur-md">Rest mit max. EUP füllen</button>
                 <div className="flex items-center mt-2">
-                    <input type="checkbox" id="eupStackable" checked={isEUPStackable} onChange={e=>setIsEUPStackable(e.target.checked)} disabled={isWaggonSelected} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"/>
-                    <label htmlFor="eupStackable" className={`ml-2 text-sm text-gray-900 ${isWaggonSelected && 'text-gray-400'}`}>Stapelbar (2-fach)</label>
+                    <input type="checkbox" id="eupStackable" checked={isEUPStackable} onChange={e=>setIsEUPStackable(e.target.checked)} disabled={isWaggonSelected} className="h-4 w-4 accent-green-500 bg-white/20 border-green-500/45 rounded-lg focus:ring-4 focus:ring-green-500/20 disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"/>
+                    <label htmlFor="eupStackable" className={`ml-2 text-sm ${isWaggonSelected ? 'text-slate-500' : 'text-slate-800'}`}>Stapelbar (2-fach)</label>
                 </div>
                 {isEUPStackable && !isWaggonSelected && (
-                    <input type="number" min="0" value={eupStackLimit} onChange={e=>setEupStackLimit(Math.max(0, parseInt(e.target.value,10)||0))} className="mt-1 block w-full py-1 px-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-xs" placeholder="Stapelbare Paletten (0 = alle)"/>
+                    <input type="number" min="0" value={eupStackLimit} onChange={e=>setEupStackLimit(Math.max(0, parseInt(e.target.value,10)||0))} className="mt-1 block w-full py-1 px-2 border border-white/30 bg-white/20 rounded-xl shadow-sm focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500/50 sm:text-xs backdrop-blur-md transition-all duration-300" placeholder="Stapelbare Paletten (0 = alle)"/>
                 )}
             </div>
 
             <div className="border-t pt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">EUP Lade-Pattern:
-                <span className="text-xs text-gray-500"> (Gewählt: {actualEupLoadingPattern === 'none' ? 'Keines' : actualEupLoadingPattern})</span>
+              <label className="block text-sm font-medium text-slate-800 mb-2">EUP Lade-Pattern:
+                <span className="text-xs text-slate-600"> (Gewählt: {actualEupLoadingPattern === 'none' ? 'Keines' : actualEupLoadingPattern})</span>
               </label>
               <div className="flex flex-col space-y-1">
-                <label className="flex items-center"><input type="radio" name="eupLoadingPattern" value="auto" checked={eupLoadingPattern==='auto'} onChange={e=>setEupLoadingPattern(e.target.value)} className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"/><span className="ml-2 text-sm text-gray-700">Auto-Optimieren</span></label>
-                <label className="flex items-center"><input type="radio" name="eupLoadingPattern" value="long" checked={eupLoadingPattern==='long'} onChange={e=>setEupLoadingPattern(e.target.value)} className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"/><span className="ml-2 text-sm text-gray-700">Längs (3 nebeneinander)</span></label>
-                <label className="flex items-center"><input type="radio" name="eupLoadingPattern" value="broad" checked={eupLoadingPattern==='broad'} onChange={e=>setEupLoadingPattern(e.target.value)} className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"/><span className="ml-2 text-sm text-gray-700">Quer (2 nebeneinander)</span></label>
+                <label className="flex items-center bg-white/14 border border-white/18 rounded-xl p-2 hover:border-blue-500/45 hover:shadow-sm transition-all duration-300 cursor-pointer"><input type="radio" name="eupLoadingPattern" value="auto" checked={eupLoadingPattern==='auto'} onChange={e=>setEupLoadingPattern(e.target.value)} className="h-4 w-4 accent-blue-500 bg-white/20 border-blue-500/45 rounded-lg focus:ring-4 focus:ring-blue-500/20 backdrop-blur-sm"/><span className="ml-2 text-sm text-slate-700">Auto-Optimieren</span></label>
+                <label className="flex items-center bg-white/14 border border-white/18 rounded-xl p-2 hover:border-blue-500/45 hover:shadow-sm transition-all duration-300 cursor-pointer"><input type="radio" name="eupLoadingPattern" value="long" checked={eupLoadingPattern==='long'} onChange={e=>setEupLoadingPattern(e.target.value)} className="h-4 w-4 accent-blue-500 bg-white/20 border-blue-500/45 rounded-lg focus:ring-4 focus:ring-blue-500/20 backdrop-blur-sm"/><span className="ml-2 text-sm text-slate-700">Längs (3 nebeneinander)</span></label>
+                <label className="flex items-center bg-white/14 border border-white/18 rounded-xl p-2 hover:border-blue-500/45 hover:shadow-sm transition-all duration-300 cursor-pointer"><input type="radio" name="eupLoadingPattern" value="broad" checked={eupLoadingPattern==='broad'} onChange={e=>setEupLoadingPattern(e.target.value)} className="h-4 w-4 accent-blue-500 bg-white/20 border-blue-500/45 rounded-lg focus:ring-4 focus:ring-blue-500/20 backdrop-blur-sm"/><span className="ml-2 text-sm text-slate-700">Quer (2 nebeneinander)</span></label>
               </div>
             </div>
           </div>
 
-          <div className="lg:col-span-2 bg-gray-100 p-6 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center justify-center">
-            <p className="text-gray-700 text-lg mb-4 font-semibold">Ladefläche Visualisierung</p>
+          <div className="lg:col-span-2 bg-gray-100 p-6 rounded-2xl border border-white/24 shadow-sm flex flex-col items-center justify-center backdrop-blur-lg">
+            <p className="text-slate-900 text-lg mb-4 font-semibold">Ladefläche Visualisierung</p>
             {palletArrangement.map((unit: any,index: number)=>(
               <div key={unit.unitId} className="mb-6 w-full flex flex-col items-center">
-                {TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES].units.length>1&&<p className="text-sm text-gray-700 mb-2">Einheit {index+1} ({unit.unitLength/100}m x {unit.unitWidth/100}m)</p>}
+                {TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES].units.length>1&&<p className="text-sm text-slate-800 mb-2">Einheit {index+1} ({unit.unitLength/100}m x {unit.unitWidth/100}m)</p>}
                 {index === 0 && (
                   <svg
                     aria-hidden
@@ -853,30 +866,30 @@ export default function HomePage() {
                     viewBox={`0 0 ${unit.unitWidth*truckVisualizationScale} 24`}
                   >
                     {/* Cab base */}
-                    <rect x="0" y="6" width={unit.unitWidth*truckVisualizationScale} height="16" rx="6" fill="#93c5fd" stroke="#60a5fa" />
+                    <rect x="0" y="6" width={unit.unitWidth*truckVisualizationScale} height="16" rx="6" fill="rgba(59, 130, 246, 0.4)" stroke="rgba(96, 165, 250, 0.6)" strokeWidth="1" />
                     {/* Nose to indicate forward direction */}
-                    <path d={`M ${(unit.unitWidth*truckVisualizationScale)/2 - 12} 6 L ${(unit.unitWidth*truckVisualizationScale)/2} 0 L ${(unit.unitWidth*truckVisualizationScale)/2 + 12} 6 Z`} fill="#60a5fa" />
+                    <path d={`M ${(unit.unitWidth*truckVisualizationScale)/2 - 12} 6 L ${(unit.unitWidth*truckVisualizationScale)/2} 0 L ${(unit.unitWidth*truckVisualizationScale)/2 + 12} 6 Z`} fill="rgba(96, 165, 250, 0.5)" stroke="rgba(59, 130, 246, 0.3)" strokeWidth="0.5" />
                     {/* Label */}
-                    <text x={(unit.unitWidth*truckVisualizationScale)/2} y={20} textAnchor="middle" fontSize="10" fontWeight={700} fill="#1f2937">Front</text>
+                    <text x={(unit.unitWidth*truckVisualizationScale)/2} y={20} textAnchor="middle" fontSize="10" fontWeight={700} fill="rgba(15, 23, 42, 0.9)" style={{textShadow: '0 1px 2px rgba(255,255,255,0.5)'}}>Front</text>
                   </svg>
                 )}
-                <div className="relative bg-gray-300 border-2 border-gray-500 overflow-hidden rounded-md shadow-inner" style={{width:`${unit.unitWidth*truckVisualizationScale}px`,height:`${unit.unitLength*truckVisualizationScale}px`}}>
+                <div className="relative bg-white/20 border-2 border-white/30 overflow-hidden rounded-xl shadow-inner backdrop-blur-md" style={{width:`${unit.unitWidth*truckVisualizationScale}px`,height:`${unit.unitLength*truckVisualizationScale}px`,boxShadow:'inset 0 2px 8px rgba(0,0,0,0.1), 0 8px 16px -8px rgba(0,0,0,0.3)'}}>
                   {unit.pallets.map((p: any)=>renderPallet(p,truckVisualizationScale))}
                 </div>
               </div>
             ))}
-             {palletArrangement.length === 0 && <p className="text-gray-500">Keine Paletten zum Anzeigen.</p>}
+             {palletArrangement.length === 0 && <p className="text-slate-600">Keine Paletten zum Anzeigen.</p>}
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 shadow-sm text-center">
-            <h3 className="font-semibold text-blue-800 mb-2">Geladene Paletten (Visuell)</h3>
-            <p>Industrie (DIN): <span className="font-bold text-lg">{totalDinPalletsVisual}</span></p>
-            <p>Euro (EUP): <span className="font-bold text-lg">{totalEuroPalletsVisual}</span></p>
-            <p className="text-xs mt-1">(Basis: {loadedIndustrialPalletsBase} DIN, {loadedEuroPalletsBase} EUP)</p>
+          <div className="bg-blue-50 p-4 rounded-2xl border border-white/24 shadow-sm text-center backdrop-blur-lg">
+            <h3 className="font-semibold text-slate-900 mb-2">Geladene Paletten (Visuell)</h3>
+            <p className="text-slate-800">Industrie (DIN): <span className="font-bold text-lg">{totalDinPalletsVisual}</span></p>
+            <p className="text-slate-800">Euro (EUP): <span className="font-bold text-lg">{totalEuroPalletsVisual}</span></p>
+            <p className="text-slate-700 text-xs mt-1">(Basis: {loadedIndustrialPalletsBase} DIN, {loadedEuroPalletsBase} EUP)</p>
           </div>
-          <div className="bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm text-center">
-            <h3 className="font-semibold text-green-800 mb-2">Verbleibende Kapazität</h3>
+          <div className="bg-green-50 p-4 rounded-2xl border border-white/24 shadow-sm text-center backdrop-blur-lg">
+            <h3 className="font-semibold text-slate-900 mb-2">Verbleibende Kapazität</h3>
             {(() => {
               const firstType = lastEdited === 'din' ? 'DIN' : 'EUP';
               const secondType = lastEdited === 'din' ? 'EUP' : 'DIN';
@@ -884,28 +897,28 @@ export default function HomePage() {
               const secondValue = lastEdited === 'din' ? remainingCapacity.eup : remainingCapacity.din;
               return (
                 <>
-                  <p className="font-bold text-2xl text-green-700">Platz für:</p>
-                  <p className="font-bold text-2xl text-green-700">
+                  <p className="font-bold text-2xl text-slate-900">Platz für:</p>
+                  <p className="font-bold text-2xl text-slate-800">
                     {firstValue} weitere {firstType} {firstValue === 1 ? 'Palette' : 'Paletten'}
                   </p>
-                  <p className="text-green-700">oder</p>
-                  <p className="font-bold text-xl text-green-700">
+                  <p className="text-slate-700">oder</p>
+                  <p className="font-bold text-xl text-slate-800">
                     {secondValue} weitere {secondType} {secondValue === 1 ? 'Palette' : 'Paletten'}
                   </p>
                 </>
               );
             })()}
           </div>
-          <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 shadow-sm text-center">
-            <h3 className="font-semibold text-yellow-800 mb-2">Geschätztes Gewicht</h3>
-            <p className="font-bold text-2xl text-yellow-700">
+          <div className="bg-yellow-50 p-4 rounded-2xl border border-white/24 shadow-sm text-center backdrop-blur-lg">
+            <h3 className="font-semibold text-slate-900 mb-2">Geschätztes Gewicht</h3>
+            <p className="font-bold text-2xl text-slate-800">
               {KILOGRAM_FORMATTER.format(totalWeightKg)} kg
             </p>
-            <p className="text-xs mt-1">
+            <p className="text-slate-700 text-xs mt-1">
               (Max: {KILOGRAM_FORMATTER.format(maxGrossWeightKg)} kg)
             </p>
           </div>
-          <div className={`${meldungenStyle.bg} p-4 rounded-lg border ${meldungenStyle.border} shadow-sm`}>
+          <div className={`${meldungenStyle.bg} p-4 rounded-2xl border ${meldungenStyle.border} shadow-sm backdrop-blur-lg`}>
             <h3 className={`font-semibold mb-2 ${meldungenStyle.header}`}>Meldungen</h3>
             {warnings.length > 0 ? (
                 <ul className={`list-disc list-inside text-sm space-y-1 ${meldungenStyle.list}`}>
@@ -917,7 +930,7 @@ export default function HomePage() {
           </div>
         </div>
       </main>
-      <footer className="text-center py-4 mt-8 text-sm text-gray-500 border-t border-gray-200">
+      <footer className="text-center py-4 mt-8 text-sm text-slate-600 border-t border-white/20 backdrop-blur-sm">
         <p>Laderaumrechner © {new Date().getFullYear()} by Andreas Steiner</p>
       </footer>
       <Toaster />
