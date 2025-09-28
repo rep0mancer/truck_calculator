@@ -727,8 +727,37 @@ export default function HomePage() {
   };
  
   // ... (renderPallet function and style calculations remain the same)
+  const palletVisualPalette: Record<string, {
+    background: string;
+    borderColor: string;
+    textColor: string;
+    highlightBorder: string;
+    shadow: string;
+  }> = {
+    euro: {
+      background: 'linear-gradient(135deg, hsla(217, 100%, 68%, 0.92), hsla(217, 98%, 56%, 0.98))',
+      borderColor: 'hsla(218, 96%, 52%, 0.9)',
+      textColor: 'rgba(15, 23, 42, 0.95)',
+      highlightBorder: 'hsla(217, 96%, 80%, 0.65)',
+      shadow: '0 16px 32px -22px rgba(37, 99, 235, 0.85)'
+    },
+    industrial: {
+      background: 'linear-gradient(135deg, hsla(142, 96%, 60%, 0.9), hsla(142, 98%, 46%, 0.97))',
+      borderColor: 'hsla(140, 98%, 38%, 0.9)',
+      textColor: 'rgba(15, 23, 42, 0.92)',
+      highlightBorder: 'hsla(142, 95%, 78%, 0.6)',
+      shadow: '0 16px 32px -22px rgba(22, 163, 74, 0.85)'
+    }
+  };
+
+  const CAPACITY_ACCENT_STYLES: Record<'DIN' | 'EUP', { color: string; textShadow: string }> = {
+    DIN: { color: 'hsl(142, 96%, 38%)', textShadow: '0 1px 3px rgba(15, 23, 42, 0.4)' },
+    EUP: { color: 'hsl(217, 96%, 52%)', textShadow: '0 1px 3px rgba(15, 23, 42, 0.35)' }
+  };
+
   const renderPallet = (pallet: any, displayScale = 0.3) => {
     if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) return null;
+    const palette = palletVisualPalette[pallet.type] ?? palletVisualPalette.euro;
     const d = PALLET_TYPES[pallet.type];
     const w = pallet.height * displayScale; const h = pallet.width * displayScale;
     const x = pallet.y * displayScale; const y = pallet.x * displayScale;
@@ -739,11 +768,44 @@ export default function HomePage() {
     if (pallet.isStackedTier === 'top') title += ' - Oben';
     if (pallet.isStackedTier === 'base') title += ' - Basis des Stapels';
     return (
-      <div key={pallet.key} title={title}
-        className={`absolute ${d.color} ${d.borderColor} border flex items-center justify-center rounded-sm shadow-sm`}
-        style={{ left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px`, opacity: pallet.isStackedTier==='top'?0.7:1, zIndex: pallet.isStackedTier==='top'?10:5,fontSize:'10px' }}>
-        <span className="text-black font-semibold select-none">{txt}</span>
-        {pallet.isStackedTier==='top'&&<div className="absolute top-0 left-0 w-full h-full border-t-2 border-l-2 border-black opacity-30 pointer-events-none rounded-sm"/>}
+      <div
+        key={pallet.key}
+        title={title}
+        className="absolute border flex items-center justify-center rounded-sm"
+        style={{
+          left: `${x}px`,
+          top: `${y}px`,
+          width: `${w}px`,
+          height: `${h}px`,
+          opacity: pallet.isStackedTier === 'top' ? 0.72 : 1,
+          zIndex: pallet.isStackedTier === 'top' ? 10 : 5,
+          fontSize: '10px',
+          background: palette.background,
+          borderColor: palette.borderColor,
+          boxShadow: palette.shadow,
+          color: palette.textColor,
+          filter: 'saturate(1.3)'
+        }}
+      >
+        <span
+          className="font-semibold select-none"
+          style={{
+            color: palette.textColor,
+            textShadow: '0 1px 3px rgba(15, 23, 42, 0.45)'
+          }}
+        >
+          {txt}
+        </span>
+        {pallet.isStackedTier === 'top' && (
+          <div
+            className="absolute inset-0 pointer-events-none rounded-sm"
+            style={{
+              borderTop: `1.5px solid ${palette.highlightBorder}`,
+              borderLeft: `1.5px solid ${palette.highlightBorder}`,
+              borderRadius: '0.2rem'
+            }}
+          />
+        )}
       </div>
     );
   };
@@ -905,22 +967,30 @@ export default function HomePage() {
           <div className="bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm text-center">
             <h3 className="font-semibold text-slate-900 mb-2 drop-shadow-sm">Verbleibende Kapazität</h3>
             {(() => {
-              const firstType = lastEdited === 'din' ? 'DIN' : 'EUP';
-              const secondType = lastEdited === 'din' ? 'EUP' : 'DIN';
-              const firstValue = lastEdited === 'din' ? remainingCapacity.din : remainingCapacity.eup;
-              const secondValue = lastEdited === 'din' ? remainingCapacity.eup : remainingCapacity.din;
-              return (
-                <>
-                  <p className="font-bold text-2xl text-slate-900/90 drop-shadow-sm">Platz für:</p>
-                  <p className="font-bold text-2xl text-slate-900/90">
-                    {firstValue} weitere {firstType} {firstValue === 1 ? 'Palette' : 'Paletten'}
-                  </p>
-                  <p className="text-slate-900/80">oder</p>
-                  <p className="font-bold text-xl text-slate-900/85">
-                    {secondValue} weitere {secondType} {secondValue === 1 ? 'Palette' : 'Paletten'}
-                  </p>
-                </>
-              );
+                const firstType: 'DIN' | 'EUP' = lastEdited === 'din' ? 'DIN' : 'EUP';
+                const secondType: 'DIN' | 'EUP' = lastEdited === 'din' ? 'EUP' : 'DIN';
+                const firstValue = lastEdited === 'din' ? remainingCapacity.din : remainingCapacity.eup;
+                const secondValue = lastEdited === 'din' ? remainingCapacity.eup : remainingCapacity.din;
+                const firstAccent = CAPACITY_ACCENT_STYLES[firstType];
+                const secondAccent = CAPACITY_ACCENT_STYLES[secondType];
+                return (
+                  <>
+                    <p className="font-bold text-2xl text-slate-900/90 drop-shadow-sm">Platz für:</p>
+                    <p className="font-bold text-2xl text-slate-900/90 space-x-1">
+                      <span style={firstAccent}>{firstValue}</span>
+                      <span className="text-slate-900/80">weitere</span>
+                      <span style={firstAccent}>{firstType}</span>
+                      <span className="text-slate-900/80">{firstValue === 1 ? 'Palette' : 'Paletten'}</span>
+                    </p>
+                    <p className="text-slate-900/80">oder</p>
+                    <p className="font-bold text-xl text-slate-900/85 space-x-1">
+                      <span style={secondAccent}>{secondValue}</span>
+                      <span className="text-slate-900/70">weitere</span>
+                      <span style={secondAccent}>{secondType}</span>
+                      <span className="text-slate-900/70">{secondValue === 1 ? 'Palette' : 'Paletten'}</span>
+                    </p>
+                  </>
+                );
             })()}
           </div>
           <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 shadow-sm text-center">
