@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 type WeightEntry = {
@@ -52,40 +51,38 @@ export function WeightInputs({ entries, onChange, palletType, preferredId, onSet
 
 
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-1">
-        <label className="w-20 text-center text-xs text-gray-600">Anzahl</label>
-        <label className="w-32 text-center text-xs text-gray-600">Gewicht/{palletType} (kg)</label>
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-600/80">
+        <span className="w-20 text-center">Anzahl</span>
+        <span className="w-32 text-center">Gewicht/{palletType} (kg)</span>
       </div>
-      {entries.map((entry, index) => (
-        <div key={entry.id} className="flex items-center gap-2 mt-1">
-          <div className="flex items-center gap-1">
-            <Button
+      {entries.map((entry) => (
+        <div key={entry.id} className="flex items-center gap-3 mt-1 rounded-2xl rounded-md">
+          <div className="flex items-center gap-2 rounded-2xl rounded-md">
+            <button
               type="button"
-              variant="outline"
-              size="sm"
-              className="px-2"
+              aria-label="Menge verringern"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-lg font-semibold leading-none drop-shadow-[0_12px_24px_rgba(15,23,42,0.28)]"
               onClick={() => handleEntryChange(entry.id, 'quantity', String(Math.max(0, entry.quantity - 1)))}
             >
-              -
-            </Button>
+              −
+            </button>
             <Input
               type="number"
               min="0"
               value={entry.quantity}
               onChange={(e) => handleEntryChange(entry.id, 'quantity', e.target.value)}
               placeholder="Anzahl"
-              className="w-16 text-center"
+              className="w-20 text-center font-semibold tracking-wide"
             />
-            <Button
+            <button
               type="button"
-              variant="outline"
-              size="sm"
-              className="px-2"
+              aria-label="Menge erhöhen"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-lg font-semibold leading-none drop-shadow-[0_12px_24px_rgba(15,23,42,0.28)]"
               onClick={() => handleEntryChange(entry.id, 'quantity', String(entry.quantity + 1))}
             >
               +
-            </Button>
+            </button>
           </div>
           <Input
             type="number"
@@ -93,18 +90,27 @@ export function WeightInputs({ entries, onChange, palletType, preferredId, onSet
             value={entry.weight}
             onChange={(e) => handleEntryChange(entry.id, 'weight', e.target.value)}
             placeholder={`Gewicht/${palletType}`}
-            className="w-32 text-center"
+            className="w-32 text-center font-semibold tracking-wide"
           />
           {entries.length > 1 && (
-            <Button onClick={() => handleRemoveEntry(entry.id)} variant="destructive" size="sm">
-              -
-            </Button>
+            <button
+              type="button"
+              aria-label="Eintrag entfernen"
+              onClick={() => handleRemoveEntry(entry.id)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-lg font-semibold leading-none drop-shadow-[0_12px_24px_rgba(239,68,68,0.35)]"
+            >
+              ×
+            </button>
           )}
         </div>
       ))}
-      <Button onClick={handleAddEntry} className="mt-2" size="sm">
+      <button
+        type="button"
+        onClick={handleAddEntry}
+        className="mt-4 w-full rounded-full py-2 text-sm font-semibold uppercase tracking-[0.2em] drop-shadow-[0_16px_30px_rgba(59,130,246,0.35)]"
+      >
         Gewichtsgruppe hinzufügen
-      </Button>
+      </button>
     </div>
   );
 }
