@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 type WeightEntry = {
@@ -53,39 +52,37 @@ export function WeightInputs({ entries, onChange, palletType, preferredId, onSet
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-1">
-        <label className="w-20 text-center text-xs text-gray-600">Anzahl</label>
-        <label className="w-32 text-center text-xs text-gray-600">Gewicht/{palletType} (kg)</label>
+      <div className="flex items-center gap-2 mb-2">
+        <label className="w-20 text-center text-xs font-semibold text-slate-600">Anzahl</label>
+        <label className="w-32 text-center text-xs font-semibold text-slate-600">Gewicht/{palletType} (kg)</label>
       </div>
-      {entries.map((entry, index) => (
-        <div key={entry.id} className="flex items-center gap-2 mt-1">
-          <div className="flex items-center gap-1">
-            <Button
+      {entries.map(entry => (
+        <div key={entry.id} className="flex items-center gap-3 mt-2 rounded-2xl border border-white/30 bg-white/10 px-3 py-2 backdrop-blur-xl shadow-[0_18px_36px_-28px_rgba(15,23,42,0.45)]">
+          <div className="flex items-center gap-2">
+            <button
               type="button"
-              variant="outline"
-              size="sm"
-              className="px-2"
+              className="h-8 w-8 flex items-center justify-center rounded-full text-base font-semibold leading-none"
               onClick={() => handleEntryChange(entry.id, 'quantity', String(Math.max(0, entry.quantity - 1)))}
+              aria-label="Menge reduzieren"
             >
-              -
-            </Button>
+              −
+            </button>
             <Input
               type="number"
               min="0"
               value={entry.quantity}
               onChange={(e) => handleEntryChange(entry.id, 'quantity', e.target.value)}
               placeholder="Anzahl"
-              className="w-16 text-center"
+              className="w-16 text-center font-semibold"
             />
-            <Button
+            <button
               type="button"
-              variant="outline"
-              size="sm"
-              className="px-2"
+              className="h-8 w-8 flex items-center justify-center rounded-full text-base font-semibold leading-none"
               onClick={() => handleEntryChange(entry.id, 'quantity', String(entry.quantity + 1))}
+              aria-label="Menge erhöhen"
             >
               +
-            </Button>
+            </button>
           </div>
           <Input
             type="number"
@@ -93,18 +90,23 @@ export function WeightInputs({ entries, onChange, palletType, preferredId, onSet
             value={entry.weight}
             onChange={(e) => handleEntryChange(entry.id, 'weight', e.target.value)}
             placeholder={`Gewicht/${palletType}`}
-            className="w-32 text-center"
+            className="w-32 text-center font-semibold"
           />
           {entries.length > 1 && (
-            <Button onClick={() => handleRemoveEntry(entry.id)} variant="destructive" size="sm">
-              -
-            </Button>
+            <button
+              type="button"
+              onClick={() => handleRemoveEntry(entry.id)}
+              className="h-8 w-8 flex items-center justify-center rounded-full text-base font-semibold leading-none"
+              aria-label="Gruppe entfernen"
+            >
+              ×
+            </button>
           )}
         </div>
       ))}
-      <Button onClick={handleAddEntry} className="mt-2" size="sm">
+      <button onClick={handleAddEntry} className="mt-3 w-full py-2 text-sm font-semibold tracking-wide rounded-2xl">
         Gewichtsgruppe hinzufügen
-      </Button>
+      </button>
     </div>
   );
 }
