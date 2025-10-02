@@ -1,0 +1,4 @@
+{
+  "buildCommand": "pnpm build",
+  "installCommand": "corepack enable && corepack prepare pnpm@9.12.3 --activate && pnpm i --frozen-lockfile"
+}

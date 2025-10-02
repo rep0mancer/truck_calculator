@@ -222,6 +222,46 @@ const calculateLoadingLogic = (
   const weightLimit = truckConfig.maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG;
   const lengthLimitCm = truckConfig.usableLength ?? truckConfig.totalLength ?? 1320;
 
+  // Axle-load simulation constants and helpers
+  const FRONT_NO_STACK_BUFFER_CM = 120;
+  const FRONT_STACK_MAX_PALLET_KG = 500;
+
+  const KP_SHARE = { min: 0.12, max: 0.35 };
+  const KP_TO_DRIVE = 0.70;
+
+  const AXLE_LIMITS = { STEER: 8000, DRIVE: 11500, BOGIE: 24000, SAFETY: 0.97 };
+  const TARE = { steer: 6500, drive: 4500, bogie: 3000 };
+
+  const clamp01 = (t: number) => Math.max(0, Math.min(1, t));
+  
+  function kpShareAt(xCenter: number, unitLen: number) {
+    const t = clamp01(xCenter / unitLen);
+    return KP_SHARE.max - (KP_SHARE.max - KP_SHARE.min) * t;
+  }
+
+  type LoadItem = { kg: number; xCenter: number; unitLen: number };
+  type AxleLoads = { steer: number; drive: number; bogie: number };
+
+  function sumLoads(items: LoadItem[]): AxleLoads {
+    let steer = TARE.steer, drive = TARE.drive, bogie = TARE.bogie;
+    for (const it of items) {
+      const sKP = kpShareAt(it.xCenter, it.unitLen);
+      const loadKP = it.kg * sKP;
+      steer += loadKP * (1 - KP_TO_DRIVE);
+      drive += loadKP * KP_TO_DRIVE;
+      bogie += it.kg * (1 - sKP);
+    }
+    return { steer, drive, bogie };
+  }
+
+  function withinLimits(L: AxleLoads) {
+    return (
+      L.steer <= AXLE_LIMITS.STEER * AXLE_LIMITS.SAFETY &&
+      L.drive <= AXLE_LIMITS.DRIVE * AXLE_LIMITS.SAFETY &&
+      L.bogie <= AXLE_LIMITS.BOGIE * AXLE_LIMITS.SAFETY
+    );
+  }
+
   // Helper to create individual pallets from user inputs
   let uniqueIdSeed = 1;
   const flattenToSingles = (entries: WeightEntry[], type: 'euro' | 'industrial') => {
@@ -375,7 +415,7 @@ const calculateLoadingLogic = (
     return 0;
   });
 
-  // STAGE 2: PLACEMENT (This is the new, correct implementation)
+  // STAGE 2: PLACEMENT - Bidirectional with axle-load simulation
   const unitsState = truckConfig.units.map((u: any) => ({ ...u, palletsVisual: [] as any[] }));
   let placementQueue = [...finalPalletManifest];
   let dinLabelCounter = 0;
@@ -383,45 +423,51 @@ const calculateLoadingLogic = (
   let placedDinBaseIndex = 0;
   let placedEupBaseIndex = 0;
   let totalAreaBase = 0;
+  
   for (const unit of unitsState) {
     if (placementQueue.length === 0) break;
-    let currentX = 0;
-    let currentY = 0;
-    let currentRowHeight = 0;
-    let activeEupPatternForRow = currentEupLoadingPattern;
-    // Use a traditional for loop for stability, as we manually advance the index
-    for (let i = 0; i < placementQueue.length; /* no increment */) {
-      const palletToPlace = placementQueue[i];
-      const { type, isStacked } = palletToPlace;
-      if (currentY === 0 && type === 'euro' && currentEupLoadingPattern === 'auto') {
-        const remainingLength = unit.length - currentX;
-        // Count consecutive euro bases ahead
+    
+    // Track front and rear cursors separately
+    const front = { x: 0, y: 0, rowHeight: 0 };
+    const rear = { x: 0, y: 0, rowHeight: 0 };
+    
+    // Track placed items for axle simulation
+    const placedItems: LoadItem[] = [];
+    
+    let i = 0;
+    while (i < placementQueue.length) {
+      const pal = placementQueue[i];
+      const nextPal = placementQueue[i + 1];
+      const { type, isStacked } = pal;
+      
+      // Determine pallet dimensions
+      const palletDef = type === 'euro' ? PALLET_TYPES.euro : PALLET_TYPES.industrial;
+      let palletLen: number, palletWid: number;
+      let activeEupPatternForRow = currentEupLoadingPattern;
+      
+      if (type === 'euro' && currentEupLoadingPattern === 'auto') {
+        // Auto-detect pattern based on remaining space and queue
+        const remainingFront = unit.length - front.x;
+        const remainingRear = unit.length - rear.x;
+        const remaining = Math.max(remainingFront, remainingRear);
+        
         let countBases = 0;
         let j = i;
-        while (j < placementQueue.length) {
-          if (placementQueue[j].type !== 'euro') break;
-          if (placementQueue[j].isStacked) {
-            countBases++;
-            j += 2;
-          } else {
-            countBases++;
-            j++;
-          }
+        while (j < placementQueue.length && placementQueue[j].type === 'euro') {
+          countBases++;
+          j += placementQueue[j].isStacked ? 2 : 1;
         }
-        if (countBases >= 3 && remainingLength >= PALLET_TYPES.euro.length) {
+        
+        if (countBases >= 3 && remaining >= PALLET_TYPES.euro.length) {
           activeEupPatternForRow = 'long';
-        } else if (countBases >= 2 && remainingLength >= PALLET_TYPES.euro.width) {
-          activeEupPatternForRow = 'broad';
-        } else if (countBases >= 1 && remainingLength >= PALLET_TYPES.euro.width) {
+        } else if (countBases >= 1 && remaining >= PALLET_TYPES.euro.width) {
           activeEupPatternForRow = 'broad';
         } else {
           activeEupPatternForRow = 'none';
         }
-        if (activeEupPatternForRow === 'none') break; // No more EUPs fit
+        if (activeEupPatternForRow === 'none') break;
       }
-
-      const palletDef = type === 'euro' ? PALLET_TYPES.euro : PALLET_TYPES.industrial;
-      let palletLen: number, palletWid: number;
+      
       if (type === 'euro') {
         palletLen = activeEupPatternForRow === 'long' ? palletDef.length : palletDef.width;
         palletWid = activeEupPatternForRow === 'long' ? palletDef.width : palletDef.length;
@@ -429,32 +475,88 @@ const calculateLoadingLogic = (
         palletLen = palletDef.width;  // 100cm
         palletWid = palletDef.length; // 120cm
       }
-
-      if (currentY + palletWid > unit.width) {
-        currentX += currentRowHeight;
-        currentY = 0;
-        currentRowHeight = 0;
-        continue; // Re-evaluate this same pallet in the new row
+      
+      // Determine side: default stacks→rear, singles→front
+      let side: 'front' | 'rear' = isStacked ? 'rear' : 'front';
+      
+      // Front no-stack buffer check (checks x coordinate, not y)
+      if (side === 'front' && isStacked && front.x < FRONT_NO_STACK_BUFFER_CM) {
+        side = 'rear';
       }
-      if (currentX + palletLen > unit.length) {
-        break; // No more space in this unit
+      
+      // Light stack axle check: try front if weight per pallet ≤ 500kg
+      if (side === 'rear' && isStacked) {
+        const w1 = Number(pal.weight) || 0;
+        const w2 = Number(nextPal?.weight) || 0;
+        const totalStackKg = w1 + w2;
+        const perPalletKg = totalStackKg / 2;
+        
+        if (perPalletKg <= FRONT_STACK_MAX_PALLET_KG) {
+          // Simulate front placement
+          const frontCenterX = front.x + palletLen / 2;
+          const candidate: LoadItem = {
+            kg: totalStackKg,
+            xCenter: frontCenterX,
+            unitLen: unit.length
+          };
+          const testLoads = sumLoads([...placedItems, candidate]);
+          if (withinLimits(testLoads)) {
+            side = 'front';
+          }
+        }
       }
-
-      // Place the Pallet(s)
-      const itemsInThisPosition = isStacked ? [placementQueue[i], placementQueue[i + 1]] : [placementQueue[i]];
-
+      
+      // Choose cursor
+      const cursor = side === 'front' ? front : rear;
+      
+      // Row wrap if width exceeded
+      if (cursor.y + palletWid > unit.width) {
+        cursor.x += cursor.rowHeight;
+        cursor.y = 0;
+        cursor.rowHeight = 0;
+        continue;
+      }
+      
+      // Check length limit
+      if (cursor.x + palletLen > unit.length) {
+        break;
+      }
+      
+      // Calculate coordinates
+      let xCoord: number;
+      if (side === 'front') {
+        xCoord = cursor.x;
+      } else {
+        // Rear: mirror from end
+        xCoord = unit.length - cursor.x - palletLen;
+      }
+      
+      // Compute weight for this placement
+      const palKg = Number(pal.weight) || 0;
+      const nextPalKg = isStacked ? (Number(nextPal?.weight) || 0) : 0;
+      const totalKg = palKg + nextPalKg;
+      
       // Create visual(s)
       const nextLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
       const baseKeySuffix = type === 'euro' ? placedEupBaseIndex : placedDinBaseIndex;
       const baseVisual: any = {
-        x: currentX, y: currentY, width: palletLen, height: palletWid,
-        type, isStackedTier: null, unitId: unit.id,
-        labelId: nextLabelId, displayBaseLabelId: nextLabelId, displayStackedLabelId: null,
-        showAsFraction: false, key: `${type}_${baseKeySuffix}`
+        x: xCoord,
+        y: cursor.y,
+        width: palletLen,
+        height: palletWid,
+        type,
+        isStackedTier: null,
+        unitId: unit.id,
+        labelId: nextLabelId,
+        displayBaseLabelId: nextLabelId,
+        displayStackedLabelId: null,
+        showAsFraction: false,
+        key: `${type}_${baseKeySuffix}`,
+        kg: totalKg
       };
-
+      
       totalAreaBase += (type === 'euro' ? PALLET_TYPES.euro.area : PALLET_TYPES.industrial.area);
-
+      
       if (isStacked) {
         baseVisual.isStackedTier = 'base';
         baseVisual.showAsFraction = true;
@@ -466,16 +568,23 @@ const calculateLoadingLogic = (
       } else {
         unit.palletsVisual.push(baseVisual);
       }
-
+      
       if (type === 'euro') placedEupBaseIndex++; else placedDinBaseIndex++;
-
-      // Update cursors for the next pallet in the row
-      currentY += palletWid;
-      currentRowHeight = Math.max(currentRowHeight, palletLen);
-      i += itemsInThisPosition.length; // Advance index by 1 for singles, 2 for stacked
+      
+      // Add to placed items for axle tracking
+      const centerX = side === 'front' ? (cursor.x + palletLen / 2) : ((unit.length - cursor.x - palletLen) + palletLen / 2);
+      placedItems.push({ kg: totalKg, xCenter: centerX, unitLen: unit.length });
+      
+      // Update cursors
+      cursor.y += palletWid;
+      cursor.rowHeight = Math.max(cursor.rowHeight, palletLen);
+      
+      // Advance queue index
+      i += isStacked ? 2 : 1;
     }
-    // Remove the placed pallets from the main queue
-    placementQueue.splice(0, unit.palletsVisual.length);
+    
+    // Remove placed pallets from queue
+    placementQueue.splice(0, i);
   }
 
   // Compute metrics for return

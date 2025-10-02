@@ -1,2 +1,9 @@
 # Ignore node_modules across the repo
 node_modules/
+
+# Next.js build outputs
+.next
+out
+
+# Vercel
+.vercel
