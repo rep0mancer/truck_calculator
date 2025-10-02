@@ -359,6 +359,47 @@ const calculateLoadingLogic = (
   }
 
   // STAGE 2: PLACEMENT - Arrange the Manifest for Visualization
+  // Visual orientation
+  const LENGTH_IS_VERTICAL = true; // length runs along y, width along x
+
+  // Stacking rules
+  const FRONT_NO_STACK_BUFFER_CM = 120; // no stacks in first 1.2 m (front zone)
+  const FRONT_STACK_MAX_PALLET_KG = 500; // <=500 kg per pallet may stack at front if axle-sim passes
+
+  // Heavy stacks must start in the rear zone
+  const HEAVY_STACK_REAR_ZONE_START_FRACTION = 0.58; // start stacking only in last 42% of length
+
+  // Axle sim (keep yours if already present)
+  const KP_SHARE = { min: 0.12, max: 0.35 };
+  const KP_TO_DRIVE = 0.7;
+  const AXLE_LIMITS = { STEER: 8000, DRIVE: 11500, BOGIE: 24000, SAFETY: 0.97 };
+  const TARE = { steer: 6500, drive: 4500, bogie: 3000 };
+
+  const clamp01 = (t: number) => Math.max(0, Math.min(1, t));
+  const kpShareAt = (xCenter: number, unitLen: number) => {
+    const t = clamp01(xCenter / unitLen); // 0=front, 1=rear
+    return KP_SHARE.max - (KP_SHARE.max - KP_SHARE.min) * t;
+  };
+  type LoadItem = { kg: number; xCenter: number; unitLen: number };
+  type AxleLoads = { steer: number; drive: number; bogie: number };
+  const sumLoads = (items: LoadItem[]): AxleLoads => {
+    let steer = TARE.steer;
+    let drive = TARE.drive;
+    let bogie = TARE.bogie;
+    for (const it of items) {
+      const sKP = kpShareAt(it.xCenter, it.unitLen);
+      const loadKP = it.kg * sKP;
+      steer += loadKP * (1 - KP_TO_DRIVE);
+      drive += loadKP * KP_TO_DRIVE;
+      bogie += it.kg * (1 - sKP);
+    }
+    return { steer, drive, bogie };
+  };
+  const withinLimits = (L: AxleLoads) =>
+    L.steer <= AXLE_LIMITS.STEER * AXLE_LIMITS.SAFETY &&
+    L.drive <= AXLE_LIMITS.DRIVE * AXLE_LIMITS.SAFETY &&
+    L.bogie <= AXLE_LIMITS.BOGIE * AXLE_LIMITS.SAFETY;
+
   const getPlacementPriority = (pallet: any) => {
     if (pallet.isStacked && pallet.type === 'industrial') return 1; // FIX: DIN stacked first
     if (pallet.isStacked && pallet.type === 'euro') return 2;       // FIX: Then EUP stacked
@@ -385,97 +426,299 @@ const calculateLoadingLogic = (
   let totalAreaBase = 0;
   for (const unit of unitsState) {
     if (placementQueue.length === 0) break;
-    let currentX = 0;
-    let currentY = 0;
-    let currentRowHeight = 0;
-    let activeEupPatternForRow = currentEupLoadingPattern;
-    // Use a traditional for loop for stability, as we manually advance the index
-    for (let i = 0; i < placementQueue.length; /* no increment */) {
+    type RowState = {
+      L: number;
+      W: number;
+      rowLen: number;
+      eupPattern: 'long' | 'broad' | null;
+    };
+    const initRow = (): RowState => ({ L: 0, W: 0, rowLen: 0, eupPattern: null });
+    const front = initRow();
+    const rear = initRow();
+    const computeAutoPattern = (
+      side: 'front' | 'rear',
+      row: RowState,
+      other: RowState,
+      index: number
+    ): 'long' | 'broad' | null => {
+      if (currentEupLoadingPattern === 'long' || currentEupLoadingPattern === 'broad') {
+        return currentEupLoadingPattern;
+      }
+      if (currentEupLoadingPattern !== 'auto') return null;
+      if (row.W > 0 && row.eupPattern) return row.eupPattern;
+      const remainingLength = Math.max(0, unit.length - row.L - other.L);
+      let countBases = 0;
+      let j = index;
+      while (j < placementQueue.length) {
+        const candidate = placementQueue[j];
+        if (candidate.type !== 'euro') break;
+        if (candidate.isStacked) {
+          countBases++;
+          j += 2;
+        } else {
+          countBases++;
+          j += 1;
+        }
+      }
+      if (countBases >= 3 && remainingLength >= PALLET_TYPES.euro.length) return 'long';
+      if (countBases >= 2 && remainingLength >= PALLET_TYPES.euro.width) return 'broad';
+      if (countBases >= 1 && remainingLength >= PALLET_TYPES.euro.width) return 'broad';
+      return null;
+    };
+
+    const cloneRow = (row: RowState): RowState => ({ L: row.L, W: row.W, rowLen: row.rowLen, eupPattern: row.eupPattern });
+    const computePlacementOption = (
+      side: 'front' | 'rear',
+      palletType: 'euro' | 'industrial',
+      index: number
+    ) => {
+      const baseRow = side === 'front' ? front : rear;
+      const otherRow = side === 'front' ? rear : front;
+      const rowCopy = cloneRow(baseRow);
+      const palletDef = palletType === 'euro' ? PALLET_TYPES.euro : PALLET_TYPES.industrial;
+      let patternUsed: 'long' | 'broad' | null = rowCopy.eupPattern;
+      let palletLen = 0;
+      let palletWid = 0;
+      const resolveDims = (): boolean => {
+        if (palletType === 'euro') {
+          patternUsed = computeAutoPattern(side, rowCopy, otherRow, index);
+          if (!patternUsed) return false;
+          palletLen = patternUsed === 'long' ? palletDef.length : palletDef.width;
+          palletWid = patternUsed === 'long' ? palletDef.width : palletDef.length;
+        } else {
+          palletLen = palletDef.width;
+          palletWid = palletDef.length;
+        }
+        return true;
+      };
+      if (!resolveDims()) {
+        return { canPlace: false as const };
+      }
+      while (rowCopy.W + palletWid > unit.width) {
+        if (rowCopy.rowLen === 0 && rowCopy.W === 0) {
+          return { canPlace: false as const };
+        }
+        rowCopy.L += rowCopy.rowLen;
+        rowCopy.W = 0;
+        rowCopy.rowLen = 0;
+        rowCopy.eupPattern = null;
+        patternUsed = null;
+        if (!resolveDims()) {
+          return { canPlace: false as const };
+        }
+        if (palletWid > unit.width) {
+          return { canPlace: false as const };
+        }
+      }
+      const rowStartL = rowCopy.L;
+      const xCoord = rowCopy.W;
+      const yCoord =
+        side === 'front'
+          ? rowStartL
+          : Math.max(0, unit.length - rowCopy.L - palletLen);
+      const centerY = yCoord + palletLen / 2;
+      const rowAfter: RowState = {
+        L: rowCopy.L,
+        W: rowCopy.W + palletWid,
+        rowLen: Math.max(rowCopy.rowLen, palletLen),
+        eupPattern: palletType === 'euro' ? (patternUsed ?? rowCopy.eupPattern) : rowCopy.eupPattern,
+      };
+      if (palletType === 'euro' && rowCopy.W === 0) {
+        rowAfter.eupPattern = patternUsed;
+      }
+      return {
+        canPlace: true as const,
+        palletLen,
+        palletWid,
+        xCoord,
+        yCoord,
+        centerY,
+        rowAfter,
+        rowStartL,
+        patternUsed,
+      };
+    };
+
+    let consumedFromQueue = 0;
+    let unitFull = false;
+    for (let i = 0; i < placementQueue.length && !unitFull; ) {
       const palletToPlace = placementQueue[i];
-      const { type, isStacked } = palletToPlace;
-      if (currentY === 0 && type === 'euro' && currentEupLoadingPattern === 'auto') {
-        const remainingLength = unit.length - currentX;
-        // Count consecutive euro bases ahead
-        let countBases = 0;
-        let j = i;
-        while (j < placementQueue.length) {
-          if (placementQueue[j].type !== 'euro') break;
-          if (placementQueue[j].isStacked) {
-            countBases++;
-            j += 2;
-          } else {
-            countBases++;
-            j++;
+      if (!palletToPlace) break;
+      const { type } = palletToPlace;
+      const baseType: 'euro' | 'industrial' = type === 'euro' ? 'euro' : 'industrial';
+      const nextPallet = palletToPlace.isStacked ? placementQueue[i + 1] : undefined;
+      palletToPlace.weight = Number(palletToPlace.weight) || 0;
+      if (palletToPlace.isStacked && nextPallet) {
+        nextPallet.weight = Number(nextPallet.weight) || palletToPlace.weight;
+      }
+
+      const frontOption = computePlacementOption('front', baseType, i);
+      const rearOption = computePlacementOption('rear', baseType, i);
+      if (!frontOption.canPlace && !rearOption.canPlace) {
+        unitFull = true;
+        break;
+      }
+
+      let palletLen = frontOption.canPlace ? frontOption.palletLen : rearOption.palletLen;
+      let palletWid = frontOption.canPlace ? frontOption.palletWid : rearOption.palletWid;
+      if (rearOption.canPlace && !frontOption.canPlace) {
+        palletLen = rearOption.palletLen;
+        palletWid = rearOption.palletWid;
+      }
+
+      let side: 'front' | 'rear' = palletToPlace.isStacked ? 'rear' : 'front';
+      const HEAVY_STACK_REAR_START_CM = unit.length * HEAVY_STACK_REAR_ZONE_START_FRACTION;
+      const nextWeight = Number(nextPallet?.weight) || 0;
+      const isLightStack =
+        palletToPlace.isStacked &&
+        palletToPlace.weight <= FRONT_STACK_MAX_PALLET_KG &&
+        nextWeight <= FRONT_STACK_MAX_PALLET_KG;
+      const isHeavyStack = palletToPlace.isStacked && !isLightStack;
+
+      if (side === 'front' && palletToPlace.isStacked) {
+        const lengthCursor = frontOption.canPlace ? frontOption.rowStartL : front.L;
+        if (lengthCursor < FRONT_NO_STACK_BUFFER_CM) {
+          side = 'rear';
+        }
+      }
+      if (isHeavyStack && side === 'front') {
+        const lengthCursor = frontOption.canPlace ? frontOption.rowStartL : front.L;
+        if (lengthCursor < HEAVY_STACK_REAR_START_CM) {
+          side = 'rear';
+        }
+      }
+
+      if (isLightStack) {
+        if (!frontOption.canPlace) {
+          side = 'rear';
+        } else {
+          const unitLen = unit.length;
+          const stackKg = palletToPlace.weight + nextWeight;
+          const placedLoads: LoadItem[] = unit.palletsVisual.map((v: any) => ({
+            kg: Number(v.kg) || 0,
+            xCenter: LENGTH_IS_VERTICAL ? v.y + v.height / 2 : v.x + v.width / 2,
+            unitLen,
+          }));
+          const yFrontCenter = frontOption.centerY;
+          const yRearCenter = rearOption.canPlace ? rearOption.centerY : yFrontCenter;
+          const frontLoads = sumLoads([...placedLoads, { kg: stackKg, xCenter: yFrontCenter, unitLen }]);
+          const rearLoads = rearOption.canPlace
+            ? sumLoads([...placedLoads, { kg: stackKg, xCenter: yRearCenter, unitLen }])
+            : frontLoads;
+          side = withinLimits(frontLoads) ? 'front' : 'rear';
+          if (side === 'rear' && rearLoads && !withinLimits(rearLoads) && withinLimits(frontLoads)) {
+            side = 'front';
           }
         }
-        if (countBases >= 3 && remainingLength >= PALLET_TYPES.euro.length) {
-          activeEupPatternForRow = 'long';
-        } else if (countBases >= 2 && remainingLength >= PALLET_TYPES.euro.width) {
-          activeEupPatternForRow = 'broad';
-        } else if (countBases >= 1 && remainingLength >= PALLET_TYPES.euro.width) {
-          activeEupPatternForRow = 'broad';
-        } else {
-          activeEupPatternForRow = 'none';
+      }
+
+      let chosenOption = side === 'front' ? frontOption : rearOption;
+      if (!chosenOption.canPlace) {
+        const fallback = side === 'front' ? rearOption : frontOption;
+        if (!fallback.canPlace) {
+          unitFull = true;
+          break;
         }
-        if (activeEupPatternForRow === 'none') break; // No more EUPs fit
+        side = side === 'front' ? 'rear' : 'front';
+        chosenOption = fallback;
       }
 
-      const palletDef = type === 'euro' ? PALLET_TYPES.euro : PALLET_TYPES.industrial;
-      let palletLen: number, palletWid: number;
-      if (type === 'euro') {
-        palletLen = activeEupPatternForRow === 'long' ? palletDef.length : palletDef.width;
-        palletWid = activeEupPatternForRow === 'long' ? palletDef.width : palletDef.length;
-      } else {
-        palletLen = palletDef.width;  // 100cm
-        palletWid = palletDef.length; // 120cm
+      palletLen = chosenOption.palletLen;
+      palletWid = chosenOption.palletWid;
+
+      if (side === 'front' && chosenOption.rowStartL + palletLen + rear.L > unit.length) {
+        if (rearOption.canPlace && rearOption.rowStartL + rearOption.palletLen + front.L <= unit.length) {
+          side = 'rear';
+          chosenOption = rearOption;
+          palletLen = chosenOption.palletLen;
+          palletWid = chosenOption.palletWid;
+        } else {
+          unitFull = true;
+          break;
+        }
+      }
+      if (side === 'rear' && chosenOption.rowStartL + palletLen + front.L > unit.length) {
+        if (frontOption.canPlace && frontOption.rowStartL + frontOption.palletLen + rear.L <= unit.length) {
+          side = 'front';
+          chosenOption = frontOption;
+          palletLen = chosenOption.palletLen;
+          palletWid = chosenOption.palletWid;
+        } else {
+          unitFull = true;
+          break;
+        }
       }
 
-      if (currentY + palletWid > unit.width) {
-        currentX += currentRowHeight;
-        currentY = 0;
-        currentRowHeight = 0;
-        continue; // Re-evaluate this same pallet in the new row
-      }
-      if (currentX + palletLen > unit.length) {
-        break; // No more space in this unit
+      const rowState = side === 'front' ? front : rear;
+      Object.assign(rowState, chosenOption.rowAfter);
+      if (side === 'front') {
+        palletLen = chosenOption.palletLen;
+        palletWid = chosenOption.palletWid;
       }
 
-      // Place the Pallet(s)
-      const itemsInThisPosition = isStacked ? [placementQueue[i], placementQueue[i + 1]] : [placementQueue[i]];
+      const itemsInThisPosition = palletToPlace.isStacked
+        ? [placementQueue[i], placementQueue[i + 1]].filter(Boolean)
+        : [placementQueue[i]];
 
       // Create visual(s)
-      const nextLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
-      const baseKeySuffix = type === 'euro' ? placedEupBaseIndex : placedDinBaseIndex;
+      const nextLabelId = baseType === 'euro' ? ++eupLabelCounter : ++dinLabelCounter;
+      const baseKeySuffix = baseType === 'euro' ? placedEupBaseIndex : placedDinBaseIndex;
+      const xCoord = chosenOption.xCoord;
+      const yCoord = chosenOption.yCoord;
       const baseVisual: any = {
-        x: currentX, y: currentY, width: palletLen, height: palletWid,
-        type, isStackedTier: null, unitId: unit.id,
-        labelId: nextLabelId, displayBaseLabelId: nextLabelId, displayStackedLabelId: null,
-        showAsFraction: false, key: `${type}_${baseKeySuffix}`
+        x: xCoord,
+        y: yCoord,
+        width: palletWid,
+        height: palletLen,
+        type: baseType,
+        isStackedTier: null,
+        unitId: unit.id,
+        labelId: nextLabelId,
+        displayBaseLabelId: nextLabelId,
+        displayStackedLabelId: null,
+        showAsFraction: false,
+        key: `${baseType}_${baseKeySuffix}`,
+        kg: palletToPlace.isStacked
+          ? palletToPlace.weight + (Number(itemsInThisPosition[1]?.weight) || 0)
+          : palletToPlace.weight,
       };
 
-      totalAreaBase += (type === 'euro' ? PALLET_TYPES.euro.area : PALLET_TYPES.industrial.area);
+      totalAreaBase += baseType === 'euro' ? PALLET_TYPES.euro.area : PALLET_TYPES.industrial.area;
 
-      if (isStacked) {
+      if (palletToPlace.isStacked) {
         baseVisual.isStackedTier = 'base';
         baseVisual.showAsFraction = true;
-        const stackedLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
+        const stackedLabelId = baseType === 'euro' ? ++eupLabelCounter : ++dinLabelCounter;
         baseVisual.displayStackedLabelId = stackedLabelId;
         unit.palletsVisual.push(baseVisual);
-        const topVisual = { ...baseVisual, isStackedTier: 'top', labelId: stackedLabelId, key: `${baseVisual.key}_stack` };
+        const topVisual = {
+          ...baseVisual,
+          isStackedTier: 'top',
+          labelId: stackedLabelId,
+          key: `${baseVisual.key}_stack`,
+          kg: 0,
+        };
         unit.palletsVisual.push(topVisual);
       } else {
         unit.palletsVisual.push(baseVisual);
       }
 
-      if (type === 'euro') placedEupBaseIndex++; else placedDinBaseIndex++;
+      if (baseType === 'euro') placedEupBaseIndex++;
+      else placedDinBaseIndex++;
 
-      // Update cursors for the next pallet in the row
-      currentY += palletWid;
-      currentRowHeight = Math.max(currentRowHeight, palletLen);
-      i += itemsInThisPosition.length; // Advance index by 1 for singles, 2 for stacked
+      rowState.W = chosenOption.rowAfter.W;
+      rowState.rowLen = chosenOption.rowAfter.rowLen;
+      rowState.L = chosenOption.rowAfter.L;
+      rowState.eupPattern = chosenOption.rowAfter.eupPattern;
+
+      const advanceBy = palletToPlace.isStacked ? 2 : 1;
+      consumedFromQueue += advanceBy;
+      i += advanceBy;
     }
-    // Remove the placed pallets from the main queue
-    placementQueue.splice(0, unit.palletsVisual.length);
+
+    if (consumedFromQueue > 0) {
+      placementQueue.splice(0, consumedFromQueue);
+    }
   }
 
   // Compute metrics for return
