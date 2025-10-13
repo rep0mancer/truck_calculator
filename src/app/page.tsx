@@ -357,6 +357,86 @@ const calculateLoadingLogic = (
   if (typeof maxDinBase === 'number' && totalDinRequested > maxDinBase && totalDinRequested !== MAX_PALLET_SIMULATION_QUANTITY) {
     warnings.push(`${truckConfig.name.trim()} maximale DIN-Kapazität ist ${maxDinBase}. Angeforderte Menge ${totalDinRequested}, es werden ${Math.min(maxDinBase, usedDinBasePositions)} platziert.`);
   }
+  // --- AXLE-AWARE REORDERING (start stacking at position 9 when not fully double-stacked) ---
+  // Reorders the final manifest only in terms of position along the length.
+  // Keeps everything else intact (weights, visuals, EUP patterning, warnings).
+  const axleAwareReorder = (manifest: any[]) => {
+    // Build a reordered list for one pallet type, then merge back preserving interleaving of types.
+    const reorderType = (
+      type: 'industrial' | 'euro',
+      baseCapacity: number,      // 26 for DIN, 33 for EUP
+      lowerExclusive: number,    // 26 for DIN, 33 for EUP
+      upperExclusive: number     // 42 for DIN, 50 for EUP
+    ) => {
+      const items = manifest.filter(p => p.type === type);
+      if (items.length === 0) return items;
+
+      // Group stacked pairs by stackGroupId and collect singles
+      const stackMap = new Map<string, any[]>();
+      const singles: any[] = [];
+      for (const it of items) {
+        if (it.isStacked && it.stackGroupId) {
+          const key = String(it.stackGroupId);
+          if (!stackMap.has(key)) stackMap.set(key, []);
+          stackMap.get(key)!.push(it);
+        } else {
+          singles.push(it);
+        }
+      }
+      const stackPairs = Array.from(stackMap.values()).map(pair => {
+        // ensure deterministic ordering inside pairs
+        return pair.sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+      });
+
+      const total = items.length;                       // bases + tops
+      const basePositions = singles.length + stackPairs.length;
+      const stacksCount = stackPairs.length;
+
+      // Apply only when: stacks exist, full base is used, and we are in the mid-range (not fully double-stacked)
+      const shouldApply =
+        stacksCount > 0 &&
+        basePositions === baseCapacity &&
+        total > lowerExclusive &&
+        total < upperExclusive;
+
+      if (!shouldApply) return items;
+
+      // Build new sequence: singles in positions 1..8, then stacks from 9 onward, then remaining singles.
+      const START_INDEX = 9; // business rule
+      const result: any[] = [];
+      let singleIdx = 0;
+      let pairIdx = 0;
+
+      for (let pos = 1; pos <= basePositions; pos++) {
+        const inStackWindow = pos >= START_INDEX && pos < START_INDEX + stacksCount;
+        if (inStackWindow) {
+          const pair = stackPairs[pairIdx++] || [];
+          result.push(...pair);
+        } else {
+          const s = singles[singleIdx++];
+          if (s) result.push(s);
+        }
+      }
+      return result;
+    };
+
+    // Build reordered DIN and EUP subsequences
+    const dinReordered = reorderType('industrial', 26, 26, 42);
+    const eupReordered = reorderType('euro',       33, 33, 50);
+
+    // Merge back by walking the original manifest and swapping only within the same type
+    const rebuilt: any[] = [];
+    let d = 0, e = 0;
+    for (const p of manifest) {
+      if (p.type === 'industrial') rebuilt.push(dinReordered[d++]);
+      else if (p.type === 'euro')   rebuilt.push(eupReordered[e++]);
+      else                          rebuilt.push(p);
+    }
+    return rebuilt;
+  };
+
+  // Reorder before visual placement
+  finalPalletManifest = axleAwareReorder(finalPalletManifest);
 
   // STAGE 2: PLACEMENT - Arrange the Manifest for Visualization
   const getPlacementPriority = (pallet: any) => {
