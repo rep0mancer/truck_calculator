@@ -389,22 +389,42 @@ const calculateLoadingLogic = (
     const pairGroups = Array.from(pairBuckets.values()).map(g =>
       g.sort((a, b) => ((a.id ?? 0) - (b.id ?? 0)))
     );
+    console.log(`  Found ${pairGroups.length} pair groups, ${singles.length} singles for ${type}`);
 
     const totalLoaded = items.length;                          // base + tops
     const stacksCount = pairGroups.length;                     // number of base positions taken by stacks
     const basePositionsUsed = singles.length + stacksCount;    // base deck usage by this type
 
-    // Only apply when: stacks exist, base deck for this type is full, and we're in the mid-range window
+    console.log(`🔍 Axle-aware check for ${type}:`, {
+      totalLoaded,
+      stacksCount,
+      singlesCount: singles.length,
+      basePositionsUsed,
+      baseCapacity,
+      range: `(${lowerExclusive}, ${upperExclusive})`,
+      conditions: {
+        hasStacks: stacksCount > 0,
+        inRange: totalLoaded > lowerExclusive && totalLoaded < upperExclusive,
+        notFullyDoubleStacked: totalLoaded < upperExclusive
+      }
+    });
+
+    // Only apply when: stacks exist and we're in the mid-range window (not fully double-stacked)
     const shouldApply =
       stacksCount > 0 &&
-      basePositionsUsed === baseCapacity &&
       totalLoaded > lowerExclusive &&
       totalLoaded < upperExclusive;
 
     if (!shouldApply) return { manifest, applied: false };
 
+    // Need at least some singles to protect the front axle
+    if (singles.length === 0) {
+      console.log(`  ⚠️ SKIPPING: No singles available to place at front (all pallets are stacked)`);
+      return { manifest, applied: false };
+    }
+
     // Rule: positions 1..8 stay single; stacks begin at position 9; remainder singles follow.
-    const FRONT_SINGLES = 8;
+    const FRONT_SINGLES = Math.min(8, singles.length); // Use up to 8 singles, or all if less
     const frontSingles = singles.slice(0, FRONT_SINGLES);
     const tailSingles  = singles.slice(FRONT_SINGLES);
 
@@ -412,6 +432,8 @@ const calculateLoadingLogic = (
     orderedType.push(...frontSingles);
     for (const grp of pairGroups) orderedType.push(...grp);
     orderedType.push(...tailSingles);
+
+    console.log(`  ✅ REORDERING: ${frontSingles.length} front singles, ${pairGroups.length} stacks (${pairGroups.length * 2} pallets), ${tailSingles.length} tail singles`);
 
     // Merge back, replacing only this type and keeping other types as-is
     const rebuilt: any[] = [];
@@ -427,11 +449,13 @@ const calculateLoadingLogic = (
   let tmp = reorderTypeAxleAware(finalPalletManifest, 'industrial', 26, 26, 42);
   finalPalletManifest = tmp.manifest;
   axleAwareApplied = axleAwareApplied || tmp.applied;
+  if (tmp.applied) console.log('🎯 AXLE-AWARE APPLIED FOR DIN');
 
   // Apply for EUP (euro) → (33,50), base 33
   tmp = reorderTypeAxleAware(finalPalletManifest, 'euro', 33, 33, 50);
   finalPalletManifest = tmp.manifest;
   axleAwareApplied = axleAwareApplied || tmp.applied;
+  if (tmp.applied) console.log('🎯 AXLE-AWARE APPLIED FOR EUP');
 
   // STAGE 2: PLACEMENT - Arrange the Manifest for Visualization
   const getPlacementPriority = (pallet: any) => {
@@ -453,6 +477,13 @@ const calculateLoadingLogic = (
   }
 
   // STAGE 2: PLACEMENT (This is the new, correct implementation)
+  console.log('📦 Final manifest order before placement:', finalPalletManifest.map((p, i) => ({
+    index: i,
+    type: p.type,
+    isStacked: p.isStacked,
+    stackGroupId: p.stackGroupId,
+    id: p.id
+  })));
   const unitsState = truckConfig.units.map((u: any) => ({ ...u, palletsVisual: [] as any[] }));
   let placementQueue = [...finalPalletManifest];
   let dinLabelCounter = 0;
