@@ -417,23 +417,35 @@ const calculateLoadingLogic = (
 
     if (!shouldApply) return { manifest, applied: false };
 
-    // Need at least some singles to protect the front axle
-    if (singles.length === 0) {
-      console.log(`  ⚠️ SKIPPING: No singles available to place at front (all pallets are stacked)`);
+    // Rule: positions 1..8 must be singles; stacks begin at position 9
+    const REQUIRED_FRONT_SINGLES = 8;
+    let workingSingles = [...singles];
+    let workingPairGroups = [...pairGroups];
+
+    // If we don't have enough singles, "unstack" pairs to create them
+    while (workingSingles.length < REQUIRED_FRONT_SINGLES && workingPairGroups.length > 0) {
+      const pairToUnstack = workingPairGroups.pop()!; // Take last pair
+      // Add both pallets from the pair as singles
+      workingSingles.push(...pairToUnstack);
+      console.log(`  🔓 Unstacking pair to create singles (now have ${workingSingles.length} singles)`);
+    }
+
+    // If still don't have enough singles, we can't apply (shouldn't happen in normal scenarios)
+    if (workingSingles.length < REQUIRED_FRONT_SINGLES) {
+      console.log(`  ⚠️ SKIPPING: Not enough pallets to create 8 front singles`);
       return { manifest, applied: false };
     }
 
-    // Rule: positions 1..8 stay single; stacks begin at position 9; remainder singles follow.
-    const FRONT_SINGLES = Math.min(8, singles.length); // Use up to 8 singles, or all if less
-    const frontSingles = singles.slice(0, FRONT_SINGLES);
-    const tailSingles  = singles.slice(FRONT_SINGLES);
+    // Now arrange: 8 front singles, all stacks, then remaining singles
+    const frontSingles = workingSingles.slice(0, REQUIRED_FRONT_SINGLES);
+    const tailSingles = workingSingles.slice(REQUIRED_FRONT_SINGLES);
 
     const orderedType: any[] = [];
     orderedType.push(...frontSingles);
-    for (const grp of pairGroups) orderedType.push(...grp);
+    for (const grp of workingPairGroups) orderedType.push(...grp);
     orderedType.push(...tailSingles);
 
-    console.log(`  ✅ REORDERING: ${frontSingles.length} front singles, ${pairGroups.length} stacks (${pairGroups.length * 2} pallets), ${tailSingles.length} tail singles`);
+    console.log(`  ✅ REORDERING: ${frontSingles.length} front singles, ${workingPairGroups.length} stacks (${workingPairGroups.length * 2} pallets), ${tailSingles.length} tail singles`);
     console.log(`  Reordered sequence:`, orderedType.map((p, i) => `${i}:${p.isStacked ? 'S' : '-'}${p.stackGroupId || ''}`).join(' '));
 
     // Merge back, replacing only this type and keeping other types as-is
