@@ -434,6 +434,7 @@ const calculateLoadingLogic = (
     orderedType.push(...tailSingles);
 
     console.log(`  ✅ REORDERING: ${frontSingles.length} front singles, ${pairGroups.length} stacks (${pairGroups.length * 2} pallets), ${tailSingles.length} tail singles`);
+    console.log(`  Reordered sequence:`, orderedType.map((p, i) => `${i}:${p.isStacked ? 'S' : '-'}${p.stackGroupId || ''}`).join(' '));
 
     // Merge back, replacing only this type and keeping other types as-is
     const rebuilt: any[] = [];
@@ -444,6 +445,8 @@ const calculateLoadingLogic = (
     }
     return { manifest: rebuilt, applied: true };
   };
+
+  console.log('📋 BEFORE axle-aware:', finalPalletManifest.map((p, i) => `${i}:${p.type[0]}${p.isStacked ? 'S' : '-'}${p.stackGroupId || ''}`).join(' '));
 
   // Apply for DIN (industrial) → (26,42), base 26
   let tmp = reorderTypeAxleAware(finalPalletManifest, 'industrial', 26, 26, 42);
@@ -456,6 +459,8 @@ const calculateLoadingLogic = (
   finalPalletManifest = tmp.manifest;
   axleAwareApplied = axleAwareApplied || tmp.applied;
   if (tmp.applied) console.log('🎯 AXLE-AWARE APPLIED FOR EUP');
+
+  console.log('📋 AFTER axle-aware:', finalPalletManifest.map((p, i) => `${i}:${p.type[0]}${p.isStacked ? 'S' : '-'}${p.stackGroupId || ''}`).join(' '));
 
   // STAGE 2: PLACEMENT - Arrange the Manifest for Visualization
   const getPlacementPriority = (pallet: any) => {
@@ -568,10 +573,16 @@ const calculateLoadingLogic = (
         baseVisual.showAsFraction = true;
         const stackedLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
         baseVisual.displayStackedLabelId = stackedLabelId;
+        if (type === 'industrial' && nextLabelId <= 30) {
+          console.log(`🏗️ Placing DIN stack at labels ${nextLabelId}/${stackedLabelId}, X=${currentX}, Y=${currentY}, queueIdx=${i}`);
+        }
         unit.palletsVisual.push(baseVisual);
         const topVisual = { ...baseVisual, isStackedTier: 'top', labelId: stackedLabelId, key: `${baseVisual.key}_stack` };
         unit.palletsVisual.push(topVisual);
       } else {
+        if (type === 'industrial' && nextLabelId <= 30) {
+          console.log(`🏗️ Placing DIN single at label ${nextLabelId}, X=${currentX}, Y=${currentY}, queueIdx=${i}`);
+        }
         unit.palletsVisual.push(baseVisual);
       }
 
