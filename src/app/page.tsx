@@ -425,6 +425,11 @@ const calculateLoadingLogic = (
     // If we don't have enough singles, "unstack" pairs to create them
     while (workingSingles.length < REQUIRED_FRONT_SINGLES && workingPairGroups.length > 0) {
       const pairToUnstack = workingPairGroups.pop()!; // Take last pair
+      // Mark both pallets as NOT stacked and remove their stack group
+      for (const pallet of pairToUnstack) {
+        pallet.isStacked = false;
+        delete pallet.stackGroupId;
+      }
       // Add both pallets from the pair as singles
       workingSingles.push(...pairToUnstack);
       console.log(`  🔓 Unstacking pair to create singles (now have ${workingSingles.length} singles)`);
