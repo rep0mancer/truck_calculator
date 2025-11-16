@@ -358,6 +358,81 @@ const calculateLoadingLogic = (
     warnings.push(`${truckConfig.name.trim()} maximale DIN-Kapazität ist ${maxDinBase}. Angeforderte Menge ${totalDinRequested}, es werden ${Math.min(maxDinBase, usedDinBasePositions)} platziert.`);
   }
 
+  // --- AXLE-AWARE REORDERING: start stacking at base position 9 when not fully double-stacked ---
+  // This reorders ONLY along the trailer length; it does not change counts, weights, or visuals.
+  // DIN: totals in (26, 42); base=26.  EUP: totals in (33, 50); base=33.
+  let axleAwareApplied = false;
+
+  const reorderTypeAxleAware = (
+    manifest: any[],
+    type: 'industrial' | 'euro',
+    baseCapacity: number,
+    lowerExclusive: number,
+    upperExclusive: number
+  ) => {
+    // Extract items of the type
+    const items = manifest.filter(p => p.type === type);
+    if (items.length === 0) return { manifest, applied: false };
+
+    // Group stacked pairs and collect singles
+    const pairBuckets = new Map<string, any[]>();
+    const singles: any[] = [];
+    for (const p of items) {
+      if (p.isStacked && p.stackGroupId) {
+        const k = String(p.stackGroupId);
+        if (!pairBuckets.has(k)) pairBuckets.set(k, []);
+        pairBuckets.get(k)!.push(p);
+      } else {
+        singles.push(p);
+      }
+    }
+    const pairGroups = Array.from(pairBuckets.values()).map(g =>
+      g.sort((a, b) => ((a.id ?? 0) - (b.id ?? 0)))
+    );
+
+    const totalLoaded = items.length;                          // base + tops
+    const stacksCount = pairGroups.length;                     // number of base positions taken by stacks
+    const basePositionsUsed = singles.length + stacksCount;    // base deck usage by this type
+
+    // Only apply when: stacks exist, base deck for this type is full, and we're in the mid-range window
+    const shouldApply =
+      stacksCount > 0 &&
+      basePositionsUsed === baseCapacity &&
+      totalLoaded > lowerExclusive &&
+      totalLoaded < upperExclusive;
+
+    if (!shouldApply) return { manifest, applied: false };
+
+    // Rule: positions 1..8 stay single; stacks begin at position 9; remainder singles follow.
+    const FRONT_SINGLES = 8;
+    const frontSingles = singles.slice(0, FRONT_SINGLES);
+    const tailSingles  = singles.slice(FRONT_SINGLES);
+
+    const orderedType: any[] = [];
+    orderedType.push(...frontSingles);
+    for (const grp of pairGroups) orderedType.push(...grp);
+    orderedType.push(...tailSingles);
+
+    // Merge back, replacing only this type and keeping other types as-is
+    const rebuilt: any[] = [];
+    let idx = 0;
+    for (const p of manifest) {
+      if (p.type === type) rebuilt.push(orderedType[idx++]);
+      else rebuilt.push(p);
+    }
+    return { manifest: rebuilt, applied: true };
+  };
+
+  // Apply for DIN (industrial) → (26,42), base 26
+  let tmp = reorderTypeAxleAware(finalPalletManifest, 'industrial', 26, 26, 42);
+  finalPalletManifest = tmp.manifest;
+  axleAwareApplied = axleAwareApplied || tmp.applied;
+
+  // Apply for EUP (euro) → (33,50), base 33
+  tmp = reorderTypeAxleAware(finalPalletManifest, 'euro', 33, 33, 50);
+  finalPalletManifest = tmp.manifest;
+  axleAwareApplied = axleAwareApplied || tmp.applied;
+
   // STAGE 2: PLACEMENT - Arrange the Manifest for Visualization
   const getPlacementPriority = (pallet: any) => {
     if (pallet.isStacked && pallet.type === 'industrial') return 1; // FIX: DIN stacked first
@@ -366,14 +441,21 @@ const calculateLoadingLogic = (
     if (!pallet.isStacked && pallet.type === 'euro') return 4;
     return 5;
   };
-  finalPalletManifest.sort((a, b) => {
-    const ap = getPlacementPriority(a);
-    const bp = getPlacementPriority(b);
-    if (ap !== bp) return ap - bp;
-    // Keep stack pairs together and stable order otherwise
-    if (a.stackGroupId && b.stackGroupId) return String(a.stackGroupId).localeCompare(String(b.stackGroupId));
-    return 0;
-  });
+  if (!axleAwareApplied) {
+    finalPalletManifest.sort((a, b) => {
+      const ap = getPlacementPriority(a);
+      const bp = getPlacementPriority(b);
+      if (ap !== bp) return ap - bp;
+      // Keep stack pairs together and stable order otherwise
+      if (a.stackGroupId && b.stackGroupId && a.stackGroupId === b.stackGroupId) {
+        return (a.id ?? 0) - (b.id ?? 0);
+      }
+      if (a.stackGroupId && b.stackGroupId) {
+        return String(a.stackGroupId).localeCompare(String(b.stackGroupId));
+      }
+      return 0;
+    });
+  }
 
   // STAGE 2: PLACEMENT (This is the new, correct implementation)
   const unitsState = truckConfig.units.map((u: any) => ({ ...u, palletsVisual: [] as any[] }));
