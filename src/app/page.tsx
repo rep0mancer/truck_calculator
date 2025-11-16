@@ -408,10 +408,7 @@ const calculateLoadingLogic = (
     const frontSingles = singles.slice(0, FRONT_SINGLES);
     const tailSingles  = singles.slice(FRONT_SINGLES);
 
-    const orderedType: any[] = [];
-    orderedType.push(...frontSingles);
-    for (const grp of pairGroups) orderedType.push(...grp);
-    orderedType.push(...tailSingles);
+    const orderedType: any[] = [...frontSingles, ...pairGroups.flat(), ...tailSingles];
 
     // Merge back, replacing only this type and keeping other types as-is
     const rebuilt: any[] = [];
