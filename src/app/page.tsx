@@ -282,6 +282,7 @@ const calculateLoadingLogic = (
   let currentWeight = 0;
   let finalActualDINBase = 0;
   let finalActualEUPBase = 0;
+  let axleSpacerSeed = 1;
   const maxDinBase = typeof truckConfig.maxDinPallets === 'number' ? truckConfig.maxDinPallets : undefined;
   let usedDinBasePositions = 0;
   let warnings: string[] = [];
@@ -358,22 +359,126 @@ const calculateLoadingLogic = (
     warnings.push(`${truckConfig.name.trim()} maximale DIN-Kapazität ist ${maxDinBase}. Angeforderte Menge ${totalDinRequested}, es werden ${Math.min(maxDinBase, usedDinBasePositions)} platziert.`);
   }
 
+  // --- AXLE-AWARE REORDERING: start stacking at base position 9 when not fully double-stacked ---
+  // This reorders ONLY along the trailer length; it does not change counts, weights, or visuals.
+  // DIN: totals in (26, 42); base=26.  EUP: totals in (33, 50); base=33.
+  const axleAwareAppliedTypes = new Set<'industrial' | 'euro'>();
+
+  const reorderTypeAxleAware = (
+    manifest: any[],
+    type: 'industrial' | 'euro',
+    baseCapacity: number,
+    lowerExclusive: number,
+    upperExclusive: number
+  ) => {
+    // Extract items of the type
+    const items = manifest.filter(p => p.type === type);
+    if (items.length === 0) return { manifest, applied: false };
+
+    // Group stacked pairs and collect singles
+    const pairBuckets = new Map<string, any[]>();
+    const singles: any[] = [];
+    for (const p of items) {
+      if (p.isStacked && p.stackGroupId) {
+        const k = String(p.stackGroupId);
+        if (!pairBuckets.has(k)) pairBuckets.set(k, []);
+        pairBuckets.get(k)!.push(p);
+      } else {
+        singles.push(p);
+      }
+    }
+    const pairGroups = Array.from(pairBuckets.values()).map(g =>
+      g.sort((a, b) => ((a.id ?? 0) - (b.id ?? 0)))
+    );
+
+    const totalLoaded = items.length;                          // base + tops
+    const stacksCount = pairGroups.length;                     // number of base positions taken by stacks
+    const basePositionsUsed = singles.length + stacksCount;    // base deck usage by this type
+    if (basePositionsUsed > baseCapacity) return { manifest, applied: false };
+
+    // Only apply when stacks exist, we're within the mid-range window, and the deck isn't over capacity
+    const shouldApply =
+      stacksCount > 0 &&
+      totalLoaded > lowerExclusive &&
+      totalLoaded < upperExclusive;
+
+    if (!shouldApply) return { manifest, applied: false };
+
+    // Rule: positions 1..8 stay single; stacks begin at position 9; remainder singles follow.
+    const FRONT_SINGLES = 8;
+    const frontSingles = singles.slice(0, Math.min(FRONT_SINGLES, singles.length));
+    const tailSingles  = singles.slice(frontSingles.length);
+    const missingFrontSingles = Math.max(0, FRONT_SINGLES - frontSingles.length);
+    const availableEmptySlots = Math.max(0, baseCapacity - basePositionsUsed);
+    const placeholderCount = Math.min(missingFrontSingles, availableEmptySlots);
+
+    const orderedType: any[] = [];
+    orderedType.push(...frontSingles);
+    for (const grp of pairGroups) orderedType.push(...grp);
+    orderedType.push(...tailSingles);
+
+    // Merge back, replacing only this type and keeping other types as-is
+    const rebuilt: any[] = [];
+    let idx = 0;
+    for (const p of manifest) {
+      if (p.type === type) rebuilt.push(orderedType[idx++]);
+      else rebuilt.push(p);
+    }
+    if (placeholderCount > 0) {
+      const placeholders = Array.from({ length: placeholderCount }, () => ({
+        id: `axle_spacer_${type}_${axleSpacerSeed++}`,
+        isAxleSpacer: true,
+        axleSpacerFor: type,
+      }));
+      const firstStackIndex = rebuilt.findIndex(p => p.type === type && p.isStacked);
+      if (firstStackIndex !== -1) {
+        rebuilt.splice(firstStackIndex, 0, ...placeholders);
+      }
+    }
+    return { manifest: rebuilt, applied: true };
+  };
+
+  // Apply for DIN (industrial) → (26,42), base 26
+  let tmp = reorderTypeAxleAware(finalPalletManifest, 'industrial', 26, 26, 42);
+  finalPalletManifest = tmp.manifest;
+  if (tmp.applied) axleAwareAppliedTypes.add('industrial');
+
+  // Apply for EUP (euro) → (33,50), base 33
+  tmp = reorderTypeAxleAware(finalPalletManifest, 'euro', 33, 33, 50);
+  finalPalletManifest = tmp.manifest;
+  if (tmp.applied) axleAwareAppliedTypes.add('euro');
+
   // STAGE 2: PLACEMENT - Arrange the Manifest for Visualization
   const getPlacementPriority = (pallet: any) => {
+    if (pallet?.isAxleSpacer) return 99;
     if (pallet.isStacked && pallet.type === 'industrial') return 1; // FIX: DIN stacked first
     if (pallet.isStacked && pallet.type === 'euro') return 2;       // FIX: Then EUP stacked
     if (!pallet.isStacked && pallet.type === 'industrial') return 3;
     if (!pallet.isStacked && pallet.type === 'euro') return 4;
     return 5;
   };
-  finalPalletManifest.sort((a, b) => {
+  const comparePlacement = (a: any, b: any) => {
     const ap = getPlacementPriority(a);
     const bp = getPlacementPriority(b);
     if (ap !== bp) return ap - bp;
-    // Keep stack pairs together and stable order otherwise
-    if (a.stackGroupId && b.stackGroupId) return String(a.stackGroupId).localeCompare(String(b.stackGroupId));
+    if (a.stackGroupId && b.stackGroupId && a.stackGroupId === b.stackGroupId) {
+      return (a.id ?? 0) - (b.id ?? 0);
+    }
     return 0;
-  });
+  };
+  const isProtected = (pallet: any) =>
+    pallet?.isAxleSpacer ||
+    (pallet?.type === 'industrial' && axleAwareAppliedTypes.has('industrial')) ||
+    (pallet?.type === 'euro' && axleAwareAppliedTypes.has('euro'));
+
+  if (axleAwareAppliedTypes.size === 0) {
+    finalPalletManifest.sort(comparePlacement);
+  } else {
+    const unprotected = finalPalletManifest.filter(p => !isProtected(p));
+    unprotected.sort(comparePlacement);
+    let idx = 0;
+    finalPalletManifest = finalPalletManifest.map(p => (isProtected(p) ? p : unprotected[idx++]));
+  }
 
   // STAGE 2: PLACEMENT (This is the new, correct implementation)
   const unitsState = truckConfig.units.map((u: any) => ({ ...u, palletsVisual: [] as any[] }));
@@ -389,18 +494,37 @@ const calculateLoadingLogic = (
     let currentY = 0;
     let currentRowHeight = 0;
     let activeEupPatternForRow = currentEupLoadingPattern;
+    let consumedFromQueue = 0;
     // Use a traditional for loop for stability, as we manually advance the index
     for (let i = 0; i < placementQueue.length; /* no increment */) {
       const palletToPlace = placementQueue[i];
-      const { type, isStacked } = palletToPlace;
+      if (!palletToPlace) {
+        i++;
+        consumedFromQueue++;
+        continue;
+      }
+      const isPlaceholder = Boolean(palletToPlace.isAxleSpacer);
+      const effectiveType = isPlaceholder ? palletToPlace.axleSpacerFor : palletToPlace.type;
+      if (effectiveType !== 'euro' && effectiveType !== 'industrial') {
+        i++;
+        consumedFromQueue++;
+        continue;
+      }
+      const type = effectiveType;
+      const isStacked = !isPlaceholder && Boolean(palletToPlace.isStacked);
       if (currentY === 0 && type === 'euro' && currentEupLoadingPattern === 'auto') {
         const remainingLength = unit.length - currentX;
         // Count consecutive euro bases ahead
         let countBases = 0;
         let j = i;
         while (j < placementQueue.length) {
-          if (placementQueue[j].type !== 'euro') break;
-          if (placementQueue[j].isStacked) {
+          const candidate = placementQueue[j];
+          if (!candidate || candidate.isAxleSpacer) {
+            j++;
+            continue;
+          }
+          if (candidate.type !== 'euro') break;
+          if (candidate.isStacked) {
             countBases++;
             j += 2;
           } else {
@@ -444,38 +568,41 @@ const calculateLoadingLogic = (
       const itemsInThisPosition = isStacked ? [placementQueue[i], placementQueue[i + 1]] : [placementQueue[i]];
 
       // Create visual(s)
-      const nextLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
-      const baseKeySuffix = type === 'euro' ? placedEupBaseIndex : placedDinBaseIndex;
-      const baseVisual: any = {
-        x: currentX, y: currentY, width: palletLen, height: palletWid,
-        type, isStackedTier: null, unitId: unit.id,
-        labelId: nextLabelId, displayBaseLabelId: nextLabelId, displayStackedLabelId: null,
-        showAsFraction: false, key: `${type}_${baseKeySuffix}`
-      };
+      if (!isPlaceholder) {
+        const nextLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
+        const baseKeySuffix = type === 'euro' ? placedEupBaseIndex : placedDinBaseIndex;
+        const baseVisual: any = {
+          x: currentX, y: currentY, width: palletLen, height: palletWid,
+          type, isStackedTier: null, unitId: unit.id,
+          labelId: nextLabelId, displayBaseLabelId: nextLabelId, displayStackedLabelId: null,
+          showAsFraction: false, key: `${type}_${baseKeySuffix}`
+        };
 
-      totalAreaBase += (type === 'euro' ? PALLET_TYPES.euro.area : PALLET_TYPES.industrial.area);
+        totalAreaBase += (type === 'euro' ? PALLET_TYPES.euro.area : PALLET_TYPES.industrial.area);
 
-      if (isStacked) {
-        baseVisual.isStackedTier = 'base';
-        baseVisual.showAsFraction = true;
-        const stackedLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
-        baseVisual.displayStackedLabelId = stackedLabelId;
-        unit.palletsVisual.push(baseVisual);
-        const topVisual = { ...baseVisual, isStackedTier: 'top', labelId: stackedLabelId, key: `${baseVisual.key}_stack` };
-        unit.palletsVisual.push(topVisual);
-      } else {
-        unit.palletsVisual.push(baseVisual);
+        if (isStacked) {
+          baseVisual.isStackedTier = 'base';
+          baseVisual.showAsFraction = true;
+          const stackedLabelId = type === 'euro' ? (++eupLabelCounter) : (++dinLabelCounter);
+          baseVisual.displayStackedLabelId = stackedLabelId;
+          unit.palletsVisual.push(baseVisual);
+          const topVisual = { ...baseVisual, isStackedTier: 'top', labelId: stackedLabelId, key: `${baseVisual.key}_stack` };
+          unit.palletsVisual.push(topVisual);
+        } else {
+          unit.palletsVisual.push(baseVisual);
+        }
+
+        if (type === 'euro') placedEupBaseIndex++; else placedDinBaseIndex++;
       }
-
-      if (type === 'euro') placedEupBaseIndex++; else placedDinBaseIndex++;
 
       // Update cursors for the next pallet in the row
       currentY += palletWid;
       currentRowHeight = Math.max(currentRowHeight, palletLen);
       i += itemsInThisPosition.length; // Advance index by 1 for singles, 2 for stacked
+      consumedFromQueue += itemsInThisPosition.length;
     }
-    // Remove the placed pallets from the main queue
-    placementQueue.splice(0, unit.palletsVisual.length);
+    // Remove the consumed entries (including axle spacers) from the main queue
+    placementQueue.splice(0, consumedFromQueue);
   }
 
   // Compute metrics for return
