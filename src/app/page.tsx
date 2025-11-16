@@ -80,6 +80,12 @@ const MAX_PALLET_SIMULATION_QUANTITY = 300;
 const STACKED_EUP_THRESHOLD_FOR_AXLE_WARNING = 18;
 const STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING = 16;
 const MAX_WEIGHT_PER_METER_KG = 1800;
+type StackBand = 'front' | 'stack' | 'rear';
+
+const STACKING_RULES = {
+  industrial: { slotLengthCm: 50, stackZoneSlots: 9, frontBufferSlots: 8 },
+  euro: { slotLengthCm: 40, stackZoneSlots: 9, frontBufferSlots: 8 },
+} as const;
 
 const KILOGRAM_FORMATTER = new Intl.NumberFormat('de-DE', {
   maximumFractionDigits: 0,
@@ -248,33 +254,70 @@ const calculateLoadingLogic = (
     singles: Array<any>,
     isStackable: boolean,
     limit: number | string | undefined,
-    type: 'euro' | 'industrial'
+    type: 'euro' | 'industrial',
+    lengthLimitCm: number
   ) => {
     const pairs: Array<any> = [];
-    if (!isStackable) return { pairs, remaining: [...singles] };
-    const numericLimit = (typeof limit === 'string' ? parseInt(limit, 10) : limit) || 0; // 0 means unlimited
-    const allowedStackableCount = numericLimit > 0 ? Math.min(numericLimit, singles.length) : singles.length;
-    const pairCount = Math.floor(allowedStackableCount / 2);
-    const working = [...singles];
-    for (let i = 0; i < pairCount; i++) {
+    const frontSingles: Array<any> = [];
+    let tailSingles: Array<any> = [];
+    if (!isStackable) {
+      tailSingles = [...singles];
+      return { pairs, frontSingles, tailSingles };
+    }
+    const stackingRule = STACKING_RULES[type];
+    const slotLength = stackingRule.slotLengthCm;
+    const baseCapacity = slotLength > 0 ? Math.floor(lengthLimitCm / slotLength) : 0;
+    const working = singles.map((single) => single);
+    if (baseCapacity <= 0) {
+      tailSingles = working;
+      return { pairs, frontSingles, tailSingles };
+    }
+    const numericLimit = (typeof limit === 'string' ? parseInt(limit, 10) : limit) || 0;
+    const overflow = Math.max(0, working.length - baseCapacity);
+    if (overflow <= 0) {
+      tailSingles = working;
+      return { pairs, frontSingles, tailSingles };
+    }
+    let pairsToBuild = Math.min(overflow, stackingRule.stackZoneSlots);
+    pairsToBuild = Math.min(pairsToBuild, Math.floor(working.length / 2));
+    if (numericLimit > 0) {
+      pairsToBuild = Math.min(pairsToBuild, Math.floor(Math.min(numericLimit, working.length) / 2));
+    }
+    if (pairsToBuild <= 0) {
+      tailSingles = working;
+      return { pairs, frontSingles, tailSingles };
+    }
+    const maxFrontByAvailability = Math.max(0, working.length - pairsToBuild * 2);
+    const maxFrontByCapacity = Math.max(0, baseCapacity - stackingRule.stackZoneSlots);
+    const desiredFrontBuffer = Math.min(stackingRule.frontBufferSlots, maxFrontByAvailability, maxFrontByCapacity);
+    if (desiredFrontBuffer > 0) {
+      const reservedFront = working.splice(0, desiredFrontBuffer);
+      reservedFront.forEach((single) => { single.stackPlacementBand = 'front' as StackBand; });
+      frontSingles.push(...reservedFront);
+    }
+    for (let i = 0; i < pairsToBuild; i++) {
       const first = working.shift();
       const second = working.shift();
       if (!first || !second) break;
       const groupId = `grp_${type}_${stackGroupSeed++}`;
-      first.isStacked = true; first.stackGroupId = groupId;
-      second.isStacked = true; second.stackGroupId = groupId;
+      first.isStacked = true; first.stackGroupId = groupId; first.stackPlacementBand = 'stack' as StackBand;
+      second.isStacked = true; second.stackGroupId = groupId; second.stackPlacementBand = 'stack' as StackBand;
       pairs.push({ type, weight: (first.weight || 0) + (second.weight || 0), isStacked: true, id: uniqueIdSeed++, pair: [first, second], stackGroupId: groupId });
     }
-    return { pairs, remaining: working };
+    tailSingles = working;
+    tailSingles.forEach((single: any) => { single.stackPlacementBand = 'rear' as StackBand; });
+    return { pairs, frontSingles, tailSingles };
   };
 
-  const dinStackBuild = buildStackedPairs(allDinSingles, isDINStackable, maxStackedDin, 'industrial');
-  const eupStackBuild = buildStackedPairs(allEupSingles, isEUPStackable, maxStackedEup, 'euro');
+    const dinStackBuild = buildStackedPairs(allDinSingles, isDINStackable, maxStackedDin, 'industrial', lengthLimitCm);
+    const eupStackBuild = buildStackedPairs(allEupSingles, isEUPStackable, maxStackedEup, 'euro', lengthLimitCm);
 
-  const stackedDinCandidates = dinStackBuild.pairs; // array of pair-candidates
-  const stackedEupCandidates = eupStackBuild.pairs; // array of pair-candidates
-  const dinSingleCandidates = dinStackBuild.remaining; // singles not used in stacks
-  const eupSingleCandidates = eupStackBuild.remaining; // singles not used in stacks
+    const stackedDinCandidates = dinStackBuild.pairs; // array of pair-candidates
+    const stackedEupCandidates = eupStackBuild.pairs; // array of pair-candidates
+    const dinFrontSingles = dinStackBuild.frontSingles;
+    const dinTailSingles = dinStackBuild.tailSingles;
+    const eupFrontSingles = eupStackBuild.frontSingles;
+    const eupTailSingles = eupStackBuild.tailSingles;
 
   // STAGE 1: SELECTION - Determine Final Pallet Manifest by master priority
   let finalPalletManifest: Array<any> = [];
@@ -329,17 +372,19 @@ const calculateLoadingLogic = (
     }
   };
 
-  if (placementOrder === 'DIN_FIRST') {
-    tryPairs(stackedDinCandidates, 'industrial');
-    if (!selectionStop.stopped) trySingles(dinSingleCandidates, 'industrial');
-    if (!selectionStop.stopped) tryPairs(stackedEupCandidates, 'euro');
-    if (!selectionStop.stopped) trySingles(eupSingleCandidates, 'euro');
-  } else {
-    tryPairs(stackedEupCandidates, 'euro');
-    if (!selectionStop.stopped) trySingles(eupSingleCandidates, 'euro');
-    if (!selectionStop.stopped) tryPairs(stackedDinCandidates, 'industrial');
-    if (!selectionStop.stopped) trySingles(dinSingleCandidates, 'industrial');
-  }
+    const processStackPlan = (build: { frontSingles: Array<any>; pairs: Array<any>; tailSingles: Array<any>; }, type: 'industrial' | 'euro') => {
+      if (!selectionStop.stopped && build.frontSingles.length > 0) trySingles(build.frontSingles, type);
+      if (!selectionStop.stopped && build.pairs.length > 0) tryPairs(build.pairs, type);
+      if (!selectionStop.stopped && build.tailSingles.length > 0) trySingles(build.tailSingles, type);
+    };
+
+    if (placementOrder === 'DIN_FIRST') {
+      processStackPlan({ frontSingles: dinFrontSingles, pairs: stackedDinCandidates, tailSingles: dinTailSingles }, 'industrial');
+      if (!selectionStop.stopped) processStackPlan({ frontSingles: eupFrontSingles, pairs: stackedEupCandidates, tailSingles: eupTailSingles }, 'euro');
+    } else {
+      processStackPlan({ frontSingles: eupFrontSingles, pairs: stackedEupCandidates, tailSingles: eupTailSingles }, 'euro');
+      if (!selectionStop.stopped) processStackPlan({ frontSingles: dinFrontSingles, pairs: stackedDinCandidates, tailSingles: dinTailSingles }, 'industrial');
+    }
 
   // Leftover warning
   const totalDinRequested = requestedDinQuantity;
@@ -359,13 +404,19 @@ const calculateLoadingLogic = (
   }
 
   // STAGE 2: PLACEMENT - Arrange the Manifest for Visualization
-  const getPlacementPriority = (pallet: any) => {
-    if (pallet.isStacked && pallet.type === 'industrial') return 1; // FIX: DIN stacked first
-    if (pallet.isStacked && pallet.type === 'euro') return 2;       // FIX: Then EUP stacked
-    if (!pallet.isStacked && pallet.type === 'industrial') return 3;
-    if (!pallet.isStacked && pallet.type === 'euro') return 4;
-    return 5;
-  };
+    const getPlacementPriority = (pallet: any) => {
+      const band = pallet.stackPlacementBand as StackBand | undefined;
+      if (pallet.type === 'industrial') {
+        if (band === 'front') return 1;
+        if (band === 'stack') return 2;
+        if (band === 'rear') return 3;
+        return pallet.isStacked ? 2 : 3;
+      }
+      if (band === 'front') return 4;
+      if (band === 'stack') return 5;
+      if (band === 'rear') return 6;
+      return pallet.isStacked ? 5 : 6;
+    };
   finalPalletManifest.sort((a, b) => {
     const ap = getPlacementPriority(a);
     const bp = getPlacementPriority(b);
