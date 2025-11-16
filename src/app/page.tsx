@@ -80,6 +80,130 @@ const MAX_PALLET_SIMULATION_QUANTITY = 300;
 const STACKED_EUP_THRESHOLD_FOR_AXLE_WARNING = 18;
 const STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING = 16;
 const MAX_WEIGHT_PER_METER_KG = 1800;
+const STACKING_PREFERENCE_THRESHOLDS: Record<'industrial' | 'euro', number> = {
+  industrial: 44,
+  euro: 54,
+};
+
+type PalletCategory = 'industrial' | 'euro';
+
+type SlotInfo = {
+  coords: { x: number; y: number; width: number; height: number };
+  center: number;
+  column: number;
+  occupant: any;
+  top?: any;
+};
+
+type StackingTotals = Record<PalletCategory, number>;
+
+const computeVisualTypeTotals = (units: Array<{ palletsVisual: any[] }>): StackingTotals => {
+  return units.reduce<StackingTotals>(
+    (acc, unit) => {
+      if (!unit?.palletsVisual) return acc;
+      for (const pallet of unit.palletsVisual) {
+        if (pallet.type === 'industrial') acc.industrial += 1;
+        else if (pallet.type === 'euro') acc.euro += 1;
+      }
+      return acc;
+    },
+    { industrial: 0, euro: 0 }
+  );
+};
+
+const applyStackingPlacementPreference = (
+  units: Array<{ length: number; palletsVisual: any[] }>,
+  totals: StackingTotals
+) => {
+  (Object.keys(STACKING_PREFERENCE_THRESHOLDS) as PalletCategory[]).forEach((type) => {
+    const total = totals[type];
+    const threshold = STACKING_PREFERENCE_THRESHOLDS[type];
+    if (!total || total >= threshold) return;
+    for (const unit of units) {
+      redistributeStacksTowardsCenter(unit, type);
+    }
+  });
+};
+
+const redistributeStacksTowardsCenter = (
+  unit: { length: number; palletsVisual: any[] },
+  type: PalletCategory
+) => {
+  if (!unit?.palletsVisual?.length) return;
+  const slots = buildSlotInfos(unit, type);
+  if (slots.length === 0) return;
+
+  const stackCount = slots.filter((slot) => !!slot.top).length;
+  if (stackCount === 0) return;
+
+  const mid = (unit.length || 0) / 2;
+  const sortedTargets = [...slots].sort((a, b) => {
+    const distDiff = Math.abs(a.center - mid) - Math.abs(b.center - mid);
+    if (distDiff !== 0) return distDiff;
+    const dirA = a.center >= mid ? 0 : 1;
+    const dirB = b.center >= mid ? 0 : 1;
+    if (dirA !== dirB) return dirA - dirB;
+    if (a.center === b.center) return a.column - b.column;
+    return a.center - b.center;
+  });
+
+  const targetSlots = sortedTargets.slice(0, stackCount);
+  const targetSet = new Set(targetSlots);
+  const donors = slots
+    .filter((slot) => slot.top && !targetSet.has(slot))
+    .sort((a, b) => Math.abs(b.center - mid) - Math.abs(a.center - mid));
+
+  for (const target of targetSlots) {
+    if (target.top) continue;
+    const donor = donors.shift();
+    if (!donor) break;
+    swapSlotOccupants(donor, target);
+  }
+};
+
+const buildSlotInfos = (unit: { palletsVisual: any[] }, type: PalletCategory): SlotInfo[] => {
+  const byKey = new Map(unit.palletsVisual.map((p: any) => [p.key, p]));
+  return unit.palletsVisual
+    .filter((p: any) => p.type === type && p.isStackedTier !== 'top')
+    .map((base: any) => ({
+      coords: {
+        x: base.x ?? 0,
+        y: base.y ?? 0,
+        width: base.width ?? 0,
+        height: base.height ?? 0,
+      },
+      center: (base.x ?? 0) + ((base.width ?? 0) / 2),
+      column: base.y ?? 0,
+      occupant: base,
+      top: base.isStackedTier === 'base' ? byKey.get(`${base.key}_stack`) : undefined,
+    }));
+};
+
+const placeVisualAtCoords = (pallet: any, coords: SlotInfo['coords']) => {
+  if (!pallet) return;
+  pallet.x = coords.x;
+  pallet.y = coords.y;
+  pallet.width = coords.width;
+  pallet.height = coords.height;
+};
+
+const swapSlotOccupants = (slotA: SlotInfo, slotB: SlotInfo) => {
+  if (!slotA || !slotB || slotA === slotB) return;
+  const occupantA = slotA.occupant;
+  const topA = slotA.top;
+  const occupantB = slotB.occupant;
+  const topB = slotB.top;
+
+  placeVisualAtCoords(occupantA, slotB.coords);
+  placeVisualAtCoords(topA, slotB.coords);
+  placeVisualAtCoords(occupantB, slotA.coords);
+  placeVisualAtCoords(topB, slotA.coords);
+
+  slotA.occupant = occupantB;
+  slotA.top = topB;
+  slotB.occupant = occupantA;
+  slotB.top = topA;
+};
 
 const KILOGRAM_FORMATTER = new Intl.NumberFormat('de-DE', {
   maximumFractionDigits: 0,
@@ -478,10 +602,13 @@ const calculateLoadingLogic = (
     placementQueue.splice(0, unit.palletsVisual.length);
   }
 
+  const totalsBeforeRebalance = computeVisualTypeTotals(unitsState);
+  applyStackingPlacementPreference(unitsState, totalsBeforeRebalance);
+  const totalsAfterRebalance = computeVisualTypeTotals(unitsState);
+
   // Compute metrics for return
-  const totalVisual = unitsState.flatMap((u: any) => u.palletsVisual).length;
-  const totalDinPalletsVisual = unitsState.flatMap((u: any) => u.palletsVisual).filter((p: any) => p.type === 'industrial').length;
-  const totalEuroPalletsVisual = unitsState.flatMap((u: any) => u.palletsVisual).filter((p: any) => p.type === 'euro').length;
+  const totalDinPalletsVisual = totalsAfterRebalance.industrial;
+  const totalEuroPalletsVisual = totalsAfterRebalance.euro;
   const palletArrangement = unitsState.map((u: any) => ({ unitId: u.id, unitLength: u.length, unitWidth: u.width, pallets: u.palletsVisual }));
 
   // Utilization and weight-derived warnings
