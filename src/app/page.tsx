@@ -74,12 +74,117 @@ const PALLET_TYPES = {
   industrial: { name: 'Industrial Palette (1.2m x 1.0m)', type: 'industrial', length: 120, width: 100, area: 120 * 100, color: 'bg-green-500', borderColor: 'border-green-700' },
 };
 
-
 const MAX_GROSS_WEIGHT_KG = 24000;
 const MAX_PALLET_SIMULATION_QUANTITY = 300;
 const STACKED_EUP_THRESHOLD_FOR_AXLE_WARNING = 18;
 const STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING = 16;
 const MAX_WEIGHT_PER_METER_KG = 1800;
+
+const DIN_STACK_PRIORITY_THRESHOLD = 44;
+const EUP_STACK_PRIORITY_THRESHOLD = 54;
+const STACK_ZONE_CENTER_RATIO: Record<'industrial' | 'euro', number> = {
+  industrial: 0.4,
+  euro: 0.38,
+};
+
+const countPalletsByType = (unitsState: any[]) => {
+  let industrial = 0;
+  let euro = 0;
+  for (const unit of unitsState) {
+    for (const pallet of unit.palletsVisual || []) {
+      if (pallet.type === 'industrial') industrial += 1;
+      else if (pallet.type === 'euro') euro += 1;
+    }
+  }
+  return {
+    industrial,
+    euro,
+    total: industrial + euro,
+  };
+};
+
+const hasStackedForType = (unitsState: any[], type: 'industrial' | 'euro') =>
+  unitsState.some((unit: any) =>
+    unit.palletsVisual?.some((p: any) => p.type === type && p.isStackedTier === 'base')
+  );
+
+const buildColumnOrder = (totalColumns: number, centerRatio: number) => {
+  if (totalColumns <= 0) return [];
+  const centerWidth = Math.max(1, Math.round(totalColumns * centerRatio));
+  const centerStart = Math.max(0, Math.floor((totalColumns - centerWidth) / 2));
+  const centerEnd = Math.min(totalColumns, centerStart + centerWidth);
+  const order: number[] = [];
+  for (let i = centerStart; i < centerEnd; i++) order.push(i); // center zone
+  for (let i = centerEnd; i < totalColumns; i++) order.push(i); // rear portion
+  for (let i = centerStart - 1; i >= 0; i--) order.push(i); // front portion
+  return order;
+};
+
+const applyStackZonePriority = (
+  unitsState: any[],
+  {
+    type,
+    totalVisual,
+    threshold,
+    centerRatio,
+  }: { type: 'industrial' | 'euro'; totalVisual: number; threshold: number; centerRatio: number }
+) => {
+  if (totalVisual === 0 || totalVisual >= threshold) return;
+
+  for (const unit of unitsState) {
+    if (!Array.isArray(unit.palletsVisual) || unit.palletsVisual.length === 0) continue;
+
+    const palletByKey = new Map(unit.palletsVisual.map((p: any) => [p.key, p]));
+    const groups = unit.palletsVisual
+      .filter((p: any) => p.type === type && p.isStackedTier !== 'top')
+      .map((base: any) => ({
+        base,
+        top: base.isStackedTier === 'base' ? palletByKey.get(`${base.key}_stack`) : undefined,
+        isStacked: base.isStackedTier === 'base',
+      }));
+
+    if (!groups.some((g) => g.isStacked)) continue;
+
+    const slotWidths = Array.from(
+      new Set(groups.map((g) => Math.round(g.base.width)).filter((w) => w > 0))
+    );
+    if (slotWidths.length !== 1) continue;
+    const slotLength = slotWidths[0];
+    if (!slotLength || typeof unit.length !== 'number' || unit.length <= 0) continue;
+
+    const totalColumns = Math.max(1, Math.floor((unit.length - slotLength) / slotLength) + 1);
+    const columnOrder = buildColumnOrder(totalColumns, centerRatio);
+    if (columnOrder.length === 0 || columnOrder.length < groups.length) continue;
+
+    const stacked = groups.filter((g) => g.isStacked);
+    const singles = groups.filter((g) => !g.isStacked);
+    const usedColumns = new Set<number>();
+    let orderIdx = 0;
+
+    const assignColumn = (group: any, columnIndex: number | undefined) => {
+      if (columnIndex === undefined) return;
+      usedColumns.add(columnIndex);
+      const newX = columnIndex * slotLength;
+      group.base.x = newX;
+      if (group.top) {
+        group.top.x = newX;
+      }
+    };
+
+    for (const group of stacked) {
+      const columnIndex = columnOrder[orderIdx++];
+      assignColumn(group, columnIndex);
+    }
+
+    const remainingColumns = columnOrder.filter((col) => !usedColumns.has(col));
+    if (remainingColumns.length < singles.length) continue;
+    let singleIdx = 0;
+    for (const group of singles) {
+      const columnIndex = remainingColumns[singleIdx++];
+      assignColumn(group, columnIndex);
+    }
+  }
+};
 
 const KILOGRAM_FORMATTER = new Intl.NumberFormat('de-DE', {
   maximumFractionDigits: 0,
@@ -478,10 +583,29 @@ const calculateLoadingLogic = (
     placementQueue.splice(0, unit.palletsVisual.length);
   }
 
+  const initialTypeCounts = countPalletsByType(unitsState);
+  if (hasStackedForType(unitsState, 'industrial')) {
+    applyStackZonePriority(unitsState, {
+      type: 'industrial',
+      totalVisual: initialTypeCounts.industrial,
+      threshold: DIN_STACK_PRIORITY_THRESHOLD,
+      centerRatio: STACK_ZONE_CENTER_RATIO.industrial,
+    });
+  }
+  if (hasStackedForType(unitsState, 'euro')) {
+    applyStackZonePriority(unitsState, {
+      type: 'euro',
+      totalVisual: initialTypeCounts.euro,
+      threshold: EUP_STACK_PRIORITY_THRESHOLD,
+      centerRatio: STACK_ZONE_CENTER_RATIO.euro,
+    });
+  }
+
   // Compute metrics for return
-  const totalVisual = unitsState.flatMap((u: any) => u.palletsVisual).length;
-  const totalDinPalletsVisual = unitsState.flatMap((u: any) => u.palletsVisual).filter((p: any) => p.type === 'industrial').length;
-  const totalEuroPalletsVisual = unitsState.flatMap((u: any) => u.palletsVisual).filter((p: any) => p.type === 'euro').length;
+  const flattenedPallets = unitsState.flatMap((u: any) => u.palletsVisual);
+  const totalVisual = flattenedPallets.length;
+  const totalDinPalletsVisual = flattenedPallets.filter((p: any) => p.type === 'industrial').length;
+  const totalEuroPalletsVisual = flattenedPallets.filter((p: any) => p.type === 'euro').length;
   const palletArrangement = unitsState.map((u: any) => ({ unitId: u.id, unitLength: u.length, unitWidth: u.width, pallets: u.palletsVisual }));
 
   // Utilization and weight-derived warnings
