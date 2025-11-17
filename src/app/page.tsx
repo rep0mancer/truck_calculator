@@ -80,6 +80,13 @@ const MAX_PALLET_SIMULATION_QUANTITY = 300;
 const STACKED_EUP_THRESHOLD_FOR_AXLE_WARNING = 18;
 const STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING = 16;
 const MAX_WEIGHT_PER_METER_KG = 1800;
+type StackBand = 'front' | 'stack' | 'rear';
+type StackingStrategy = 'axle_safe' | 'max_pairs';
+
+const STACKING_RULES = {
+  industrial: { slotLengthCm: 50, stackZoneSlots: 9, frontBufferSlots: 8 },
+  euro: { slotLengthCm: 40, stackZoneSlots: 9, frontBufferSlots: 9 },
+} as const;
 
 const KILOGRAM_FORMATTER = new Intl.NumberFormat('de-DE', {
   maximumFractionDigits: 0,
@@ -197,7 +204,8 @@ const calculateLoadingLogic = (
   currentEupLoadingPattern: 'auto' | 'long' | 'broad',
   placementOrder: 'DIN_FIRST' | 'EUP_FIRST' = 'DIN_FIRST',
   maxStackedEup?: number | string,
-  maxStackedDin?: number | string
+  maxStackedDin?: number | string,
+  stackingStrategy: StackingStrategy = 'axle_safe'
 ) => {
   const truckConfig = JSON.parse(JSON.stringify(TRUCK_TYPES[truckKey]));
 
@@ -248,33 +256,126 @@ const calculateLoadingLogic = (
     singles: Array<any>,
     isStackable: boolean,
     limit: number | string | undefined,
-    type: 'euro' | 'industrial'
+    type: 'euro' | 'industrial',
+    lengthLimitCm: number,
+    stackingStrategy: StackingStrategy
   ) => {
-    const pairs: Array<any> = [];
-    if (!isStackable) return { pairs, remaining: [...singles] };
-    const numericLimit = (typeof limit === 'string' ? parseInt(limit, 10) : limit) || 0; // 0 means unlimited
-    const allowedStackableCount = numericLimit > 0 ? Math.min(numericLimit, singles.length) : singles.length;
-    const pairCount = Math.floor(allowedStackableCount / 2);
-    const working = [...singles];
-    for (let i = 0; i < pairCount; i++) {
-      const first = working.shift();
-      const second = working.shift();
-      if (!first || !second) break;
-      const groupId = `grp_${type}_${stackGroupSeed++}`;
-      first.isStacked = true; first.stackGroupId = groupId;
-      second.isStacked = true; second.stackGroupId = groupId;
-      pairs.push({ type, weight: (first.weight || 0) + (second.weight || 0), isStacked: true, id: uniqueIdSeed++, pair: [first, second], stackGroupId: groupId });
+    const working = singles.map(single => single);
+    const numericLimit = (typeof limit === 'string' ? parseInt(limit, 10) : limit) || 0;
+
+    if (!isStackable || working.length === 0) {
+      return { pairs: [] as Array<any>, frontSingles: [] as Array<any>, tailSingles: working };
     }
-    return { pairs, remaining: working };
+
+    if (stackingStrategy === 'max_pairs') {
+      const pairs: Array<any> = [];
+      const remaining = [...working];
+      const allowedStackableCount = numericLimit > 0 ? Math.min(numericLimit, remaining.length) : remaining.length;
+      const pairCount = Math.floor(allowedStackableCount / 2);
+      for (let i = 0; i < pairCount; i++) {
+        const first = remaining.shift();
+        const second = remaining.shift();
+        if (!first || !second) break;
+        const groupId = `grp_${type}_${stackGroupSeed++}`;
+        first.isStacked = true;
+        first.stackGroupId = groupId;
+        second.isStacked = true;
+        second.stackGroupId = groupId;
+        pairs.push({
+          type,
+          weight: (first.weight || 0) + (second.weight || 0),
+          isStacked: true,
+          id: uniqueIdSeed++,
+          pair: [first, second],
+          stackGroupId: groupId,
+        });
+      }
+      return { pairs, frontSingles: [] as Array<any>, tailSingles: remaining };
+    }
+
+    const stackingRule = STACKING_RULES[type];
+    const slotLength = stackingRule.slotLengthCm;
+    const baseCapacity = slotLength > 0 ? Math.floor(lengthLimitCm / slotLength) : 0;
+    if (baseCapacity <= 0) {
+      return { pairs: [] as Array<any>, frontSingles: [] as Array<any>, tailSingles: working };
+    }
+
+    const baseSingles = working.slice(0, baseCapacity);
+    const overflowSingles = working.slice(baseCapacity);
+    const frontSingles: Array<any> = [];
+    const tailSingles: Array<any> = [];
+    const pairs: Array<any> = [];
+
+    const frontCount = Math.min(stackingRule.frontBufferSlots, baseSingles.length);
+    const remainingAfterFront = Math.max(0, baseSingles.length - frontCount);
+    const stackZoneCount = Math.min(stackingRule.stackZoneSlots, remainingAfterFront);
+    type Zone = StackBand;
+    const baseRecords = baseSingles.map((single, idx) => {
+      let zone: Zone = 'rear';
+      if (idx < frontCount) zone = 'front';
+      else if (idx < frontCount + stackZoneCount) zone = 'stack';
+      single.stackPlacementBand = zone;
+      return { single, zone, paired: false };
+    });
+
+    const maxPairsByLimit =
+      numericLimit > 0 ? Math.floor(Math.min(numericLimit, working.length) / 2) : Number.POSITIVE_INFINITY;
+    const maxPairsByAvailability = Math.min(baseRecords.length, overflowSingles.length);
+    const totalPairsAllowed = Math.min(maxPairsByLimit, maxPairsByAvailability);
+
+    const stackPriorityRecords = [
+      ...baseRecords.filter(r => r.zone === 'stack'),
+      ...baseRecords.filter(r => r.zone === 'rear'),
+      ...baseRecords.filter(r => r.zone === 'front'),
+    ];
+
+    let pairsFormed = 0;
+    for (const record of stackPriorityRecords) {
+      if (pairsFormed >= totalPairsAllowed) break;
+      const top = overflowSingles.shift();
+      if (!top) break;
+      const base = record.single;
+      const groupId = `grp_${type}_${stackGroupSeed++}`;
+      base.isStacked = true;
+      base.stackGroupId = groupId;
+      top.isStacked = true;
+      top.stackGroupId = groupId;
+      top.stackPlacementBand = base.stackPlacementBand;
+      pairs.push({
+        type,
+        weight: (base.weight || 0) + (top.weight || 0),
+        isStacked: true,
+        id: uniqueIdSeed++,
+        pair: [base, top],
+        stackGroupId: groupId,
+      });
+      record.paired = true;
+      pairsFormed++;
+    }
+
+    for (const record of baseRecords) {
+      if (record.paired) continue;
+      if (record.zone === 'front') frontSingles.push(record.single);
+      else tailSingles.push(record.single);
+    }
+
+    overflowSingles.forEach(single => {
+      single.stackPlacementBand = 'rear';
+      tailSingles.push(single);
+    });
+
+    return { pairs, frontSingles, tailSingles };
   };
 
-  const dinStackBuild = buildStackedPairs(allDinSingles, isDINStackable, maxStackedDin, 'industrial');
-  const eupStackBuild = buildStackedPairs(allEupSingles, isEUPStackable, maxStackedEup, 'euro');
+    const dinStackBuild = buildStackedPairs(allDinSingles, isDINStackable, maxStackedDin, 'industrial', lengthLimitCm, stackingStrategy);
+    const eupStackBuild = buildStackedPairs(allEupSingles, isEUPStackable, maxStackedEup, 'euro', lengthLimitCm, stackingStrategy);
 
-  const stackedDinCandidates = dinStackBuild.pairs; // array of pair-candidates
-  const stackedEupCandidates = eupStackBuild.pairs; // array of pair-candidates
-  const dinSingleCandidates = dinStackBuild.remaining; // singles not used in stacks
-  const eupSingleCandidates = eupStackBuild.remaining; // singles not used in stacks
+    const stackedDinCandidates = dinStackBuild.pairs; // array of pair-candidates
+    const stackedEupCandidates = eupStackBuild.pairs; // array of pair-candidates
+    const dinFrontSingles = dinStackBuild.frontSingles;
+    const dinTailSingles = dinStackBuild.tailSingles;
+    const eupFrontSingles = eupStackBuild.frontSingles;
+    const eupTailSingles = eupStackBuild.tailSingles;
 
   // STAGE 1: SELECTION - Determine Final Pallet Manifest by master priority
   let finalPalletManifest: Array<any> = [];
@@ -329,17 +430,19 @@ const calculateLoadingLogic = (
     }
   };
 
-  if (placementOrder === 'DIN_FIRST') {
-    tryPairs(stackedDinCandidates, 'industrial');
-    if (!selectionStop.stopped) trySingles(dinSingleCandidates, 'industrial');
-    if (!selectionStop.stopped) tryPairs(stackedEupCandidates, 'euro');
-    if (!selectionStop.stopped) trySingles(eupSingleCandidates, 'euro');
-  } else {
-    tryPairs(stackedEupCandidates, 'euro');
-    if (!selectionStop.stopped) trySingles(eupSingleCandidates, 'euro');
-    if (!selectionStop.stopped) tryPairs(stackedDinCandidates, 'industrial');
-    if (!selectionStop.stopped) trySingles(dinSingleCandidates, 'industrial');
-  }
+    const processStackPlan = (build: { frontSingles: Array<any>; pairs: Array<any>; tailSingles: Array<any>; }, type: 'industrial' | 'euro') => {
+      if (!selectionStop.stopped && build.frontSingles.length > 0) trySingles(build.frontSingles, type);
+      if (!selectionStop.stopped && build.pairs.length > 0) tryPairs(build.pairs, type);
+      if (!selectionStop.stopped && build.tailSingles.length > 0) trySingles(build.tailSingles, type);
+    };
+
+    if (placementOrder === 'DIN_FIRST') {
+      processStackPlan({ frontSingles: dinFrontSingles, pairs: stackedDinCandidates, tailSingles: dinTailSingles }, 'industrial');
+      if (!selectionStop.stopped) processStackPlan({ frontSingles: eupFrontSingles, pairs: stackedEupCandidates, tailSingles: eupTailSingles }, 'euro');
+    } else {
+      processStackPlan({ frontSingles: eupFrontSingles, pairs: stackedEupCandidates, tailSingles: eupTailSingles }, 'euro');
+      if (!selectionStop.stopped) processStackPlan({ frontSingles: dinFrontSingles, pairs: stackedDinCandidates, tailSingles: dinTailSingles }, 'industrial');
+    }
 
   // Leftover warning
   const totalDinRequested = requestedDinQuantity;
@@ -359,13 +462,19 @@ const calculateLoadingLogic = (
   }
 
   // STAGE 2: PLACEMENT - Arrange the Manifest for Visualization
-  const getPlacementPriority = (pallet: any) => {
-    if (pallet.isStacked && pallet.type === 'industrial') return 1; // FIX: DIN stacked first
-    if (pallet.isStacked && pallet.type === 'euro') return 2;       // FIX: Then EUP stacked
-    if (!pallet.isStacked && pallet.type === 'industrial') return 3;
-    if (!pallet.isStacked && pallet.type === 'euro') return 4;
-    return 5;
-  };
+    const getPlacementPriority = (pallet: any) => {
+      const band = pallet.stackPlacementBand as StackBand | undefined;
+      if (pallet.type === 'industrial') {
+        if (band === 'front') return 1;
+        if (band === 'stack') return 2;
+        if (band === 'rear') return 3;
+        return pallet.isStacked ? 2 : 3;
+      }
+      if (band === 'front') return 4;
+      if (band === 'stack') return 5;
+      if (band === 'rear') return 6;
+      return pallet.isStacked ? 5 : 6;
+    };
   finalPalletManifest.sort((a, b) => {
     const ap = getPlacementPriority(a);
     const bp = getPlacementPriority(b);
@@ -524,6 +633,7 @@ export default function HomePage() {
   const [isDINStackable, setIsDINStackable] = useState(false);
   const [eupStackLimit, setEupStackLimit] = useState(0);
   const [dinStackLimit, setDinStackLimit] = useState(0);
+  const [stackingStrategy, setStackingStrategy] = useState<StackingStrategy>('axle_safe');
   const [loadedEuroPalletsBase, setLoadedEuroPalletsBase] = useState(0);
   const [loadedIndustrialPalletsBase, setLoadedIndustrialPalletsBase] = useState(0);
   const [totalEuroPalletsVisual, setTotalEuroPalletsVisual] = useState(0);
@@ -552,13 +662,14 @@ export default function HomePage() {
       eupLoadingPattern as 'auto' | 'long' | 'broad',
       'DIN_FIRST',
       eupStackLimit,
-      dinStackLimit
+    dinStackLimit,
+    stackingStrategy
     );
     
     let multiTruckWarnings = [];
     
     if (dinQuantity > 0 && eupQuantity === 0) {
-        const dinCapacityResult = calculateLoadingLogic(selectedTruck as keyof typeof TRUCK_TYPES, [], [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], isEUPStackable, isDINStackable, eupLoadingPattern as 'auto' | 'long' | 'broad', 'DIN_FIRST', eupStackLimit, dinStackLimit);
+        const dinCapacityResult = calculateLoadingLogic(selectedTruck as keyof typeof TRUCK_TYPES, [], [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], isEUPStackable, isDINStackable, eupLoadingPattern as 'auto' | 'long' | 'broad', 'DIN_FIRST', eupStackLimit, dinStackLimit, stackingStrategy);
         const maxDinCapacity = dinCapacityResult.totalDinPalletsVisual;
 
         if (maxDinCapacity > 0 && dinQuantity > maxDinCapacity) {
@@ -573,7 +684,7 @@ export default function HomePage() {
             }
         }
     } else if (eupQuantity > 0 && dinQuantity === 0) {
-        const eupCapacityResult = calculateLoadingLogic(selectedTruck as keyof typeof TRUCK_TYPES, [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], [], isEUPStackable, isDINStackable, eupLoadingPattern as 'auto' | 'long' | 'broad', 'EUP_FIRST', eupStackLimit, dinStackLimit);
+        const eupCapacityResult = calculateLoadingLogic(selectedTruck as keyof typeof TRUCK_TYPES, [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], [], isEUPStackable, isDINStackable, eupLoadingPattern as 'auto' | 'long' | 'broad', 'EUP_FIRST', eupStackLimit, dinStackLimit, stackingStrategy);
         const maxEupCapacity = eupCapacityResult.totalEuroPalletsVisual;
 
         if (maxEupCapacity > 0 && eupQuantity > maxEupCapacity) {
@@ -615,7 +726,8 @@ export default function HomePage() {
       eupLoadingPattern as 'auto' | 'long' | 'broad',
       'DIN_FIRST',
       eupStackLimit,
-      dinStackLimit
+    dinStackLimit,
+    stackingStrategy
     );
     const maxEup = eupCapacityResult.totalEuroPalletsVisual;
     const remainingEup = Math.max(0, maxEup - eupQuantity);
@@ -631,14 +743,15 @@ export default function HomePage() {
       eupLoadingPattern as 'auto' | 'long' | 'broad',
       'EUP_FIRST',
       eupStackLimit,
-      dinStackLimit
+    dinStackLimit,
+    stackingStrategy
     );
     const maxDin = dinCapacityResult.totalDinPalletsVisual;
     const remainingDin = Math.max(0, maxDin - dinQuantity);
     
     setRemainingCapacity({ eup: remainingEup, din: remainingDin });
     
-  }, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, eupStackLimit, dinStackLimit]);
+  }, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, eupStackLimit, dinStackLimit, stackingStrategy]);
 
   useEffect(() => {
     calculateAndSetState();
@@ -662,7 +775,7 @@ export default function HomePage() {
         isEUPStackable, isDINStackable,
         'auto',
         palletTypeToMax === 'euro' ? 'EUP_FIRST' : 'DIN_FIRST',
-        eupStackLimit, dinStackLimit
+      eupStackLimit, dinStackLimit, stackingStrategy
     );
     if (palletTypeToMax === 'industrial') {
         setDinWeights([{ id: Date.now(), weight: '', quantity: simResults.totalDinPalletsVisual }]);
@@ -688,8 +801,8 @@ export default function HomePage() {
 
     const res = calculateLoadingLogic(
         selectedTruck as keyof typeof TRUCK_TYPES, eupSim, dinSim,
-        isEUPStackable, isDINStackable, 'auto', order,
-        eupStackLimit, dinStackLimit
+      isEUPStackable, isDINStackable, 'auto', order,
+      eupStackLimit, dinStackLimit, stackingStrategy
     );
 
     const currentEups = eupWeights.reduce((s, e) => s + e.quantity, 0);
@@ -893,6 +1006,21 @@ export default function HomePage() {
                     <input type="number" min="0" value={eupStackLimit} onChange={e=>setEupStackLimit(Math.max(0, parseInt(e.target.value,10)||0))} className="mt-1 block w-full py-1 px-2 sm:text-xs" placeholder="Stapelbare Paletten (0 = alle)"/>
                 )}
             </div>
+
+          <div className="border-t pt-4">
+              <label className="block text-sm font-semibold text-slate-800 mb-1 drop-shadow-sm">Stacking-Modus</label>
+              <p className="text-xs text-slate-600 mb-2">Steuert, ob gestapelte Paletten bevorzugt in der Achszone bleiben oder maximal ausgenutzt werden.</p>
+              <div className="flex flex-col space-y-1">
+                  <label className="flex items-start text-sm text-slate-800">
+                      <input type="radio" name="stackingStrategy" value="axle_safe" checked={stackingStrategy==='axle_safe'} onChange={e=>setStackingStrategy(e.target.value as StackingStrategy)} className="h-5 w-5 mt-0.5"/>
+                      <span className="ml-2">Achslast-optimiert (Stacks starten in der Mitte, Bodenplätze bleiben frei)</span>
+                  </label>
+                  <label className="flex items-start text-sm text-slate-800">
+                      <input type="radio" name="stackingStrategy" value="max_pairs" checked={stackingStrategy==='max_pairs'} onChange={e=>setStackingStrategy(e.target.value as StackingStrategy)} className="h-5 w-5 mt-0.5"/>
+                      <span className="ml-2">Maximale Stapelanzahl (klassische Variante, stapelt so früh wie möglich)</span>
+                  </label>
+              </div>
+          </div>
 
             <div className="border-t pt-4">
               <label className="block text-sm font-semibold text-slate-800 mb-2">
