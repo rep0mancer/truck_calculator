@@ -84,7 +84,7 @@ type StackBand = 'front' | 'stack' | 'rear';
 
 const STACKING_RULES = {
   industrial: { slotLengthCm: 50, stackZoneSlots: 9, frontBufferSlots: 8 },
-  euro: { slotLengthCm: 40, stackZoneSlots: 9, frontBufferSlots: 8 },
+  euro: { slotLengthCm: 40, stackZoneSlots: 9, frontBufferSlots: 9 },
 } as const;
 
 const KILOGRAM_FORMATTER = new Intl.NumberFormat('de-DE', {
