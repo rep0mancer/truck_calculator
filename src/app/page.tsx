@@ -257,55 +257,85 @@ const calculateLoadingLogic = (
     type: 'euro' | 'industrial',
     lengthLimitCm: number
   ) => {
-    const pairs: Array<any> = [];
-    const frontSingles: Array<any> = [];
-    let tailSingles: Array<any> = [];
-    if (!isStackable) {
-      tailSingles = [...singles];
-      return { pairs, frontSingles, tailSingles };
-    }
     const stackingRule = STACKING_RULES[type];
     const slotLength = stackingRule.slotLengthCm;
     const baseCapacity = slotLength > 0 ? Math.floor(lengthLimitCm / slotLength) : 0;
     const working = singles.map((single) => single);
-    if (baseCapacity <= 0) {
-      tailSingles = working;
-      return { pairs, frontSingles, tailSingles };
+
+    const pairs: Array<any> = [];
+    const frontSingles: Array<any> = [];
+    const tailSingles: Array<any> = [];
+
+    if (baseCapacity <= 0 || working.length === 0) {
+      working.forEach(single => { single.stackPlacementBand = 'front'; });
+      return { pairs, frontSingles: [], tailSingles: working };
     }
+
+    const baseSingles = working.slice(0, baseCapacity);
+    const overflowSingles = working.slice(baseCapacity);
+
+    const frontCount = Math.min(stackingRule.frontBufferSlots, baseSingles.length);
+    const remainingAfterFront = Math.max(0, baseSingles.length - frontCount);
+    const stackZoneCount = Math.min(stackingRule.stackZoneSlots, remainingAfterFront);
+    type Zone = StackBand;
+    const baseRecords = baseSingles.map((single, idx) => {
+      let zone: Zone = 'rear';
+      if (idx < frontCount) zone = 'front';
+      else if (idx < frontCount + stackZoneCount) zone = 'stack';
+      single.stackPlacementBand = zone;
+      return { single, zone, paired: false };
+    });
+
     const numericLimit = (typeof limit === 'string' ? parseInt(limit, 10) : limit) || 0;
-    const overflow = Math.max(0, working.length - baseCapacity);
-    if (overflow <= 0) {
-      tailSingles = working;
-      return { pairs, frontSingles, tailSingles };
+    const maxPairsByLimit = !isStackable
+      ? 0
+      : (numericLimit > 0 ? Math.floor(Math.min(numericLimit, working.length) / 2) : Number.POSITIVE_INFINITY);
+    const maxPairsByAvailability = Math.min(baseRecords.length, overflowSingles.length);
+    const totalPairsAllowed = Math.min(maxPairsByLimit, maxPairsByAvailability);
+
+    const stackPriorityRecords = [
+      ...baseRecords.filter(r => r.zone === 'stack'),
+      ...baseRecords.filter(r => r.zone === 'rear'),
+      ...baseRecords.filter(r => r.zone === 'front'),
+    ];
+
+    let pairsFormed = 0;
+    if (isStackable) {
+      for (const record of stackPriorityRecords) {
+        if (pairsFormed >= totalPairsAllowed) break;
+        const top = overflowSingles.shift();
+        if (!top) break;
+        const base = record.single;
+        const groupId = `grp_${type}_${stackGroupSeed++}`;
+        base.isStacked = true;
+        base.stackGroupId = groupId;
+        top.isStacked = true;
+        top.stackGroupId = groupId;
+        top.stackPlacementBand = base.stackPlacementBand;
+        pairs.push({
+          type,
+          weight: (base.weight || 0) + (top.weight || 0),
+          isStacked: true,
+          id: uniqueIdSeed++,
+          pair: [base, top],
+          stackGroupId: groupId,
+        });
+        record.paired = true;
+        pairsFormed++;
+      }
     }
-    let pairsToBuild = Math.min(overflow, stackingRule.stackZoneSlots);
-    pairsToBuild = Math.min(pairsToBuild, Math.floor(working.length / 2));
-    if (numericLimit > 0) {
-      pairsToBuild = Math.min(pairsToBuild, Math.floor(Math.min(numericLimit, working.length) / 2));
+
+    for (const record of baseRecords) {
+      if (record.paired) continue;
+      if (record.zone === 'front') frontSingles.push(record.single);
+      else tailSingles.push(record.single);
     }
-    if (pairsToBuild <= 0) {
-      tailSingles = working;
-      return { pairs, frontSingles, tailSingles };
-    }
-    const maxFrontByAvailability = Math.max(0, working.length - pairsToBuild * 2);
-    const maxFrontByCapacity = Math.max(0, baseCapacity - stackingRule.stackZoneSlots);
-    const desiredFrontBuffer = Math.min(stackingRule.frontBufferSlots, maxFrontByAvailability, maxFrontByCapacity);
-    if (desiredFrontBuffer > 0) {
-      const reservedFront = working.splice(0, desiredFrontBuffer);
-      reservedFront.forEach((single) => { single.stackPlacementBand = 'front' as StackBand; });
-      frontSingles.push(...reservedFront);
-    }
-    for (let i = 0; i < pairsToBuild; i++) {
-      const first = working.shift();
-      const second = working.shift();
-      if (!first || !second) break;
-      const groupId = `grp_${type}_${stackGroupSeed++}`;
-      first.isStacked = true; first.stackGroupId = groupId; first.stackPlacementBand = 'stack' as StackBand;
-      second.isStacked = true; second.stackGroupId = groupId; second.stackPlacementBand = 'stack' as StackBand;
-      pairs.push({ type, weight: (first.weight || 0) + (second.weight || 0), isStacked: true, id: uniqueIdSeed++, pair: [first, second], stackGroupId: groupId });
-    }
-    tailSingles = working;
-    tailSingles.forEach((single: any) => { single.stackPlacementBand = 'rear' as StackBand; });
+
+    overflowSingles.forEach(single => {
+      single.stackPlacementBand = 'rear';
+      tailSingles.push(single);
+    });
+
     return { pairs, frontSingles, tailSingles };
   };
 
