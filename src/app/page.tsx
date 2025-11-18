@@ -4,6 +4,16 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { WeightInputs } from '@/components/WeightInputs';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 // Define the type for a single weight entry
 type WeightEntry = {
@@ -17,8 +27,8 @@ const TRUCK_TYPES = {
   roadTrain: {
     name: 'Hängerzug (2x 7,2m)',
     units: [
-      { id: 'unit1', length: 720, width: 245, occupiedRects: [] },
-      { id: 'unit2', length: 720, width: 245, occupiedRects: [] },
+      { id: 'unit1', length: 720, width: 245, occupiedRects: [], axlePositionsCm: [140, 600] },
+      { id: 'unit2', length: 720, width: 245, occupiedRects: [], axlePositionsCm: [480, 640] },
     ],
     totalLength: 1440,
     usableLength: 1440,
@@ -27,7 +37,7 @@ const TRUCK_TYPES = {
   },
   curtainSider: {
     name: 'Planensattel Standard (13.2m)',
-    units: [{ id: 'main', length: 1320, width: 245, occupiedRects: [] }],
+    units: [{ id: 'main', length: 1320, width: 245, occupiedRects: [], axlePositionsCm: [180, 1060, 1155, 1245] }],
     totalLength: 1320,
     usableLength: 1320,
     maxWidth: 245,
@@ -35,7 +45,7 @@ const TRUCK_TYPES = {
   },
   frigo: {
     name: 'Frigo (Kühler) Standard (13.2m)',
-    units: [{ id: 'main', length: 1320, width: 245, occupiedRects: [] }],
+    units: [{ id: 'main', length: 1320, width: 245, occupiedRects: [], axlePositionsCm: [200, 1060, 1155, 1245] }],
     totalLength: 1320,
     usableLength: 1320,
     maxWidth: 245,
@@ -43,7 +53,7 @@ const TRUCK_TYPES = {
   },
   smallTruck: {
     name: 'Motorwagen (7.2m)',
-    units: [{ id: 'main', length: 720, width: 245, occupiedRects: [] }],
+    units: [{ id: 'main', length: 720, width: 245, occupiedRects: [], axlePositionsCm: [150, 620] }],
     totalLength: 720,
     usableLength: 720,
     maxWidth: 245,
@@ -73,6 +83,9 @@ const PALLET_TYPES = {
   euro: { name: 'Euro Palette (1.2m x 0.8m)', type: 'euro', length: 120, width: 80, area: 120 * 80, color: 'bg-blue-500', borderColor: 'border-blue-700' },
   industrial: { name: 'Industrial Palette (1.2m x 1.0m)', type: 'industrial', length: 120, width: 100, area: 120 * 100, color: 'bg-green-500', borderColor: 'border-green-700' },
 };
+
+const STACKING_INFO_STORAGE_KEY = 'stacking_info_ack_v1';
+const AXLE_EXCLUDED_TRUCKS = ['Waggon', 'Waggon2'] as const;
 
 
 const MAX_GROSS_WEIGHT_KG = 24000;
@@ -645,8 +658,12 @@ export default function HomePage() {
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
   const [remainingCapacity, setRemainingCapacity] = useState<{ eup: number, din: number }>({ eup: 0, din: 0 });
   const [lastEdited, setLastEdited] = useState<'eup' | 'din'>('eup');
+  const [hasDismissedStackingInfo, setHasDismissedStackingInfo] = useState(false);
+  const [isStackingInfoOpen, setIsStackingInfoOpen] = useState(false);
+  const [stackingInfoDontShowAgain, setStackingInfoDontShowAgain] = useState(false);
+  const [pendingStackingToggle, setPendingStackingToggle] = useState<{ type: 'DIN' | 'EUP'; value: boolean } | null>(null);
   const { toast } = useToast();
-  const isWaggonSelected = ['Waggon', 'Waggon2'].includes(selectedTruck);
+  const isWaggonSelected = AXLE_EXCLUDED_TRUCKS.includes(selectedTruck as (typeof AXLE_EXCLUDED_TRUCKS)[number]);
   const selectedTruckConfig = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES];
   const maxGrossWeightKg = selectedTruckConfig.maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG;
 
@@ -754,6 +771,14 @@ export default function HomePage() {
   }, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, eupStackLimit, dinStackLimit, stackingStrategy]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = window.localStorage.getItem(STACKING_INFO_STORAGE_KEY);
+    if (stored === 'true') {
+      setHasDismissedStackingInfo(true);
+    }
+  }, []);
+
+  useEffect(() => {
     calculateAndSetState();
   }, [calculateAndSetState]);
 
@@ -838,6 +863,43 @@ export default function HomePage() {
     }
     toast({ title: 'LKW aufgefüllt', description: `Freier Platz wurde mit ${typeToFill.toUpperCase()} Paletten gefüllt.` });
   };
+ 
+  const handleStackingToggle = useCallback((type: 'DIN' | 'EUP', nextValue: boolean) => {
+    if (isWaggonSelected) return;
+    if (nextValue && !hasDismissedStackingInfo) {
+      setPendingStackingToggle({ type, value: nextValue });
+      setStackingInfoDontShowAgain(false);
+      setIsStackingInfoOpen(true);
+      return;
+    }
+    if (type === 'DIN') {
+      setIsDINStackable(nextValue);
+    } else {
+      setIsEUPStackable(nextValue);
+    }
+  }, [hasDismissedStackingInfo, isWaggonSelected, setIsDINStackable, setIsEUPStackable]);
+
+  const confirmStackingInfo = useCallback(() => {
+    if (pendingStackingToggle) {
+      if (pendingStackingToggle.type === 'DIN') {
+        setIsDINStackable(pendingStackingToggle.value);
+      } else {
+        setIsEUPStackable(pendingStackingToggle.value);
+      }
+    }
+    if (stackingInfoDontShowAgain && typeof window !== 'undefined') {
+      window.localStorage.setItem(STACKING_INFO_STORAGE_KEY, 'true');
+      setHasDismissedStackingInfo(true);
+    }
+    setPendingStackingToggle(null);
+    setIsStackingInfoOpen(false);
+  }, [pendingStackingToggle, stackingInfoDontShowAgain]);
+
+  const cancelStackingInfo = useCallback(() => {
+    setPendingStackingToggle(null);
+    setStackingInfoDontShowAgain(false);
+    setIsStackingInfoOpen(false);
+  }, []);
  
   // ... (renderPallet function and style calculations remain the same)
   const palletVisualPalette: Record<string, {
@@ -984,8 +1046,8 @@ export default function HomePage() {
                 <WeightInputs entries={dinWeights} onChange={(entries)=>{ setLastEdited('din'); setDinWeights(entries); }} palletType="DIN" />
                 <button onClick={() => handleMaximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl">Max. DIN</button>
                 <button onClick={() => handleFillRemaining('industrial')} className="mt-1 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl">Rest mit max. DIN füllen</button>
-                <div className="flex items-center mt-2">
-                    <input type="checkbox" id="dinStackable" checked={isDINStackable} onChange={e=>setIsDINStackable(e.target.checked)} disabled={isWaggonSelected} className="h-5 w-5 disabled:cursor-not-allowed"/>
+                  <div className="flex items-center mt-2">
+                      <input type="checkbox" id="dinStackable" checked={isDINStackable} onChange={e=>handleStackingToggle('DIN', e.target.checked)} disabled={isWaggonSelected} className="h-5 w-5 disabled:cursor-not-allowed"/>
                     <label htmlFor="dinStackable" className={`ml-2 text-sm text-slate-800 ${isWaggonSelected ? 'text-slate-400' : ''}`}>Stapelbar (2-fach)</label>
                 </div>
                 {isDINStackable && !isWaggonSelected && (
@@ -998,8 +1060,8 @@ export default function HomePage() {
                 <WeightInputs entries={eupWeights} onChange={(entries)=>{ setLastEdited('eup'); setEupWeights(entries); }} palletType="EUP" />
                 <button onClick={() => handleMaximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl">Max. EUP</button>
                 <button onClick={() => handleFillRemaining('euro')} className="mt-1 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl">Rest mit max. EUP füllen</button>
-                <div className="flex items-center mt-2">
-                    <input type="checkbox" id="eupStackable" checked={isEUPStackable} onChange={e=>setIsEUPStackable(e.target.checked)} disabled={isWaggonSelected} className="h-5 w-5 disabled:cursor-not-allowed"/>
+                  <div className="flex items-center mt-2">
+                      <input type="checkbox" id="eupStackable" checked={isEUPStackable} onChange={e=>handleStackingToggle('EUP', e.target.checked)} disabled={isWaggonSelected} className="h-5 w-5 disabled:cursor-not-allowed"/>
                     <label htmlFor="eupStackable" className={`ml-2 text-sm text-slate-800 ${isWaggonSelected ? 'text-slate-400' : ''}`}>Stapelbar (2-fach)</label>
                 </div>
                 {isEUPStackable && !isWaggonSelected && (
@@ -1035,55 +1097,100 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="lg:col-span-2 bg-gray-100 p-6 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center justify-center">
-            <p className="text-slate-100 text-lg mb-4 font-semibold drop-shadow">Ladefläche Visualisierung</p>
-            {palletArrangement.map((unit: any,index: number)=>(
-              <div key={unit.unitId} className="mb-6 w-full flex flex-col items-center">
-                {TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES].units.length>1&&<p className="text-sm text-slate-200 mb-2 drop-shadow-sm">Einheit {index+1} ({unit.unitLength/100}m x {unit.unitWidth/100}m)</p>}
-                {index === 0 && (
-                  <svg
-                    aria-hidden
-                    role="presentation"
-                    className="block"
-                    width={unit.unitWidth*truckVisualizationScale}
-                    height={24}
-                    viewBox={`0 0 ${unit.unitWidth*truckVisualizationScale} 24`}
+            <div className="lg:col-span-2 bg-gray-100 p-6 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center justify-center">
+              <p className="text-slate-100 text-lg mb-4 font-semibold drop-shadow">Ladefläche Visualisierung</p>
+              {palletArrangement.map((unit: any,index: number)=>{
+                const unitWidthPx = unit.unitWidth * truckVisualizationScale;
+                const unitHeightPx = unit.unitLength * truckVisualizationScale;
+                const blueprintUnit = selectedTruckConfig?.units?.find((u: any) => u.id === unit.unitId);
+                const fallbackAxles = unit.unitLength > 0 ? [Math.round(unit.unitLength * 0.2), Math.round(unit.unitLength * 0.85)] : [];
+                const axlePositions = !isWaggonSelected
+                  ? (blueprintUnit?.axlePositionsCm?.length ? blueprintUnit.axlePositionsCm : fallbackAxles)
+                  : [];
+                const truckBody = (
+                  <div
+                    className="relative overflow-hidden rounded-2xl border border-white/40 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.55)]"
+                    style={{
+                      width:`${unitWidthPx}px`,
+                      height:`${unitHeightPx}px`,
+                      background:'linear-gradient(160deg, rgba(148, 163, 184, 0.25), rgba(226, 232, 240, 0.18))',
+                      backdropFilter:'blur(26px)',
+                      WebkitBackdropFilter:'blur(26px)'
+                    }}
                   >
-                    {/* Cab base */}
-                    <rect
-                      x="0"
-                      y="6"
-                      width={unit.unitWidth*truckVisualizationScale}
-                      height="16"
-                      rx="6"
-                      fill="rgba(59,130,246,0.4)"
-                      stroke="rgba(96,165,250,0.65)"
-                    />
-                    {/* Nose to indicate forward direction */}
-                    <path
-                      d={`M ${(unit.unitWidth*truckVisualizationScale)/2 - 12} 6 L ${(unit.unitWidth*truckVisualizationScale)/2} 0 L ${(unit.unitWidth*truckVisualizationScale)/2 + 12} 6 Z`}
-                      fill="rgba(59,130,246,0.55)"
-                    />
-                    {/* Label */}
-                    <text x={(unit.unitWidth*truckVisualizationScale)/2} y={20} textAnchor="middle" fontSize="10" fontWeight={700} fill="rgba(15,23,42,0.85)">Front</text>
-                  </svg>
-                )}
-                <div
-                  className="relative overflow-hidden rounded-2xl border border-white/40 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.55)]"
-                  style={{
-                    width:`${unit.unitWidth*truckVisualizationScale}px`,
-                    height:`${unit.unitLength*truckVisualizationScale}px`,
-                    background:'linear-gradient(160deg, rgba(148, 163, 184, 0.25), rgba(226, 232, 240, 0.18))',
-                    backdropFilter:'blur(26px)',
-                    WebkitBackdropFilter:'blur(26px)'
-                  }}
-                >
-                  {unit.pallets.map((p: any)=>renderPallet(p,truckVisualizationScale))}
-                </div>
-              </div>
-            ))}
-             {palletArrangement.length === 0 && <p className="text-slate-200/80">Keine Paletten zum Anzeigen.</p>}
-          </div>
+                    {unit.pallets.map((p: any)=>renderPallet(p,truckVisualizationScale))}
+                  </div>
+                );
+                return (
+                  <div key={unit.unitId} className="mb-6 w-full flex flex-col items-center">
+                    {selectedTruckConfig?.units?.length>1&&<p className="text-sm text-slate-200 mb-2 drop-shadow-sm">Einheit {index+1} ({unit.unitLength/100}m x {unit.unitWidth/100}m)</p>}
+                    {index === 0 && (
+                      <svg
+                        aria-hidden
+                        role="presentation"
+                        className="block"
+                        width={unitWidthPx}
+                        height={24}
+                        viewBox={`0 0 ${unitWidthPx} 24`}
+                      >
+                        {/* Cab base */}
+                        <rect
+                          x="0"
+                          y="6"
+                          width={unitWidthPx}
+                          height="16"
+                          rx="6"
+                          fill="rgba(59,130,246,0.4)"
+                          stroke="rgba(96,165,250,0.65)"
+                        />
+                        {/* Nose to indicate forward direction */}
+                        <path
+                          d={`M ${unitWidthPx/2 - 12} 6 L ${unitWidthPx/2} 0 L ${unitWidthPx/2 + 12} 6 Z`}
+                          fill="rgba(59,130,246,0.55)"
+                        />
+                        {/* Label */}
+                        <text x={unitWidthPx/2} y={20} textAnchor="middle" fontSize="10" fontWeight={700} fill="rgba(15,23,42,0.85)">Front</text>
+                      </svg>
+                    )}
+                    {axlePositions.length > 0 ? (
+                      <div className="flex items-start gap-3">
+                        {truckBody}
+                        <div
+                          aria-hidden="true"
+                          className="relative flex-none rounded-2xl bg-white/80 border border-slate-200/80 shadow-inner px-2"
+                          style={{ width: '56px', height: `${unitHeightPx}px` }}
+                        >
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 text-center mt-2">
+                            Achsen
+                          </p>
+                          {axlePositions.map((pos: number, axleIdx: number) => {
+                            const offsetPx = pos * truckVisualizationScale;
+                            const clamped = Math.min(Math.max(offsetPx, 18), unitHeightPx - 18);
+                            return (
+                              <div
+                                key={`${unit.unitId}-axle-${axleIdx}`}
+                                className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 text-slate-600"
+                                style={{ top: `${clamped}px` }}
+                              >
+                                <div className="flex items-center gap-1">
+                                  <span className="w-4 h-4 rounded-full bg-slate-700 border border-white/60 shadow-sm" />
+                                  <span className="w-6 h-[3px] rounded-full bg-slate-600" />
+                                  <span className="w-4 h-4 rounded-full bg-slate-700 border border-white/60 shadow-sm" />
+                                </div>
+                                <span className="text-[9px] uppercase tracking-wider text-slate-500">Achse</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      truckBody
+                    )}
+                  </div>
+                );
+              })}
+               {palletArrangement.length === 0 && <p className="text-slate-200/80">Keine Paletten zum Anzeigen.</p>}
+            </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 shadow-sm text-center">
@@ -1145,7 +1252,37 @@ export default function HomePage() {
       <footer className="text-center py-4 mt-8 text-sm text-slate-100/80 border-t border-gray-200">
         <p className="drop-shadow">Laderaumrechner © {new Date().getFullYear()} by Andreas Steiner</p>
       </footer>
-      <Toaster />
+        <Toaster />
+        <AlertDialog open={isStackingInfoOpen} onOpenChange={(open) => { if (!open) cancelStackingInfo(); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Stapelinfo & Achslast</AlertDialogTitle>
+              <AlertDialogDescription className="text-slate-700">
+                Wenn wir Paletten stapeln, verdoppelt sich das Gewicht pro Stellplatz. In einem normalen LKW stehen die ersten Achsen etwas weiter hinten.
+                Würden wir direkt vorne stapeln, landet zu viel Gewicht auf einer einzelnen Achsgruppe – eine mögliche Achslastüberschreitung.
+                Darum bleiben die ersten Reihen einfach belegt und erst danach darf gestapelt werden.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="mt-3 rounded-lg bg-slate-100/90 p-3 text-sm text-slate-800 space-y-1">
+              <p><span className="font-semibold">DIN (Industriepaletten 120×100):</span> Stapeln ab Platz 9.</p>
+              <p><span className="font-semibold">EUP (Europaletten 120×80):</span> Stapeln ab Platz 10.</p>
+              <p>So verteilt sich das Gewicht gleichmäßiger zwischen Vorder- und Hinterachse.</p>
+            </div>
+            <label className="mt-4 flex items-center gap-2 text-sm text-slate-900">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-400"
+                checked={stackingInfoDontShowAgain}
+                onChange={(e) => setStackingInfoDontShowAgain(e.target.checked)}
+              />
+              Ich verstehe, nicht mehr anzeigen
+            </label>
+            <AlertDialogFooter className="mt-4">
+              <AlertDialogCancel onClick={cancelStackingInfo}>Abbrechen</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmStackingInfo}>Verstanden</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
     </div>
   );
 }
