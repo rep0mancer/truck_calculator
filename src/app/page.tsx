@@ -4,6 +4,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { WeightInputs } from '@/components/WeightInputs';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 // Define the type for a single weight entry
 type WeightEntry = {
@@ -24,6 +32,12 @@ const TRUCK_TYPES = {
     usableLength: 1440,
     maxWidth: 245,
     maxGrossWeightKg: 24000,
+    axles: [
+      { position: 750, width: 60 }, // Front support/kingpin virtual position for unit1
+      { position: 1050, width: 120 }, // Triple axle group for unit1 (extends beyond unit, shown for reference)
+      { position: 1470, width: 60 }, // Front support for unit2 (720 + 750)
+      { position: 1770, width: 120 }, // Triple axle group for unit2 (720 + 1050, extends beyond total length)
+    ],
   },
   curtainSider: {
     name: 'Planensattel Standard (13.2m)',
@@ -32,6 +46,10 @@ const TRUCK_TYPES = {
     usableLength: 1320,
     maxWidth: 245,
     maxGrossWeightKg: 24000,
+    axles: [
+      { position: 750, width: 60 }, // Front support/kingpin virtual position
+      { position: 1050, width: 120 }, // Triple axle group
+    ],
   },
   frigo: {
     name: 'Frigo (Kühler) Standard (13.2m)',
@@ -40,6 +58,10 @@ const TRUCK_TYPES = {
     usableLength: 1320,
     maxWidth: 245,
     maxGrossWeightKg: 18300,
+    axles: [
+      { position: 750, width: 60 }, // Front support/kingpin virtual position
+      { position: 1050, width: 120 }, // Triple axle group
+    ],
   },
   smallTruck: {
     name: 'Motorwagen (7.2m)',
@@ -48,6 +70,10 @@ const TRUCK_TYPES = {
     usableLength: 720,
     maxWidth: 245,
     maxGrossWeightKg: 10000,
+    axles: [
+      { position: 100, width: 50 }, // Front axle
+      { position: 600, width: 50 }, // Rear axle
+    ],
   },
   Waggon: {
     name: 'Waggon POE',
@@ -57,6 +83,10 @@ const TRUCK_TYPES = {
     maxWidth: 290,
     maxDinPallets: 26,
     maxGrossWeightKg: 24000,
+    axles: [
+      { position: 750, width: 60 }, // Front support
+      { position: 1050, width: 120 }, // Triple axle group
+    ],
   },
   Waggon2: {
     name: 'Waggon KRM',
@@ -66,6 +96,10 @@ const TRUCK_TYPES = {
     maxWidth: 290,
     maxDinPallets: 28,
     maxGrossWeightKg: 24000,
+    axles: [
+      { position: 750, width: 60 }, // Front support
+      { position: 1050, width: 120 }, // Triple axle group
+    ],
   },
 };
 
@@ -645,6 +679,8 @@ export default function HomePage() {
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
   const [remainingCapacity, setRemainingCapacity] = useState<{ eup: number, din: number }>({ eup: 0, din: 0 });
   const [lastEdited, setLastEdited] = useState<'eup' | 'din'>('eup');
+  const [showStackingInfo, setShowStackingInfo] = useState(false);
+  const [dontShowAgain, setDontShowAgain] = useState(false);
   const { toast } = useToast();
   const isWaggonSelected = ['Waggon', 'Waggon2'].includes(selectedTruck);
   const selectedTruckConfig = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES];
@@ -756,6 +792,21 @@ export default function HomePage() {
   useEffect(() => {
     calculateAndSetState();
   }, [calculateAndSetState]);
+
+  // Check localStorage on mount to determine if info modal should be shown
+  useEffect(() => {
+    const hasSeenStackingInfo = localStorage.getItem('hasSeenStackingInfo');
+    if (!hasSeenStackingInfo) {
+      setShowStackingInfo(true);
+    }
+  }, []);
+
+  const handleCloseStackingInfo = () => {
+    if (dontShowAgain) {
+      localStorage.setItem('hasSeenStackingInfo', 'true');
+    }
+    setShowStackingInfo(false);
+  };
 
   const handleClearAllPallets = () => {
     setEupWeights([{ id: Date.now(), weight: '', quantity: 0 }]);
@@ -1078,6 +1129,63 @@ export default function HomePage() {
                     WebkitBackdropFilter:'blur(26px)'
                   }}
                 >
+                  {/* Axle visualization */}
+                  {(() => {
+                    const truckConfig = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES];
+                    const axles = truckConfig.axles || [];
+                    const unitIndex = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES].units.findIndex((u: any) => u.id === unit.unitId);
+                    const firstUnitLength = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES].units[0]?.length || 0;
+                    
+                    return axles
+                      .filter((axle: any) => {
+                        // For roadTrain, filter axles by unit
+                        if (selectedTruck === 'roadTrain') {
+                          if (unitIndex === 0) {
+                            return axle.position <= firstUnitLength; // First unit (0-720cm)
+                          } else {
+                            return axle.position > firstUnitLength && axle.position <= (firstUnitLength * 2); // Second unit (720-1440cm)
+                          }
+                        }
+                        return true; // For single-unit trucks, show all axles
+                      })
+                      .map((axle: any, idx: number) => {
+                        // Calculate position relative to the current unit
+                        let adjustedPosition: number;
+                        if (selectedTruck === 'roadTrain' && unitIndex === 1) {
+                          // For second unit of roadTrain, subtract the first unit length
+                          adjustedPosition = axle.position - firstUnitLength;
+                        } else {
+                          // For first unit or single-unit trucks, use position as-is
+                          adjustedPosition = axle.position;
+                        }
+                        
+                        // Only show axles that are within the unit's length (with some tolerance for visual reference)
+                        if (adjustedPosition < 0 || adjustedPosition > unit.unitLength + 100) {
+                          return null;
+                        }
+                        
+                        const yPos = adjustedPosition * truckVisualizationScale;
+                        const axleWidth = axle.width * truckVisualizationScale;
+                        
+                        return (
+                          <div
+                            key={`axle-${unit.unitId}-${idx}`}
+                            className="absolute pointer-events-none"
+                            style={{
+                              left: 0,
+                              top: `${yPos - axleWidth / 2}px`,
+                              width: `${unit.unitWidth * truckVisualizationScale}px`,
+                              height: `${axleWidth}px`,
+                              backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                              borderRadius: '2px',
+                              zIndex: 1,
+                            }}
+                            title={`Achse bei ${axle.position}cm`}
+                          />
+                        );
+                      })
+                      .filter(Boolean); // Remove null entries
+                  })()}
                   {unit.pallets.map((p: any)=>renderPallet(p,truckVisualizationScale))}
                 </div>
               </div>
@@ -1146,6 +1254,42 @@ export default function HomePage() {
         <p className="drop-shadow">Laderaumrechner © {new Date().getFullYear()} by Andreas Steiner</p>
       </footer>
       <Toaster />
+      <Dialog open={showStackingInfo} onOpenChange={(open) => {
+        if (!open) {
+          handleCloseStackingInfo();
+        } else {
+          setShowStackingInfo(open);
+        }
+      }}>
+        <DialogContent className="bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200/60 backdrop-blur-xl shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-slate-900">Hinweis zur Lastverteilung</DialogTitle>
+            <DialogDescription className="text-slate-700 pt-2">
+              Aus Gründen der optimalen Achslastverteilung beginnt die Stapelung standardmäßig erst ab Stellplatz 9 (DIN) bzw. 10 (EUP). Eine durchgehende Stapelung erfolgt nur, wenn die Lademenge dies erfordert.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center space-x-2 py-4">
+            <input
+              type="checkbox"
+              id="dontShowAgain"
+              checked={dontShowAgain}
+              onChange={(e) => setDontShowAgain(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="dontShowAgain" className="text-sm text-slate-700 cursor-pointer">
+              Ich habe verstanden, nicht mehr anzeigen
+            </label>
+          </div>
+          <DialogFooter>
+            <button
+              onClick={handleCloseStackingInfo}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            >
+              Verstanden
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
