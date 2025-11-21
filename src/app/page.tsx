@@ -3,6 +3,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Button } from '@/components/ui/button';
 import { WeightInputs } from '@/components/WeightInputs';
 
 // Define the type for a single weight entry
@@ -17,8 +20,8 @@ const TRUCK_TYPES = {
   roadTrain: {
     name: 'Hängerzug (2x 7,2m)',
     units: [
-      { id: 'unit1', length: 720, width: 245, occupiedRects: [] },
-      { id: 'unit2', length: 720, width: 245, occupiedRects: [] },
+      { id: 'unit1', length: 720, width: 245, occupiedRects: [], axles: [90, 620] },
+      { id: 'unit2', length: 720, width: 245, occupiedRects: [], axles: [120, 620] },
     ],
     totalLength: 1440,
     usableLength: 1440,
@@ -27,7 +30,7 @@ const TRUCK_TYPES = {
   },
   curtainSider: {
     name: 'Planensattel Standard (13.2m)',
-    units: [{ id: 'main', length: 1320, width: 245, occupiedRects: [] }],
+    units: [{ id: 'main', length: 1320, width: 245, occupiedRects: [], axles: [750, 1050, 1120, 1190] }],
     totalLength: 1320,
     usableLength: 1320,
     maxWidth: 245,
@@ -35,7 +38,7 @@ const TRUCK_TYPES = {
   },
   frigo: {
     name: 'Frigo (Kühler) Standard (13.2m)',
-    units: [{ id: 'main', length: 1320, width: 245, occupiedRects: [] }],
+    units: [{ id: 'main', length: 1320, width: 245, occupiedRects: [], axles: [750, 1050, 1120, 1190] }],
     totalLength: 1320,
     usableLength: 1320,
     maxWidth: 245,
@@ -43,7 +46,7 @@ const TRUCK_TYPES = {
   },
   smallTruck: {
     name: 'Motorwagen (7.2m)',
-    units: [{ id: 'main', length: 720, width: 245, occupiedRects: [] }],
+    units: [{ id: 'main', length: 720, width: 245, occupiedRects: [], axles: [100, 600] }],
     totalLength: 720,
     usableLength: 720,
     maxWidth: 245,
@@ -51,7 +54,7 @@ const TRUCK_TYPES = {
   },
   Waggon: {
     name: 'Waggon POE',
-    units: [{ id: 'main', length: 1370, width: 290, occupiedRects: [] }],
+    units: [{ id: 'main', length: 1370, width: 290, occupiedRects: [], axles: [420, 980, 1260] }],
     totalLength: 1370,
     usableLength: 1370,
     maxWidth: 290,
@@ -60,7 +63,7 @@ const TRUCK_TYPES = {
   },
   Waggon2: {
     name: 'Waggon KRM',
-    units: [{ id: 'main', length: 1600, width: 290, occupiedRects: [] }],
+    units: [{ id: 'main', length: 1600, width: 290, occupiedRects: [], axles: [480, 1120, 1440] }],
     totalLength: 1600,
     usableLength: 1600,
     maxWidth: 290,
@@ -645,10 +648,26 @@ export default function HomePage() {
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
   const [remainingCapacity, setRemainingCapacity] = useState<{ eup: number, din: number }>({ eup: 0, din: 0 });
   const [lastEdited, setLastEdited] = useState<'eup' | 'din'>('eup');
+  const [showStackingInfo, setShowStackingInfo] = useState(false);
+  const [acknowledgeStackingInfo, setAcknowledgeStackingInfo] = useState(false);
   const { toast } = useToast();
   const isWaggonSelected = ['Waggon', 'Waggon2'].includes(selectedTruck);
   const selectedTruckConfig = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES];
   const maxGrossWeightKg = selectedTruckConfig.maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG;
+
+  useEffect(() => {
+    const hasSeenStackingInfo = typeof window !== 'undefined' && localStorage.getItem('hasSeenStackingInfo') === 'true';
+    if (!hasSeenStackingInfo) {
+      setShowStackingInfo(true);
+    }
+  }, []);
+
+  const handleCloseStackingInfo = () => {
+    if (acknowledgeStackingInfo && typeof window !== 'undefined') {
+      localStorage.setItem('hasSeenStackingInfo', 'true');
+    }
+    setShowStackingInfo(false);
+  };
 
   const calculateAndSetState = useCallback(() => {
     const eupQuantity = eupWeights.reduce((sum, entry) => sum + entry.quantity, 0);
@@ -1078,6 +1097,24 @@ export default function HomePage() {
                     WebkitBackdropFilter:'blur(26px)'
                   }}
                 >
+                  {(unit as any).axles?.map((axlePosition: number, axleIndex: number) => {
+                    const axleHeightPx = 12;
+                    const y = Math.max(0, axlePosition * truckVisualizationScale - axleHeightPx / 2);
+                    return (
+                      <div
+                        key={`${unit.unitId}-axle-${axleIndex}`}
+                        className="absolute left-2 right-2 rounded-full"
+                        style={{
+                          top: `${y}px`,
+                          height: `${axleHeightPx}px`,
+                          background: 'rgba(15, 23, 42, 0.18)',
+                          boxShadow: '0 12px 32px -22px rgba(15, 23, 42, 0.65)',
+                          zIndex: 1,
+                        }}
+                        aria-hidden
+                      />
+                    );
+                  })}
                   {unit.pallets.map((p: any)=>renderPallet(p,truckVisualizationScale))}
                 </div>
               </div>
@@ -1145,6 +1182,46 @@ export default function HomePage() {
       <footer className="text-center py-4 mt-8 text-sm text-slate-100/80 border-t border-gray-200">
         <p className="drop-shadow">Laderaumrechner © {new Date().getFullYear()} by Andreas Steiner</p>
       </footer>
+      <Dialog
+        open={showStackingInfo}
+        onOpenChange={(open) => {
+          if (open) {
+            setShowStackingInfo(true);
+            return;
+          }
+          handleCloseStackingInfo();
+        }}
+      >
+        <DialogContent className="max-w-lg border-white/50 bg-white/30 backdrop-blur-2xl text-slate-900 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold drop-shadow">Hinweis zur Lastverteilung</DialogTitle>
+            <DialogDescription className="text-slate-800/90 leading-relaxed">
+              Hinweis zur Lastverteilung: Aus Gründen der optimalen Achslastverteilung beginnt die Stapelung standardmäßig erst ab
+              Stellplatz 9 (DIN) bzw. 10 (EUP). Eine durchgehende Stapelung erfolgt nur, wenn die Lademenge dies erfordert.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center space-x-3 rounded-xl bg-white/40 px-3 py-2 border border-white/50 shadow-inner">
+            <Checkbox
+              id="stacking-info-ack"
+              checked={acknowledgeStackingInfo}
+              onCheckedChange={(checked) => setAcknowledgeStackingInfo(Boolean(checked))}
+            />
+            <label htmlFor="stacking-info-ack" className="text-sm font-medium text-slate-900/90 select-none">
+              Ich habe verstanden, nicht mehr anzeigen
+            </label>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              className="bg-white/70 text-slate-900 backdrop-blur hover:bg-white/90 border border-white/60 shadow-md"
+              onClick={handleCloseStackingInfo}
+            >
+              Verstanden
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Toaster />
     </div>
   );
