@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { WeightInputs } from '@/components/WeightInputs';
+import { StackingInfoDialog } from '@/components/StackingInfoDialog';
 
 // Define the type for a single weight entry
 type WeightEntry = {
@@ -1078,6 +1079,95 @@ export default function HomePage() {
                     WebkitBackdropFilter:'blur(26px)'
                   }}
                 >
+                  {/* Axis visualization */}
+                  <svg
+                    className="absolute inset-0 pointer-events-none"
+                    width={unit.unitWidth*truckVisualizationScale}
+                    height={unit.unitLength*truckVisualizationScale}
+                    style={{ zIndex: 1 }}
+                  >
+                    {/* Front axle (typically around 80-100cm from front) */}
+                    <line
+                      x1={0}
+                      y1={90*truckVisualizationScale}
+                      x2={unit.unitWidth*truckVisualizationScale}
+                      y2={90*truckVisualizationScale}
+                      stroke="rgba(239, 68, 68, 0.6)"
+                      strokeWidth={2}
+                      strokeDasharray="4,4"
+                    />
+                    <text
+                      x={unit.unitWidth*truckVisualizationScale - 2}
+                      y={90*truckVisualizationScale - 4}
+                      fontSize="9"
+                      fill="rgba(239, 68, 68, 0.85)"
+                      textAnchor="end"
+                      fontWeight={600}
+                    >
+                      Vorderachse
+                    </text>
+                    
+                    {/* Rear axle (typically around 120-150cm from rear) */}
+                    <line
+                      x1={0}
+                      y1={(unit.unitLength - 120)*truckVisualizationScale}
+                      x2={unit.unitWidth*truckVisualizationScale}
+                      y2={(unit.unitLength - 120)*truckVisualizationScale}
+                      stroke="rgba(239, 68, 68, 0.6)"
+                      strokeWidth={2}
+                      strokeDasharray="4,4"
+                    />
+                    <text
+                      x={unit.unitWidth*truckVisualizationScale - 2}
+                      y={(unit.unitLength - 120)*truckVisualizationScale - 4}
+                      fontSize="9"
+                      fill="rgba(239, 68, 68, 0.85)"
+                      textAnchor="end"
+                      fontWeight={600}
+                    >
+                      Hinterachse
+                    </text>
+                    
+                    {/* Stacking zone start marker for DIN (position 9 = 8 * 50cm = 400cm) */}
+                    <line
+                      x1={0}
+                      y1={400*truckVisualizationScale}
+                      x2={unit.unitWidth*truckVisualizationScale}
+                      y2={400*truckVisualizationScale}
+                      stroke="rgba(34, 197, 94, 0.5)"
+                      strokeWidth={1.5}
+                      strokeDasharray="2,2"
+                    />
+                    <text
+                      x={2}
+                      y={400*truckVisualizationScale - 4}
+                      fontSize="8"
+                      fill="rgba(34, 197, 94, 0.8)"
+                      fontWeight={500}
+                    >
+                      Stapeln DIN ab Pos. 9
+                    </text>
+                    
+                    {/* Stacking zone start marker for EUP (position 10 = 9 * 40cm = 360cm) */}
+                    <line
+                      x1={0}
+                      y1={360*truckVisualizationScale}
+                      x2={unit.unitWidth*truckVisualizationScale}
+                      y2={360*truckVisualizationScale}
+                      stroke="rgba(59, 130, 246, 0.5)"
+                      strokeWidth={1.5}
+                      strokeDasharray="2,2"
+                    />
+                    <text
+                      x={2}
+                      y={360*truckVisualizationScale + 12}
+                      fontSize="8"
+                      fill="rgba(59, 130, 246, 0.8)"
+                      fontWeight={500}
+                    >
+                      Stapeln EUP ab Pos. 10
+                    </text>
+                  </svg>
                   {unit.pallets.map((p: any)=>renderPallet(p,truckVisualizationScale))}
                 </div>
               </div>
@@ -1145,6 +1235,7 @@ export default function HomePage() {
       <footer className="text-center py-4 mt-8 text-sm text-slate-100/80 border-t border-gray-200">
         <p className="drop-shadow">Laderaumrechner © {new Date().getFullYear()} by Andreas Steiner</p>
       </footer>
+      <StackingInfoDialog />
       <Toaster />
     </div>
   );
