@@ -4,6 +4,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { WeightInputs } from '@/components/WeightInputs';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Button } from '@/components/ui/button';
 
 // Define the type for a single weight entry
 type WeightEntry = {
@@ -20,6 +29,10 @@ const TRUCK_TYPES = {
       { id: 'unit1', length: 720, width: 245, occupiedRects: [] },
       { id: 'unit2', length: 720, width: 245, occupiedRects: [] },
     ],
+    axles: [
+      [100, 600],
+      [140, 520, 600, 680],
+    ],
     totalLength: 1440,
     usableLength: 1440,
     maxWidth: 245,
@@ -28,6 +41,7 @@ const TRUCK_TYPES = {
   curtainSider: {
     name: 'Planensattel Standard (13.2m)',
     units: [{ id: 'main', length: 1320, width: 245, occupiedRects: [] }],
+    axles: [[750, 1050, 1130, 1210]],
     totalLength: 1320,
     usableLength: 1320,
     maxWidth: 245,
@@ -36,6 +50,7 @@ const TRUCK_TYPES = {
   frigo: {
     name: 'Frigo (Kühler) Standard (13.2m)',
     units: [{ id: 'main', length: 1320, width: 245, occupiedRects: [] }],
+    axles: [[750, 1050, 1130, 1210]],
     totalLength: 1320,
     usableLength: 1320,
     maxWidth: 245,
@@ -44,6 +59,7 @@ const TRUCK_TYPES = {
   smallTruck: {
     name: 'Motorwagen (7.2m)',
     units: [{ id: 'main', length: 720, width: 245, occupiedRects: [] }],
+    axles: [[100, 600]],
     totalLength: 720,
     usableLength: 720,
     maxWidth: 245,
@@ -52,6 +68,7 @@ const TRUCK_TYPES = {
   Waggon: {
     name: 'Waggon POE',
     units: [{ id: 'main', length: 1370, width: 290, occupiedRects: [] }],
+    axles: [[320, 860, 1280]],
     totalLength: 1370,
     usableLength: 1370,
     maxWidth: 290,
@@ -61,6 +78,7 @@ const TRUCK_TYPES = {
   Waggon2: {
     name: 'Waggon KRM',
     units: [{ id: 'main', length: 1600, width: 290, occupiedRects: [] }],
+    axles: [[360, 980, 1420]],
     totalLength: 1600,
     usableLength: 1600,
     maxWidth: 290,
@@ -645,10 +663,28 @@ export default function HomePage() {
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
   const [remainingCapacity, setRemainingCapacity] = useState<{ eup: number, din: number }>({ eup: 0, din: 0 });
   const [lastEdited, setLastEdited] = useState<'eup' | 'din'>('eup');
+  const [showStackingInfo, setShowStackingInfo] = useState(false);
+  const [skipStackingInfo, setSkipStackingInfo] = useState(false);
   const { toast } = useToast();
   const isWaggonSelected = ['Waggon', 'Waggon2'].includes(selectedTruck);
   const selectedTruckConfig = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES];
   const maxGrossWeightKg = selectedTruckConfig.maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG;
+
+  useEffect(() => {
+    const hasSeen = typeof window !== 'undefined' ? localStorage.getItem('hasSeenStackingInfo') : 'true';
+    if (hasSeen) {
+      setSkipStackingInfo(true);
+      return;
+    }
+    setShowStackingInfo(true);
+  }, []);
+
+  const closeStackingInfo = () => {
+    if (skipStackingInfo && typeof window !== 'undefined') {
+      localStorage.setItem('hasSeenStackingInfo', 'true');
+    }
+    setShowStackingInfo(false);
+  };
 
   const calculateAndSetState = useCallback(() => {
     const eupQuantity = eupWeights.reduce((sum, entry) => sum + entry.quantity, 0);
@@ -923,6 +959,20 @@ export default function HomePage() {
     );
   };
 
+  const getAxlePositions = (truckKey: keyof typeof TRUCK_TYPES, unitIndex: number) => {
+    const truck = TRUCK_TYPES[truckKey];
+    const axles = truck?.axles as number[][] | undefined;
+    if (Array.isArray(axles)) {
+      if (Array.isArray(axles[unitIndex])) {
+        return axles[unitIndex];
+      }
+      if (Array.isArray(axles[0])) {
+        return axles[0];
+      }
+    }
+    return [] as number[];
+  };
+
   const truckVisualizationScale = 0.35;
 
   const warningsWithoutInfo = warnings.filter(w => !w.toLowerCase().includes('platz') && !w.toLowerCase().includes('benötigt'));
@@ -1037,51 +1087,77 @@ export default function HomePage() {
 
           <div className="lg:col-span-2 bg-gray-100 p-6 rounded-lg border border-gray-200 shadow-sm flex flex-col items-center justify-center">
             <p className="text-slate-100 text-lg mb-4 font-semibold drop-shadow">Ladefläche Visualisierung</p>
-            {palletArrangement.map((unit: any,index: number)=>(
-              <div key={unit.unitId} className="mb-6 w-full flex flex-col items-center">
-                {TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES].units.length>1&&<p className="text-sm text-slate-200 mb-2 drop-shadow-sm">Einheit {index+1} ({unit.unitLength/100}m x {unit.unitWidth/100}m)</p>}
-                {index === 0 && (
-                  <svg
-                    aria-hidden
-                    role="presentation"
-                    className="block"
-                    width={unit.unitWidth*truckVisualizationScale}
-                    height={24}
-                    viewBox={`0 0 ${unit.unitWidth*truckVisualizationScale} 24`}
-                  >
-                    {/* Cab base */}
-                    <rect
-                      x="0"
-                      y="6"
+            {palletArrangement.map((unit: any,index: number)=>{
+              const axlePositions = getAxlePositions(selectedTruck as keyof typeof TRUCK_TYPES, index) || [];
+              const axleWidth = unit.unitWidth * truckVisualizationScale * 0.7;
+              const axleLeft = unit.unitWidth * truckVisualizationScale * 0.15;
+              const axleThickness = 8;
+
+              return (
+                <div key={unit.unitId} className="mb-6 w-full flex flex-col items-center">
+                  {TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES].units.length>1&&<p className="text-sm text-slate-200 mb-2 drop-shadow-sm">Einheit {index+1} ({unit.unitLength/100}m x {unit.unitWidth/100}m)</p>}
+                  {index === 0 && (
+                    <svg
+                      aria-hidden
+                      role="presentation"
+                      className="block"
                       width={unit.unitWidth*truckVisualizationScale}
-                      height="16"
-                      rx="6"
-                      fill="rgba(59,130,246,0.4)"
-                      stroke="rgba(96,165,250,0.65)"
-                    />
-                    {/* Nose to indicate forward direction */}
-                    <path
-                      d={`M ${(unit.unitWidth*truckVisualizationScale)/2 - 12} 6 L ${(unit.unitWidth*truckVisualizationScale)/2} 0 L ${(unit.unitWidth*truckVisualizationScale)/2 + 12} 6 Z`}
-                      fill="rgba(59,130,246,0.55)"
-                    />
-                    {/* Label */}
-                    <text x={(unit.unitWidth*truckVisualizationScale)/2} y={20} textAnchor="middle" fontSize="10" fontWeight={700} fill="rgba(15,23,42,0.85)">Front</text>
-                  </svg>
-                )}
-                <div
-                  className="relative overflow-hidden rounded-2xl border border-white/40 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.55)]"
-                  style={{
-                    width:`${unit.unitWidth*truckVisualizationScale}px`,
-                    height:`${unit.unitLength*truckVisualizationScale}px`,
-                    background:'linear-gradient(160deg, rgba(148, 163, 184, 0.25), rgba(226, 232, 240, 0.18))',
-                    backdropFilter:'blur(26px)',
-                    WebkitBackdropFilter:'blur(26px)'
-                  }}
-                >
-                  {unit.pallets.map((p: any)=>renderPallet(p,truckVisualizationScale))}
+                      height={24}
+                      viewBox={`0 0 ${unit.unitWidth*truckVisualizationScale} 24`}
+                    >
+                      {/* Cab base */}
+                      <rect
+                        x="0"
+                        y="6"
+                        width={unit.unitWidth*truckVisualizationScale}
+                        height="16"
+                        rx="6"
+                        fill="rgba(59,130,246,0.4)"
+                        stroke="rgba(96,165,250,0.65)"
+                      />
+                      {/* Nose to indicate forward direction */}
+                      <path
+                        d={`M ${(unit.unitWidth*truckVisualizationScale)/2 - 12} 6 L ${(unit.unitWidth*truckVisualizationScale)/2} 0 L ${(unit.unitWidth*truckVisualizationScale)/2 + 12} 6 Z`}
+                        fill="rgba(59,130,246,0.55)"
+                      />
+                      {/* Label */}
+                      <text x={(unit.unitWidth*truckVisualizationScale)/2} y={20} textAnchor="middle" fontSize="10" fontWeight={700} fill="rgba(15,23,42,0.85)">Front</text>
+                    </svg>
+                  )}
+                  <div
+                    className="relative overflow-hidden rounded-2xl border border-white/40 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.55)]"
+                    style={{
+                      width:`${unit.unitWidth*truckVisualizationScale}px`,
+                      height:`${unit.unitLength*truckVisualizationScale}px`,
+                      background:'linear-gradient(160deg, rgba(148, 163, 184, 0.25), rgba(226, 232, 240, 0.18))',
+                      backdropFilter:'blur(26px)',
+                      WebkitBackdropFilter:'blur(26px)'
+                    }}
+                  >
+                    <div className="absolute inset-0 pointer-events-none" aria-hidden>
+                      {axlePositions.map((axlePos: number, axleIndex: number) => (
+                        <div
+                          key={`${unit.unitId}-axle-${axleIndex}`}
+                          className="rounded-full"
+                          style={{
+                            position: 'absolute',
+                            left: `${axleLeft}px`,
+                            top: `${axlePos*truckVisualizationScale - axleThickness / 2}px`,
+                            width: `${axleWidth}px`,
+                            height: `${axleThickness}px`,
+                            background: 'rgba(15,23,42,0.2)',
+                            boxShadow: '0 20px 42px -30px rgba(15, 23, 42, 0.65)',
+                            zIndex: 1,
+                            border: '1px solid rgba(255,255,255,0.35)'
+                          }}
+                        />
+                      ))}
+                    </div>
+                    {unit.pallets.map((p: any)=>renderPallet(p,truckVisualizationScale))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
              {palletArrangement.length === 0 && <p className="text-slate-200/80">Keine Paletten zum Anzeigen.</p>}
           </div>
         </div>
@@ -1145,6 +1221,49 @@ export default function HomePage() {
       <footer className="text-center py-4 mt-8 text-sm text-slate-100/80 border-t border-gray-200">
         <p className="drop-shadow">Laderaumrechner © {new Date().getFullYear()} by Andreas Steiner</p>
       </footer>
+      <Dialog
+        open={showStackingInfo}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeStackingInfo();
+            return;
+          }
+          setShowStackingInfo(true);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg bg-white/60 backdrop-blur-2xl border border-white/50 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-slate-900">Hinweis zur Lastverteilung</DialogTitle>
+            <DialogDescription className="text-slate-800 leading-relaxed">
+              Hinweis zur Lastverteilung: Aus Gründen der optimalen Achslastverteilung beginnt die Stapelung standardmäßig erst ab Stellplatz 9 (DIN) bzw. 10 (EUP). Eine durchgehende Stapelung erfolgt nur, wenn die Lademenge dies erfordert.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-start space-x-3 py-2">
+            <Checkbox
+              id="stacking-info-ack"
+              checked={skipStackingInfo}
+              onCheckedChange={(value) => setSkipStackingInfo(Boolean(value))}
+            />
+            <label htmlFor="stacking-info-ack" className="text-sm text-slate-800 leading-snug">
+              Ich habe verstanden, nicht mehr anzeigen
+            </label>
+          </div>
+          <div className="flex justify-end space-x-3 pt-2">
+            <Button variant="ghost" className="backdrop-blur-sm" onClick={closeStackingInfo}>
+              Schließen
+            </Button>
+            <Button
+              className="backdrop-blur-sm"
+              onClick={() => {
+                setSkipStackingInfo(true);
+                closeStackingInfo();
+              }}
+            >
+              Verstanden
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Toaster />
     </div>
   );
