@@ -519,23 +519,29 @@ export const calculateLoadingLogic = (
         } else if (countBases >= 1 && remainingLength >= PALLET_TYPES.euro.width) {
           activeEupPatternForRow = 'broad';
         } else {
-          activeEupPatternForRow = 'long';
+          activeEupPatternForRow = 'none';
         }
+        if (activeEupPatternForRow === 'none') break; // No more EUPs fit
       }
 
       const palletDef = type === 'euro' ? PALLET_TYPES.euro : PALLET_TYPES.industrial;
-      const palletLen = activeEupPatternForRow === 'broad' && type === 'euro' ? palletDef.width : palletDef.length;
-      const palletWid = activeEupPatternForRow === 'broad' && type === 'euro' ? palletDef.length : palletDef.width;
+      let palletLen: number, palletWid: number;
+      if (type === 'euro') {
+        palletLen = activeEupPatternForRow === 'long' ? palletDef.length : palletDef.width;
+        palletWid = activeEupPatternForRow === 'long' ? palletDef.width : palletDef.length;
+      } else {
+        palletLen = palletDef.width; // 100cm orientation for DIN
+        palletWid = palletDef.length; // 120cm orientation for DIN
+      }
 
-      // Line wrap
       if (currentY + palletWid > unit.width) {
         currentX += currentRowHeight;
         currentY = 0;
         currentRowHeight = 0;
-        if (type === 'euro' && currentEupLoadingPattern === 'auto') {
-          activeEupPatternForRow = activeEupPatternForRow === 'long' ? 'broad' : 'long';
-        }
-        continue;
+        continue; // Re-evaluate this same pallet in the new row
+      }
+      if (currentX + palletLen > unit.length) {
+        break; // No more space in this unit
       }
 
       // Place the Pallet(s)
