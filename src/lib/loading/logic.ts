@@ -407,36 +407,36 @@ export const calculateLoadingLogic = (
   };
 
   // Master priority depending on placementOrder
-  const selectionStop = { stopped: false };
   const tryPairs = (pairs: Array<any>, type: 'euro' | 'industrial') => {
     for (const pair of pairs) {
-      if (selectionStop.stopped) break;
       const singles = pair.pair as Array<any>;
       const addWeight = pair.weight || singles.reduce((s, p) => s + (p.weight || 0), 0);
       const added = attemptAdd(type, addWeight, singles);
-      if (!added) { selectionStop.stopped = true; break; }
+      if (!added) return false;
     }
+    return true;
   };
   const trySingles = (singles: Array<any>, type: 'euro' | 'industrial') => {
     for (const single of singles) {
-      if (selectionStop.stopped) break;
       const added = attemptAdd(type, single.weight || 0, [single]);
-      if (!added) { selectionStop.stopped = true; break; }
+      if (!added) return false;
     }
+    return true;
   };
 
     const processStackPlan = (build: { frontSingles: Array<any>; pairs: Array<any>; tailSingles: Array<any>; }, type: 'industrial' | 'euro') => {
-      if (!selectionStop.stopped && build.frontSingles.length > 0) trySingles(build.frontSingles, type);
-      if (!selectionStop.stopped && build.pairs.length > 0) tryPairs(build.pairs, type);
-      if (!selectionStop.stopped && build.tailSingles.length > 0) trySingles(build.tailSingles, type);
+      if (build.frontSingles.length > 0 && !trySingles(build.frontSingles, type)) return false;
+      if (build.pairs.length > 0 && !tryPairs(build.pairs, type)) return false;
+      if (build.tailSingles.length > 0 && !trySingles(build.tailSingles, type)) return false;
+      return true;
     };
 
     if (placementOrder === 'DIN_FIRST') {
       processStackPlan({ frontSingles: dinFrontSingles, pairs: stackedDinCandidates, tailSingles: dinTailSingles }, 'industrial');
-      if (!selectionStop.stopped) processStackPlan({ frontSingles: eupFrontSingles, pairs: stackedEupCandidates, tailSingles: eupTailSingles }, 'euro');
+      processStackPlan({ frontSingles: eupFrontSingles, pairs: stackedEupCandidates, tailSingles: eupTailSingles }, 'euro');
     } else {
       processStackPlan({ frontSingles: eupFrontSingles, pairs: stackedEupCandidates, tailSingles: eupTailSingles }, 'euro');
-      if (!selectionStop.stopped) processStackPlan({ frontSingles: dinFrontSingles, pairs: stackedDinCandidates, tailSingles: dinTailSingles }, 'industrial');
+      processStackPlan({ frontSingles: dinFrontSingles, pairs: stackedDinCandidates, tailSingles: dinTailSingles }, 'industrial');
     }
 
   // Leftover warning
