@@ -499,6 +499,11 @@ export const calculateLoadingLogic = (
       const { type, isStacked } = palletToPlace;
       if (currentY === 0 && type === 'euro' && currentEupLoadingPattern === 'auto') {
         const remainingLength = unit.length - currentX;
+        const widthForLong = Math.max(1, Math.floor(unit.width / PALLET_TYPES.euro.width));
+        const widthForBroad = Math.max(1, Math.floor(unit.width / PALLET_TYPES.euro.length));
+        const rowsPossibleLong = Math.floor(remainingLength / PALLET_TYPES.euro.length);
+        const rowsPossibleBroad = Math.floor(remainingLength / PALLET_TYPES.euro.width);
+
         // Count consecutive euro bases ahead
         let countBases = 0;
         let j = i;
@@ -512,15 +517,20 @@ export const calculateLoadingLogic = (
             j++;
           }
         }
-        if (countBases >= 3 && remainingLength >= PALLET_TYPES.euro.length) {
-          activeEupPatternForRow = 'long';
-        } else if (countBases >= 2 && remainingLength >= PALLET_TYPES.euro.width) {
-          activeEupPatternForRow = 'broad';
-        } else if (countBases >= 1 && remainingLength >= PALLET_TYPES.euro.width) {
-          activeEupPatternForRow = 'broad';
-        } else {
+
+        const capacityLong = rowsPossibleLong * widthForLong;
+        const capacityBroad = rowsPossibleBroad * widthForBroad;
+
+        if (capacityLong === 0 && capacityBroad === 0) {
           activeEupPatternForRow = 'none';
+        } else if (capacityBroad > capacityLong) {
+          activeEupPatternForRow = capacityBroad >= countBases ? 'broad' : 'long';
+        } else if (capacityLong > capacityBroad) {
+          activeEupPatternForRow = capacityLong >= countBases ? 'long' : 'broad';
+        } else {
+          activeEupPatternForRow = capacityBroad >= countBases ? 'broad' : 'long';
         }
+
         if (activeEupPatternForRow === 'none') break; // No more EUPs fit
       }
 
@@ -580,6 +590,15 @@ export const calculateLoadingLogic = (
     }
     // Remove the placed pallets from the main queue
     placementQueue.splice(0, unit.palletsVisual.length);
+  }
+
+  if (placementQueue.length > 0) {
+    const unplacedDin = placementQueue.filter(p => p.type === 'industrial').length;
+    const unplacedEup = placementQueue.filter(p => p.type === 'euro').length;
+    const unplacedParts: string[] = [];
+    if (unplacedDin > 0) unplacedParts.push(`${unplacedDin} DIN`);
+    if (unplacedEup > 0) unplacedParts.push(`${unplacedEup} EUP`);
+    if (unplacedParts.length > 0) warnings.push(`Konnte nicht alle Paletten platzieren. Übrig: ${unplacedParts.join(' und ')}.`);
   }
 
   // Compute metrics for return
