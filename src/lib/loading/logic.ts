@@ -5,6 +5,7 @@ export type WeightEntry = {
   id: number;
   weight: string;
   quantity: number;
+  stackable?: boolean;
 };
 
 export type StackBand = 'front' | 'stack' | 'rear';
@@ -233,7 +234,7 @@ export const calculateLoadingLogic = (
       const qty = Math.max(0, Number(entry.quantity) || 0);
       const parsedWeight = parseFloat(entry.weight as unknown as string) || 0;
       for (let i = 0; i < qty; i++) {
-        result.push({ type, weight: parsedWeight, isStacked: false, id: uniqueIdSeed++, sourceId: entry.id });
+        result.push({ type, weight: parsedWeight, isStacked: false, id: uniqueIdSeed++, sourceId: entry.id, stackable: Boolean(entry.stackable) });
       }
     }
     return result;
@@ -244,6 +245,10 @@ export const calculateLoadingLogic = (
   const allDinSingles = flattenToSingles(dinWeights, 'industrial');
   const requestedEupQuantity = allEupSingles.length;
   const requestedDinQuantity = allDinSingles.length;
+  const requestedStackableEup = eupWeights.reduce((sum, entry) => sum + (entry.stackable ? entry.quantity : 0), 0);
+  const requestedStackableDin = dinWeights.reduce((sum, entry) => sum + (entry.stackable ? entry.quantity : 0), 0);
+  const effectiveMaxStackedEup = typeof maxStackedEup === 'undefined' ? requestedStackableEup : maxStackedEup;
+  const effectiveMaxStackedDin = typeof maxStackedDin === 'undefined' ? requestedStackableDin : maxStackedDin;
 
   // Build stacked candidate pairs according to flags/limits
   let stackGroupSeed = 1;
@@ -263,19 +268,23 @@ export const calculateLoadingLogic = (
     }
 
     if (stackingStrategy === 'max_pairs') {
+      const stackablePool = working.filter(single => single.stackable);
       const pairs: Array<any> = [];
-      const remaining = [...working];
-      const allowedStackableCount = numericLimit > 0 ? Math.min(numericLimit, remaining.length) : remaining.length;
-      const pairCount = Math.floor(allowedStackableCount / 2);
+      const stackableLimit = numericLimit > 0 ? Math.min(numericLimit, stackablePool.length) : stackablePool.length;
+      const pairCount = Math.floor(stackableLimit / 2);
+      const pairedIds = new Set<number>();
+
       for (let i = 0; i < pairCount; i++) {
-        const first = remaining.shift();
-        const second = remaining.shift();
+        const first = stackablePool[i * 2];
+        const second = stackablePool[i * 2 + 1];
         if (!first || !second) break;
         const groupId = `grp_${type}_${stackGroupSeed++}`;
         first.isStacked = true;
         first.stackGroupId = groupId;
         second.isStacked = true;
         second.stackGroupId = groupId;
+        pairedIds.add(first.id);
+        pairedIds.add(second.id);
         pairs.push({
           type,
           weight: (first.weight || 0) + (second.weight || 0),
@@ -285,7 +294,9 @@ export const calculateLoadingLogic = (
           stackGroupId: groupId,
         });
       }
-      return { pairs, frontSingles: [] as Array<any>, tailSingles: remaining };
+
+      const tailSingles = working.filter(single => !pairedIds.has(single.id));
+      return { pairs, frontSingles: [] as Array<any>, tailSingles };
     }
 
     const stackingRule = STACKING_RULES[type];
@@ -313,9 +324,12 @@ export const calculateLoadingLogic = (
       return { single, zone, paired: false };
     });
 
+    const stackableBaseRecords = baseRecords.filter(r => r.single.stackable);
+    const stackableOverflowSingles = overflowSingles.filter(single => single.stackable);
+    const totalStackablePool = stackableBaseRecords.length + stackableOverflowSingles.length;
     const maxPairsByLimit =
-      numericLimit > 0 ? Math.floor(Math.min(numericLimit, working.length) / 2) : Number.POSITIVE_INFINITY;
-    const maxPairsByAvailability = Math.min(baseRecords.length, overflowSingles.length);
+      numericLimit > 0 ? Math.floor(Math.min(numericLimit, totalStackablePool) / 2) : Number.POSITIVE_INFINITY;
+    const maxPairsByAvailability = Math.min(stackableBaseRecords.length, stackableOverflowSingles.length);
     const totalPairsAllowed = Math.min(maxPairsByLimit, maxPairsByAvailability);
 
     const stackPriorityRecords = [
@@ -325,10 +339,15 @@ export const calculateLoadingLogic = (
     ];
 
     let pairsFormed = 0;
+    const overflowStackableQueue = [...stackableOverflowSingles];
+    const usedOverflowIds = new Set<number>();
+
     for (const record of stackPriorityRecords) {
       if (pairsFormed >= totalPairsAllowed) break;
-      const top = overflowSingles.shift();
+      if (!record.single.stackable) continue;
+      const top = overflowStackableQueue.shift();
       if (!top) break;
+      usedOverflowIds.add(top.id);
       const base = record.single;
       const groupId = `grp_${type}_${stackGroupSeed++}`;
       base.isStacked = true;
@@ -355,6 +374,7 @@ export const calculateLoadingLogic = (
     }
 
     overflowSingles.forEach(single => {
+      if (usedOverflowIds.has(single.id)) return;
       single.stackPlacementBand = 'rear';
       tailSingles.push(single);
     });
@@ -362,8 +382,8 @@ export const calculateLoadingLogic = (
     return { pairs, frontSingles, tailSingles };
   };
 
-    const dinStackBuild = buildStackedPairs(allDinSingles, isDINStackable, maxStackedDin, 'industrial', lengthLimitCm, stackingStrategy);
-    const eupStackBuild = buildStackedPairs(allEupSingles, isEUPStackable, maxStackedEup, 'euro', lengthLimitCm, stackingStrategy);
+    const dinStackBuild = buildStackedPairs(allDinSingles, isDINStackable, effectiveMaxStackedDin, 'industrial', lengthLimitCm, stackingStrategy);
+    const eupStackBuild = buildStackedPairs(allEupSingles, isEUPStackable, effectiveMaxStackedEup, 'euro', lengthLimitCm, stackingStrategy);
 
     const stackedDinCandidates = dinStackBuild.pairs; // array of pair-candidates
     const stackedEupCandidates = eupStackBuild.pairs; // array of pair-candidates

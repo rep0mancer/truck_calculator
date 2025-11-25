@@ -18,8 +18,6 @@ type PlannerState = {
   eupLoadingPattern: 'auto' | 'long' | 'broad';
   isEUPStackable: boolean;
   isDINStackable: boolean;
-  eupStackLimit: number;
-  dinStackLimit: number;
   stackingStrategy: StackingStrategy;
   loadedEuroPalletsBase: number;
   loadedIndustrialPalletsBase: number;
@@ -39,8 +37,6 @@ type PlannerState = {
   setEupLoadingPattern: (pattern: 'auto' | 'long' | 'broad') => void;
   setIsEUPStackable: (stackable: boolean) => void;
   setIsDINStackable: (stackable: boolean) => void;
-  setEupStackLimit: (limit: number) => void;
-  setDinStackLimit: (limit: number) => void;
   setStackingStrategy: (strategy: StackingStrategy) => void;
   setLastEdited: (last: LastEdited) => void;
 
@@ -51,9 +47,12 @@ type PlannerState = {
 };
 
 const createEmptyWeightEntries = () => ({
-  eupWeights: [{ id: Date.now(), weight: '', quantity: 0 }],
-  dinWeights: [{ id: Date.now() + 1, weight: '', quantity: 0 }],
+  eupWeights: [{ id: Date.now(), weight: '', quantity: 0, stackable: false }],
+  dinWeights: [{ id: Date.now() + 1, weight: '', quantity: 0, stackable: false }],
 });
+
+const computeStackableCount = (entries: WeightEntry[]) =>
+  entries.reduce((sum, entry) => sum + (entry.stackable ? entry.quantity : 0), 0);
 
 export const usePlannerStore = create<PlannerState>()(
   devtools((set, get) => ({
@@ -62,8 +61,6 @@ export const usePlannerStore = create<PlannerState>()(
     eupLoadingPattern: 'auto',
     isEUPStackable: false,
     isDINStackable: false,
-    eupStackLimit: 0,
-    dinStackLimit: 0,
     stackingStrategy: 'axle_safe',
     loadedEuroPalletsBase: 0,
     loadedIndustrialPalletsBase: 0,
@@ -92,8 +89,6 @@ export const usePlannerStore = create<PlannerState>()(
     setEupLoadingPattern: (pattern) => set({ eupLoadingPattern: pattern }, false, 'setEupLoadingPattern'),
     setIsEUPStackable: (stackable) => set({ isEUPStackable: stackable }, false, 'setIsEUPStackable'),
     setIsDINStackable: (stackable) => set({ isDINStackable: stackable }, false, 'setIsDINStackable'),
-    setEupStackLimit: (limit) => set({ eupStackLimit: limit }, false, 'setEupStackLimit'),
-    setDinStackLimit: (limit) => set({ dinStackLimit: limit }, false, 'setDinStackLimit'),
     setStackingStrategy: (strategy) => set({ stackingStrategy: strategy }, false, 'setStackingStrategy'),
     setLastEdited: (last) => set({ lastEdited: last }, false, 'setLastEdited'),
 
@@ -113,8 +108,6 @@ export const usePlannerStore = create<PlannerState>()(
             ...emptyEntries,
             isEUPStackable: false,
             isDINStackable: false,
-            eupStackLimit: 0,
-            dinStackLimit: 0,
             eupLoadingPattern: 'auto',
             lastEdited: 'eup',
             loadedEuroPalletsBase: 0,
@@ -135,24 +128,32 @@ export const usePlannerStore = create<PlannerState>()(
 
     maximizePallets: (palletTypeToMax) => {
       const state = get();
+      const simEupWeights =
+        palletTypeToMax === 'euro'
+          ? [{ id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0', stackable: state.isEUPStackable }]
+          : [];
+      const simDinWeights =
+        palletTypeToMax === 'industrial'
+          ? [{ id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0', stackable: state.isDINStackable }]
+          : [];
       const simResults = calculateLoadingLogic(
         state.selectedTruck,
-        palletTypeToMax === 'euro' ? [{ id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0' }] : [],
-        palletTypeToMax === 'industrial' ? [{ id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0' }] : [],
+        simEupWeights,
+        simDinWeights,
         state.isEUPStackable,
         state.isDINStackable,
         'auto',
         palletTypeToMax === 'euro' ? 'EUP_FIRST' : 'DIN_FIRST',
-        state.eupStackLimit,
-        state.dinStackLimit,
+        computeStackableCount(simEupWeights),
+        computeStackableCount(simDinWeights),
         state.stackingStrategy,
       );
 
       if (palletTypeToMax === 'industrial') {
         set(
           () => ({
-            dinWeights: [{ id: Date.now(), weight: '', quantity: simResults.totalDinPalletsVisual }],
-            eupWeights: [{ id: Date.now() + 1, weight: '', quantity: 0 }],
+            dinWeights: [{ id: Date.now(), weight: '', quantity: simResults.totalDinPalletsVisual, stackable: state.isDINStackable }],
+            eupWeights: [{ id: Date.now() + 1, weight: '', quantity: 0, stackable: state.isEUPStackable }],
             lastEdited: 'din',
           }),
           false,
@@ -161,8 +162,8 @@ export const usePlannerStore = create<PlannerState>()(
       } else {
         set(
           () => ({
-            eupWeights: [{ id: Date.now(), weight: '', quantity: simResults.totalEuroPalletsVisual }],
-            dinWeights: [{ id: Date.now() + 1, weight: '', quantity: 0 }],
+            eupWeights: [{ id: Date.now(), weight: '', quantity: simResults.totalEuroPalletsVisual, stackable: state.isEUPStackable }],
+            dinWeights: [{ id: Date.now() + 1, weight: '', quantity: 0, stackable: state.isDINStackable }],
             lastEdited: 'eup',
           }),
           false,
@@ -177,10 +178,10 @@ export const usePlannerStore = create<PlannerState>()(
       const weightToFill = weightEntryToUse?.weight || '0';
 
       const eupSim = typeToFill === 'euro'
-        ? [...state.eupWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFill }]
+        ? [...state.eupWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFill, stackable: state.isEUPStackable }]
         : [...state.eupWeights];
       const dinSim = typeToFill === 'industrial'
-        ? [...state.dinWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFill }]
+        ? [...state.dinWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFill, stackable: state.isDINStackable }]
         : [...state.dinWeights];
 
       const order = typeToFill === 'euro' ? 'DIN_FIRST' : 'EUP_FIRST';
@@ -193,8 +194,8 @@ export const usePlannerStore = create<PlannerState>()(
         state.isDINStackable,
         'auto',
         order,
-        state.eupStackLimit,
-        state.dinStackLimit,
+        computeStackableCount(eupSim),
+        computeStackableCount(dinSim),
         state.stackingStrategy,
       );
 
@@ -245,6 +246,8 @@ export const usePlannerStore = create<PlannerState>()(
       const state = get();
       const eupQuantity = state.eupWeights.reduce((sum, entry) => sum + entry.quantity, 0);
       const dinQuantity = state.dinWeights.reduce((sum, entry) => sum + entry.quantity, 0);
+      const maxStackableEup = computeStackableCount(state.eupWeights);
+      const maxStackableDin = computeStackableCount(state.dinWeights);
 
       const primaryResults = calculateLoadingLogic(
         state.selectedTruck,
@@ -254,24 +257,25 @@ export const usePlannerStore = create<PlannerState>()(
         state.isDINStackable,
         state.eupLoadingPattern,
         'DIN_FIRST',
-        state.eupStackLimit,
-        state.dinStackLimit,
+        maxStackableEup,
+        maxStackableDin,
         state.stackingStrategy,
       );
 
       let multiTruckWarnings: string[] = [];
 
       if (dinQuantity > 0 && eupQuantity === 0) {
+        const dinCapacitySim = [{ id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0', stackable: state.isDINStackable }];
         const dinCapacityResult = calculateLoadingLogic(
           state.selectedTruck,
           [],
-          [{ id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0' }],
+          dinCapacitySim,
           state.isEUPStackable,
           state.isDINStackable,
           state.eupLoadingPattern,
           'DIN_FIRST',
-          state.eupStackLimit,
-          state.dinStackLimit,
+          maxStackableEup,
+          computeStackableCount(dinCapacitySim),
           state.stackingStrategy,
         );
         const maxDinCapacity = dinCapacityResult.totalDinPalletsVisual;
@@ -288,16 +292,17 @@ export const usePlannerStore = create<PlannerState>()(
           }
         }
       } else if (eupQuantity > 0 && dinQuantity === 0) {
+        const eupCapacitySim = [{ id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0', stackable: state.isEUPStackable }];
         const eupCapacityResult = calculateLoadingLogic(
           state.selectedTruck,
-          [{ id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0' }],
+          eupCapacitySim,
           [],
           state.isEUPStackable,
           state.isDINStackable,
           state.eupLoadingPattern,
           'EUP_FIRST',
-          state.eupStackLimit,
-          state.dinStackLimit,
+          computeStackableCount(eupCapacitySim),
+          maxStackableDin,
           state.stackingStrategy,
         );
         const maxEupCapacity = eupCapacityResult.totalEuroPalletsVisual;
@@ -316,32 +321,34 @@ export const usePlannerStore = create<PlannerState>()(
       }
 
       const weightToFillEup = state.eupWeights.length > 0 ? state.eupWeights[state.eupWeights.length - 1].weight || '0' : '0';
+      const eupCapacitySim = [{ id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFillEup, stackable: state.isEUPStackable }];
       const eupCapacityResult = calculateLoadingLogic(
         state.selectedTruck,
-        [{ id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFillEup }],
+        eupCapacitySim,
         state.dinWeights,
         state.isEUPStackable,
         state.isDINStackable,
         state.eupLoadingPattern,
         'DIN_FIRST',
-        state.eupStackLimit,
-        state.dinStackLimit,
+        computeStackableCount(eupCapacitySim),
+        maxStackableDin,
         state.stackingStrategy,
       );
       const maxEup = eupCapacityResult.totalEuroPalletsVisual;
       const remainingEup = Math.max(0, maxEup - eupQuantity);
 
       const weightToFillDin = state.dinWeights.length > 0 ? state.dinWeights[state.dinWeights.length - 1].weight || '0' : '0';
+      const dinCapacitySim = [{ id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFillDin, stackable: state.isDINStackable }];
       const dinCapacityResult = calculateLoadingLogic(
         state.selectedTruck,
         state.eupWeights,
-        [{ id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFillDin }],
+        dinCapacitySim,
         state.isEUPStackable,
         state.isDINStackable,
         state.eupLoadingPattern,
         'EUP_FIRST',
-        state.eupStackLimit,
-        state.dinStackLimit,
+        maxStackableEup,
+        computeStackableCount(dinCapacitySim),
         state.stackingStrategy,
       );
       const maxDin = dinCapacityResult.totalDinPalletsVisual;

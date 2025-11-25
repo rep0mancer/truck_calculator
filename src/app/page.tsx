@@ -27,10 +27,6 @@ export default function HomePage() {
     setIsEUPStackable,
     isDINStackable,
     setIsDINStackable,
-    eupStackLimit,
-    setEupStackLimit,
-    dinStackLimit,
-    setDinStackLimit,
     stackingStrategy,
     setStackingStrategy,
     loadedEuroPalletsBase,
@@ -62,8 +58,6 @@ export default function HomePage() {
     isEUPStackable,
     isDINStackable,
     eupLoadingPattern,
-    eupStackLimit,
-    dinStackLimit,
     stackingStrategy,
     recalculate,
   ]);
@@ -125,7 +119,12 @@ export default function HomePage() {
            
             <div className="border-t pt-4">
                 <label className="block text-sm font-semibold text-slate-800 mb-2 drop-shadow-sm">Industriepaletten (DIN)</label>
-                <WeightInputs entries={dinWeights} onChange={(entries)=>{ setLastEdited('din'); setDinWeights(entries); }} palletType="DIN" />
+                <WeightInputs
+                  entries={dinWeights}
+                  onChange={(entries)=>{ setLastEdited('din'); setDinWeights(entries); }}
+                  palletType="DIN"
+                  stackableEnabled={isDINStackable}
+                />
                 <button onClick={() => maximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl">Max. DIN</button>
                 <button
                   onClick={() => {
@@ -140,14 +139,16 @@ export default function HomePage() {
                     <input type="checkbox" id="dinStackable" checked={isDINStackable} onChange={e=>setIsDINStackable(e.target.checked)} disabled={isWaggonSelected} className="h-5 w-5 disabled:cursor-not-allowed"/>
                     <label htmlFor="dinStackable" className={`ml-2 text-sm text-slate-800 ${isWaggonSelected ? 'text-slate-400' : ''}`}>Stapelbar (2-fach)</label>
                 </div>
-                {isDINStackable && !isWaggonSelected && (
-                    <input type="number" min="0" value={dinStackLimit} onChange={e=>setDinStackLimit(Math.max(0, parseInt(e.target.value,10)||0))} className="mt-1 block w-full py-1 px-2 sm:text-xs" placeholder="Stapelbare Paletten (0 = alle)"/>
-                )}
             </div>
 
             <div className="border-t pt-4">
                 <label className="block text-sm font-semibold text-slate-800 mb-2 drop-shadow-sm">Europaletten (EUP)</label>
-                <WeightInputs entries={eupWeights} onChange={(entries)=>{ setLastEdited('eup'); setEupWeights(entries); }} palletType="EUP" />
+                <WeightInputs
+                  entries={eupWeights}
+                  onChange={(entries)=>{ setLastEdited('eup'); setEupWeights(entries); }}
+                  palletType="EUP"
+                  stackableEnabled={isEUPStackable}
+                />
                 <button onClick={() => maximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl">Max. EUP</button>
                 <button
                   onClick={() => {
@@ -162,9 +163,6 @@ export default function HomePage() {
                     <input type="checkbox" id="eupStackable" checked={isEUPStackable} onChange={e=>setIsEUPStackable(e.target.checked)} disabled={isWaggonSelected} className="h-5 w-5 disabled:cursor-not-allowed"/>
                     <label htmlFor="eupStackable" className={`ml-2 text-sm text-slate-800 ${isWaggonSelected ? 'text-slate-400' : ''}`}>Stapelbar (2-fach)</label>
                 </div>
-                {isEUPStackable && !isWaggonSelected && (
-                    <input type="number" min="0" value={eupStackLimit} onChange={e=>setEupStackLimit(Math.max(0, parseInt(e.target.value,10)||0))} className="mt-1 block w-full py-1 px-2 sm:text-xs" placeholder="Stapelbare Paletten (0 = alle)"/>
-                )}
             </div>
 
           <div className="border-t pt-4">
