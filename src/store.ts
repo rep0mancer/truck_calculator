@@ -51,15 +51,14 @@ type PlannerState = {
 };
 
 const createEmptyWeightEntries = () => ({
-  eup: [{ id: Date.now(), weight: '', quantity: 0 }],
-  din: [{ id: Date.now() + 1, weight: '', quantity: 0 }],
+  eupWeights: [{ id: Date.now(), weight: '', quantity: 0 }],
+  dinWeights: [{ id: Date.now() + 1, weight: '', quantity: 0 }],
 });
 
 export const usePlannerStore = create<PlannerState>()(
   devtools((set, get) => ({
     selectedTruck: 'curtainSider',
-    eupWeights: createEmptyWeightEntries().eup,
-    dinWeights: createEmptyWeightEntries().din,
+    ...createEmptyWeightEntries(),
     eupLoadingPattern: 'auto',
     isEUPStackable: false,
     isDINStackable: false,
@@ -100,25 +99,36 @@ export const usePlannerStore = create<PlannerState>()(
 
     clearAllPallets: () =>
       set(
-        () => ({
-          ...createEmptyWeightEntries(),
-          isEUPStackable: false,
-          isDINStackable: false,
-          eupStackLimit: 0,
-          dinStackLimit: 0,
-          eupLoadingPattern: 'auto',
-          lastEdited: 'eup',
-          loadedEuroPalletsBase: 0,
-          loadedIndustrialPalletsBase: 0,
-          totalEuroPalletsVisual: 0,
-          totalDinPalletsVisual: 0,
-          utilizationPercentage: 0,
-          warnings: [],
-          palletArrangement: [],
-          totalWeightKg: 0,
-          actualEupLoadingPattern: 'auto',
-          remainingCapacity: { eup: 0, din: 0 },
-        }),
+        () => {
+          const emptyEntries = createEmptyWeightEntries();
+          const truckConfig = TRUCK_TYPES[get().selectedTruck];
+          const emptyArrangement = truckConfig.units.map((unit) => ({
+            unitId: unit.id,
+            unitLength: unit.length,
+            unitWidth: unit.width,
+            pallets: [],
+          }));
+
+          return {
+            ...emptyEntries,
+            isEUPStackable: false,
+            isDINStackable: false,
+            eupStackLimit: 0,
+            dinStackLimit: 0,
+            eupLoadingPattern: 'auto',
+            lastEdited: 'eup',
+            loadedEuroPalletsBase: 0,
+            loadedIndustrialPalletsBase: 0,
+            totalEuroPalletsVisual: 0,
+            totalDinPalletsVisual: 0,
+            utilizationPercentage: 0,
+            warnings: [],
+            palletArrangement: emptyArrangement,
+            totalWeightKg: 0,
+            actualEupLoadingPattern: 'auto',
+            remainingCapacity: { eup: 0, din: 0 },
+          };
+        },
         false,
         'clearAllPallets',
       ),
