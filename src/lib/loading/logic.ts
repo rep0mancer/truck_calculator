@@ -14,7 +14,7 @@ export const MAX_GROSS_WEIGHT_KG = 24000;
 export const MAX_PALLET_SIMULATION_QUANTITY = 300;
 export const MAX_WEIGHT_PER_METER_KG = 1800;
 
-// Safe Zone: Stacking preferentially happens AFTER this distance (cm)
+// 3.8m Safe Zone: Stacking preferentially happens AFTER this distance (cm)
 const FRONT_SAFE_ZONE_CM = 380; 
 
 export const KILOGRAM_FORMATTER = new Intl.NumberFormat('de-DE', {
@@ -82,14 +82,14 @@ export const PALLET_TYPES = {
   industrial: { name: 'Industrial Palette (1.2m x 1.0m)', type: 'industrial', length: 120, width: 100, area: 120 * 100 },
 };
 
-// --- WAGGON SPECIAL LOGIC (Preserved) ---
+// --- WAGGON SPECIAL LOGIC ---
 export const calculateWaggonEuroLayout = (eupWeights: WeightEntry[], truckConfig: any) => {
   const allEupSingles = eupWeights.flatMap(e => Array(e.quantity).fill({ weight: parseFloat(e.weight)||0 }));
   const count = Math.min(allEupSingles.length, 38);
   const placements: any[] = [];
   let currentWeight = 0;
+  
   let placed = 0;
-
   // Row 1 (11 pallets)
   for(let i=0; i<11 && placed<count; i++) {
     placements.push({ x: i*120, y: 0, width: 120, height: 80, type: 'euro', labelId: ++placed, isStackedTier: null, unitId: truckConfig.units[0].id });
@@ -100,7 +100,7 @@ export const calculateWaggonEuroLayout = (eupWeights: WeightEntry[], truckConfig
     placements.push({ x: i*120, y: 80, width: 120, height: 80, type: 'euro', labelId: ++placed, isStackedTier: null, unitId: truckConfig.units[0].id });
     currentWeight += allEupSingles[placed-1].weight;
   }
-  // Row 3 (16 pallets - rotated)
+  // Row 3 (16 pallets)
   for(let i=0; i<16 && placed<count; i++) {
     placements.push({ x: i*80, y: 160, width: 80, height: 120, type: 'euro', labelId: ++placed, isStackedTier: null, unitId: truckConfig.units[0].id });
     currentWeight += allEupSingles[placed-1].weight;
@@ -130,8 +130,7 @@ export const calculateLoadingLogic = (
 ) => {
   const truckConfig = JSON.parse(JSON.stringify(TRUCK_TYPES[truckKey]));
   const isWaggon = ['Waggon', 'Waggon2'].includes(truckKey);
-  let warnings: string[] = [];
-
+  
   // Waggon Bypass
   if (isWaggon && dinWeights.every(e => e.quantity === 0) && eupWeights.some(e => e.quantity > 0)) {
     const res = calculateWaggonEuroLayout(eupWeights, truckConfig);
@@ -142,16 +141,16 @@ export const calculateLoadingLogic = (
   const isEUPStackable = isWaggon ? false : currentIsEUPStackable;
   const isDINStackable = isWaggon ? false : currentIsDINStackable;
 
-  // 1. DATA PREPARATION
-  // Create flat list of pallets with specific stackability
+  // 1. PREPARE GROUPS
+  // We work with groups of items instead of individual simulated pallets to ensure stable sorting.
   let globalId = 1;
   type PalletItem = { id: number, type: 'euro' | 'industrial', weight: number, stackable: boolean, labelId: number };
-  
+
   const createItems = (entries: WeightEntry[], type: 'euro'|'industrial', canStack: boolean) => {
     const res: PalletItem[] = [];
     entries.forEach(e => {
       const qty = Math.max(0, Number(e.quantity) || 0);
-      const rowStackable = canStack && (e.stackable !== false); 
+      const rowStackable = canStack && (e.stackable !== false);
       for(let i=0; i<qty; i++) {
         res.push({
           id: globalId++,
@@ -168,294 +167,253 @@ export const calculateLoadingLogic = (
   const allEups = createItems(eupWeights, 'euro', isEUPStackable);
   const allDins = createItems(dinWeights, 'industrial', isDINStackable);
   
-  // Visual Labels
+  // Visual IDs
   allEups.forEach((p, i) => p.labelId = i + 1);
   allDins.forEach((p, i) => p.labelId = i + 1);
 
-  // Priority Queue
-  const queue = placementOrder === 'DIN_FIRST' ? [...allDins, ...allEups] : [...allEups, ...allDins];
-  const notLoaded: PalletItem[] = [];
-
-  // 2. ROW DEFINITION
-  type Row = {
+  // Create Logical Blocks
+  type Block = {
     type: 'euro' | 'industrial';
-    length: number;
-    capacity: number;
-    items: PalletItem[]; // Base items
-    stackedItems: PalletItem[]; // Top items
-    stacked: boolean;
-    startX: number; 
+    items: PalletItem[];
+    rowLength: number; // Length of 1 row
+    rowCapacity: number; // Items per row
+    stackable: boolean;
+    assignedStacks: number; // How many items are stacked
   };
 
-  const rows: Row[] = [];
-  let currentRow: Row | null = null;
+  const blocks: Block[] = [];
+
+  // Helper to get specs
+  const getSpec = (type: 'euro' | 'industrial') => {
+    if (type === 'industrial') return { len: 100, cap: 2 }; // DIN: 2 wide, 100 length
+    if (currentEupLoadingPattern === 'broad') return { len: 80, cap: 2 }; // EUP Broad: 2 wide, 80 length
+    return { len: 120, cap: 3 }; // EUP Auto/Long: 3 wide, 120 length
+  };
+
+  // Add to blocks based on placement order
+  if (placementOrder === 'DIN_FIRST') {
+    if (allDins.length) blocks.push({ type: 'industrial', items: allDins, rowLength: 100, rowCapacity: 2, stackable: isDINStackable, assignedStacks: 0 });
+    if (allEups.length) {
+       const spec = getSpec('euro');
+       blocks.push({ type: 'euro', items: allEups, rowLength: spec.len, rowCapacity: spec.cap, stackable: isEUPStackable, assignedStacks: 0 });
+    }
+  } else {
+    if (allEups.length) {
+       const spec = getSpec('euro');
+       blocks.push({ type: 'euro', items: allEups, rowLength: spec.len, rowCapacity: spec.cap, stackable: isEUPStackable, assignedStacks: 0 });
+    }
+    if (allDins.length) blocks.push({ type: 'industrial', items: allDins, rowLength: 100, rowCapacity: 2, stackable: isDINStackable, assignedStacks: 0 });
+  }
+
+  // 2. CALCULATE TOPOLOGY (The Solver)
   const totalTruckLength = truckConfig.usableLength;
-
-  // Helper: Get dimensions for a new row
-  const getRowSpec = (type: 'euro' | 'industrial', remainingTruckLength: number) => {
-    if (type === 'industrial') return { length: 100, capacity: 2 };
-    
-    // EUP Logic
-    if (currentEupLoadingPattern === 'broad') return { length: 80, capacity: 2 };
-    
-    // Auto/Long: Default to 3-wide (120cm)
-    // Switch to Broad (80cm) ONLY if we are at the very end and 120 doesn't fit but 80 does
-    const standardSpec = { length: 120, capacity: 3 };
-    if (currentEupLoadingPattern === 'auto' && remainingTruckLength < 120 && remainingTruckLength >= 80) {
-      return { length: 80, capacity: 2 };
-    }
-    return standardSpec;
+  
+  // Function to calc total length given current stacking config
+  const calculateTotalLength = () => {
+    return blocks.reduce((acc, b) => {
+      // Items on the floor = Total Items - Stacked Items
+      const floorItems = Math.max(0, b.items.length - b.assignedStacks);
+      const rowsNeeded = Math.ceil(floorItems / b.rowCapacity);
+      return acc + (rowsNeeded * b.rowLength);
+    }, 0);
   };
 
-  // 3. THE "PLACE OR SQUEEZE" LOOP
-  for (const p of queue) {
-    let placed = false;
-
-    // A. Try adding to current row (if space exists on floor of current row)
-    if (currentRow && currentRow.type === p.type && currentRow.items.length < currentRow.capacity) {
-      currentRow.items.push(p);
-      placed = true;
-    } 
+  // Loop: Increase stacks until fit or impossible
+  let iterations = 0;
+  while (calculateTotalLength() > totalTruckLength && iterations < 1000) {
+    iterations++;
     
-    // B. Try starting a new row (if space exists in truck)
-    if (!placed) {
-      const currentUsed = rows.reduce((acc, r) => acc + r.length, 0);
-      const remaining = totalTruckLength - currentUsed;
-      const spec = getRowSpec(p.type, remaining);
-
-      if (spec.length <= remaining) {
-        currentRow = {
-          type: p.type,
-          length: spec.length,
-          capacity: spec.capacity,
-          items: [p],
-          stackedItems: [],
-          stacked: false,
-          startX: currentUsed
-        };
-        rows.push(currentRow);
-        placed = true;
-      }
+    // Find a block that CAN stack more
+    // We prioritize the block that matches the logic: 
+    // To fit 28 DIN + 11 EUP, we usually need to stack the DINs to make room for EUP.
+    // Simple heuristic: Find the block with the most unstacked stackable items? 
+    // Or just iterate?
+    
+    // We pick the block that is (1) stackable and (2) has base items that can accept a stack.
+    // Capacity check: For every stack, we need a base. Max Stacks = Floor Items * 1.
+    // So we can stack until assignedStacks == floorItems. (Approx 50% of total).
+    
+    let bestBlock: Block | null = null;
+    
+    // Try to find a block where adding a stack reduces row count efficiently
+    // For now, just pick the first valid one, or prefer the larger one?
+    // Let's prioritize the one appearing LAST in list (EUPs) if possible to compress tail?
+    // No, usually we compress DINs (first) to make room.
+    
+    // Filter blocks that can accept more stacks
+    const candidates = blocks.filter(b => b.stackable && b.assignedStacks < (b.items.length / 2));
+    
+    if (candidates.length === 0) break; // Can't stack more
+    
+    // Naive: just pick first available. This handles 28 DIN + 11 EUP correctly because DIN is first.
+    // Better: Pick the one causing the length issue?
+    // Let's pick the one with the most remaining stackable potential.
+    bestBlock = candidates.reduce((prev, curr) => (curr.items.length > prev.items.length ? curr : prev));
+    
+    if (bestBlock) {
+      bestBlock.assignedStacks++;
     }
+  }
 
-    // C. THE SQUEEZE (Compression)
-    // If we couldn't place it on the floor, we must make room.
-    if (!placed) {
-      // Strategy:
-      // 1. Can we stack `p` directly on an existing matching row?
-      // 2. If not (e.g. truck is full of DINs, `p` is EUP), can we stack a DIN row to make length for `p`?
+  // 3. GENERATE VISUAL ROWS
+  const unitsState = truckConfig.units.map((u: any) => ({ ...u, palletsVisual: [] as any[] }));
+  const targetUnit = unitsState[0];
+  let currentX = 0;
+  let warnings: string[] = [];
+  let totalWeight = 0;
 
-      // Find candidate rows to receive a stack
-      // Candidate must be: matching type (if stacking p) OR matching type of a movable row.
-      
-      // Let's try to stack `p` directly first.
-      let targetRow = findBestStackTarget(rows, p.type, stackingStrategy);
-      
-      if (targetRow) {
-        // We found a spot for p!
-        placeOnStack(targetRow, p);
-        placed = true;
-      } else {
-        // We couldn't stack `p` directly. 
-        // We need to compress OTHER rows to free up floor length.
-        // Look for ANY row that can be compressed (stacked upon).
-        
-        // We iterate until we free up enough space or run out of moves
-        // For simplicity, we try to compress once per loop iteration
-        const potentialCompressionTypes = ['industrial', 'euro'] as const;
-        
-        for (const typeToCompress of potentialCompressionTypes) {
-          // We need to find a Source (floor row to remove) and a Target (floor row to stack upon).
-          // Source should be near the end (to free up contiguous space).
-          // Target should be near the safe zone.
-          
-          // Find last unstacked row of this type
-          const sourceIndex = findLastMovableRowIndex(rows, typeToCompress);
-          if (sourceIndex === -1) continue;
-          const sourceRow = rows[sourceIndex];
+  blocks.forEach(block => {
+    // We need to distribute `block.assignedStacks` onto the rows.
+    // First, calculate how many floor rows we have.
+    const floorItemsCount = block.items.length - block.assignedStacks;
+    const rowCount = Math.ceil(floorItemsCount / block.rowCapacity);
+    
+    // Create logical rows
+    const rows = Array.from({ length: rowCount }, (_, i) => ({
+      index: i,
+      base: [] as PalletItem[],
+      top: [] as PalletItem[],
+      x: 0
+    }));
 
-          // Find best target for this source
-          const compressTarget = findBestStackTarget(rows, typeToCompress, stackingStrategy, sourceIndex); // Limit search to before source
-
-          if (compressTarget && compressTarget.items.length >= sourceRow.items.length) {
-            // Move all items from source to target
-            sourceRow.items.forEach(item => {
-               item.stackable = true; // It was on floor, now going to stack. Assume stackable if row was movable.
-               placeOnStack(compressTarget, item);
-            });
-            
-            // Delete source row
-            rows.splice(sourceIndex, 1);
-            
-            // Re-calc positions to see if p fits now
-            let newUsed = rows.reduce((acc, r) => acc + r.length, 0);
-            // Update startX for subsequent logic
-            let runningX = 0; rows.forEach(r => { r.startX = runningX; runningX += r.length; });
-            
-            // Try to place `p` again on floor
-            const newRemaining = totalTruckLength - newUsed;
-            const newSpec = getRowSpec(p.type, newRemaining);
-            
-            if (newSpec.length <= newRemaining) {
-               currentRow = {
-                type: p.type,
-                length: newSpec.length,
-                capacity: newSpec.capacity,
-                items: [p],
-                stackedItems: [],
-                stacked: false,
-                startX: newUsed
-              };
-              rows.push(currentRow);
-              placed = true;
-              break; // Squeeze successful
-            }
-          }
+    // Fill Base
+    let itemIdx = 0;
+    // Items 0 to floorItemsCount-1 go to base
+    for (let r = 0; r < rowCount; r++) {
+      for (let c = 0; c < block.rowCapacity; c++) {
+        if (itemIdx < floorItemsCount) {
+          rows[r].base.push(block.items[itemIdx++]);
         }
       }
     }
 
-    if (!placed) {
-      notLoaded.push(p);
-    }
-  }
+    // Fill Top (The Stacks)
+    // We have `block.assignedStacks` items to place on top (indices floorItemsCount to end).
+    // STRATEGY APPLIES HERE: Where do we put these top items?
+    
+    // axle_safe: Fill rows from BACK (rowCount-1) to FRONT (0).
+    // max_pairs: Fill rows from FRONT (0) to BACK (rowCount-1).
+    
+    // We create a list of valid slot indices [row, col] that can accept a stack.
+    const validSlots: {r: number, c: number, xVal: number}[] = [];
+    
+    rows.forEach((r, rIdx) => {
+      r.base.forEach((_, cIdx) => {
+        // Determine X position relative to truck start to use SAFE_ZONE logic properly
+        const rowX = currentX + (rIdx * block.rowLength);
+        validSlots.push({ r: rIdx, c: cIdx, xVal: rowX });
+      });
+    });
 
-  // 4. HELPERS
-  function findBestStackTarget(allRows: Row[], type: string, strategy: StackingStrategy, beforeIndex: number = allRows.length) {
-    // Filter candidates
-    const candidates = allRows.slice(0, beforeIndex).filter(r => 
-      r.type === type &&
-      !r.stacked && 
-      r.items.every(i => i.stackable) // Base must be stackable
-    );
+    // Sort slots based on strategy
+    validSlots.sort((a, b) => {
+      const aSafe = a.xVal >= FRONT_SAFE_ZONE_CM;
+      const bSafe = b.xVal >= FRONT_SAFE_ZONE_CM;
 
-    if (candidates.length === 0) return null;
-
-    // Sort by Strategy
-    candidates.sort((a, b) => {
-      const aSafe = a.startX >= FRONT_SAFE_ZONE_CM;
-      const bSafe = b.startX >= FRONT_SAFE_ZONE_CM;
-
-      if (strategy === 'axle_safe') {
-        if (aSafe && !bSafe) return -1; // Prefer Safe
+      if (stackingStrategy === 'axle_safe') {
+        // Priority 1: Safe Zone (Rear)
+        if (aSafe && !bSafe) return -1;
         if (!aSafe && bSafe) return 1;
-        return a.startX - b.startX; // Front-to-back within zone
+        // Priority 2: Within zone, fill front-to-back?
+        // The user said: "Stacking should begin at DIN position 9". This means Front-of-Safe-Zone.
+        return a.xVal - b.xVal;
       } else {
-        // Max Pairs: Prefer absolute front
-        return a.startX - b.startX;
+        // Max Pairs: Fill from absolute front (0)
+        return a.xVal - b.xVal;
       }
     });
 
-    // Return first that has space (though logic implies we fill row fully if moving whole row)
-    // For single pallet p, we just need one slot.
-    // For row compression, we need capacity match (checked in loop).
-    return candidates[0];
-  }
-
-  function findLastMovableRowIndex(allRows: Row[], type: string) {
-    for (let i = allRows.length - 1; i >= 0; i--) {
-      const r = allRows[i];
-      if (r.type === type && !r.stacked && r.items.every(item => item.stackable)) {
-        return i;
+    // Place the stack items
+    let stackItemIdx = floorItemsCount;
+    for (let i = 0; i < block.assignedStacks; i++) {
+      if (i < validSlots.length) {
+        const slot = validSlots[i];
+        const item = block.items[stackItemIdx++];
+        if (item) {
+           rows[slot.r].top[slot.c] = item;
+        }
       }
     }
-    return -1;
-  }
 
-  function placeOnStack(row: Row, item: PalletItem) {
-    // Find first empty slot in stackedItems
-    // We must maintain index alignment (stackedItem[0] sits on items[0])
-    let slotIdx = -1;
-    for(let i=0; i<row.items.length; i++) {
-      if (!row.stackedItems[i]) {
-        slotIdx = i;
-        break;
-      }
-    }
-    
-    if (slotIdx === -1) {
-       // Should not happen if we checked candidates correctly, but push just in case
-       row.stackedItems.push(item);
-    } else {
-       row.stackedItems[slotIdx] = item;
-    }
-    
-    // Mark row as stacked if it has any top items
-    if (row.stackedItems.length > 0) row.stacked = true;
-  }
-
-
-  // 5. VISUALIZATION MAPPING
-  const unitsState = truckConfig.units.map((u: any) => ({ ...u, palletsVisual: [] as any[] }));
-  const targetUnit = unitsState[0];
-  let totalWeight = 0;
-  let visualX = 0;
-
-  // Re-calculate final X positions
-  rows.forEach(r => { r.startX = visualX; visualX += r.length; });
-
-  rows.forEach(row => {
-    const visualHeight = (row.type === 'euro' && row.capacity === 3) ? 82 : 122;
-    const visualWidth = row.length;
-
-    // Base
-    row.items.forEach((item, idx) => {
-      const stackedItem = row.stackedItems[idx];
+    // Render Rows to Visuals
+    rows.forEach((row, rIdx) => {
+      const rowLen = block.rowLength;
+      const rowVisualHeight = (block.type === 'euro' && block.rowCapacity === 3) ? 82 : 122;
       
-      targetUnit.palletsVisual.push({
-        key: `p_${item.id}`,
-        type: item.type,
-        x: row.startX,
-        y: idx * visualHeight,
-        width: visualWidth,
-        height: visualHeight,
-        labelId: item.labelId,
-        isStackedTier: stackedItem ? 'base' : null,
-        showAsFraction: !!stackedItem,
-        displayBaseLabelId: item.labelId,
-        displayStackedLabelId: stackedItem?.labelId,
-        unitId: targetUnit.id
-      });
-      totalWeight += item.weight;
+      if (currentX + rowLen > targetUnit.length) {
+         if (!warnings.includes("Platzmangel")) warnings.push("Nicht genügend Platz für alle Paletten.");
+         return;
+      }
 
-      // Top
-      if (stackedItem) {
+      row.base.forEach((baseItem, cIdx) => {
+        const topItem = row.top[cIdx];
+        
+        // Base Visual
         targetUnit.palletsVisual.push({
-          key: `p_${item.id}_top`,
-          type: item.type,
-          x: row.startX,
-          y: idx * visualHeight,
-          width: visualWidth,
-          height: visualHeight,
-          labelId: stackedItem.labelId,
-          isStackedTier: 'top',
-          showAsFraction: true,
-          displayBaseLabelId: item.labelId,
-          displayStackedLabelId: stackedItem.labelId,
+          key: `p_${baseItem.id}`,
+          type: baseItem.type,
+          x: currentX,
+          y: cIdx * rowVisualHeight,
+          width: rowLen,
+          height: rowVisualHeight,
+          labelId: baseItem.labelId,
+          isStackedTier: topItem ? 'base' : null,
+          showAsFraction: !!topItem,
+          displayBaseLabelId: baseItem.labelId,
+          displayStackedLabelId: topItem?.labelId,
           unitId: targetUnit.id
         });
-        totalWeight += stackedItem.weight;
-      }
+        totalWeight += baseItem.weight;
+
+        // Top Visual
+        if (topItem) {
+          targetUnit.palletsVisual.push({
+            key: `p_${topItem.id}_top`,
+            type: topItem.type,
+            x: currentX,
+            y: cIdx * rowVisualHeight,
+            width: rowLen,
+            height: rowVisualHeight,
+            labelId: topItem.labelId,
+            isStackedTier: 'top',
+            showAsFraction: true,
+            displayBaseLabelId: baseItem.labelId,
+            displayStackedLabelId: topItem.labelId,
+            unitId: targetUnit.id
+          });
+          totalWeight += topItem.weight;
+        }
+      });
+      currentX += rowLen;
     });
   });
 
-  // 6. WARNINGS
-  if (notLoaded.length > 0) {
-     warnings.push(`${notLoaded.length} Paletten konnten nicht geladen werden.`);
-  }
+  // 4. METRICS
   if (totalWeight > truckConfig.maxGrossWeightKg) {
     warnings.push(`Gewichtslimit überschritten: ${KILOGRAM_FORMATTER.format(totalWeight)} kg.`);
   }
+  
   // Front density
-  const frontWeight = rows.filter(r => r.startX < 400).reduce((sum, r) => 
-    sum + r.items.reduce((s:number, i:any)=>s+i.weight,0) + r.stackedItems.reduce((s:number, i:any)=>s+i.weight,0), 0
-  );
+  const frontWeight = targetUnit.palletsVisual
+    .filter((p: any) => p.x < 400)
+    .reduce((acc: number, p: any) => {
+       // Find weight from original list... simplified:
+       const w = allEups.find(e=>e.labelId===p.labelId)?.weight || allDins.find(d=>d.labelId===p.labelId)?.weight || 0;
+       return acc + w;
+    }, 0);
+
   if (frontWeight > 10000) {
     warnings.push(`Warnung: Hohe Last im Stirnwandbereich (${KILOGRAM_FORMATTER.format(frontWeight)} kg).`);
   }
 
   const totalDinVisual = targetUnit.palletsVisual.filter((p:any) => p.type === 'industrial').length;
   const totalEupVisual = targetUnit.palletsVisual.filter((p:any) => p.type === 'euro').length;
+  const requestedCount = allDins.length + allEups.length;
+  const visualCount = totalDinVisual + totalEupVisual;
+
+  if (visualCount < requestedCount) {
+     warnings.push(`${requestedCount - visualCount} Paletten passen nicht.`);
+  }
 
   return {
     palletArrangement: unitsState.map((u: any) => ({
@@ -468,7 +426,7 @@ export const calculateLoadingLogic = (
     loadedEuroPalletsBase: 0,
     totalDinPalletsVisual: totalDinVisual,
     totalEuroPalletsVisual: totalEupVisual,
-    utilizationPercentage: parseFloat(((visualX / totalTruckLength) * 100).toFixed(1)),
+    utilizationPercentage: parseFloat(((currentX / totalTruckLength) * 100).toFixed(1)),
     warnings: Array.from(new Set(warnings)),
     totalWeightKg: totalWeight,
     eupLoadingPatternUsed: currentEupLoadingPattern
