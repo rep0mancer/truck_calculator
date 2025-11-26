@@ -212,6 +212,58 @@ describe('Loading Logic - Different truck types', () => {
     expect(unit1Pallets).toBeGreaterThan(0);
     expect(unit2Pallets).toBeGreaterThan(0);
   });
+
+  it('roadTrain: no pallet extends beyond unit boundary', () => {
+    const result = calculateLoadingLogic(
+      'roadTrain',
+      [],
+      [{ id: 1, weight: '100', quantity: 28, stackable: true }],
+      false,
+      true,
+      'auto',
+      'DIN_FIRST'
+    );
+
+    // Each unit is 720cm
+    const unit1 = result.palletArrangement[0];
+    const unit2 = result.palletArrangement[1];
+
+    // All pallets in unit1 should fit within 0 to 720
+    unit1.pallets.forEach((p: any) => {
+      expect(p.x).toBeGreaterThanOrEqual(0);
+      expect(p.x + p.width).toBeLessThanOrEqual(unit1.unitLength);
+    });
+
+    // All pallets in unit2 should fit within 0 to 720 (relative coords)
+    unit2.pallets.forEach((p: any) => {
+      expect(p.x).toBeGreaterThanOrEqual(0);
+      expect(p.x + p.width).toBeLessThanOrEqual(unit2.unitLength);
+    });
+  });
+
+  it('roadTrain: last pallet in unit1 does not cross into unit2', () => {
+    const result = calculateLoadingLogic(
+      'roadTrain',
+      [],
+      [{ id: 1, weight: '100', quantity: 28, stackable: true }],
+      false,
+      true,
+      'auto',
+      'DIN_FIRST'
+    );
+
+    const unit1 = result.palletArrangement[0];
+    // Find the highest x position pallet in unit1
+    const maxX = Math.max(...unit1.pallets.map((p: any) => p.x));
+    const palletsAtMaxX = unit1.pallets.filter((p: any) => p.x === maxX);
+    
+    // DIN pallets have width=100 (along truck)
+    // With unit length of 720, max x should be 600 (600+100=700 ≤ 720)
+    expect(maxX).toBeLessThanOrEqual(620); // 720 - 100 = 620 max safe x
+    palletsAtMaxX.forEach((p: any) => {
+      expect(p.x + p.width).toBeLessThanOrEqual(720);
+    });
+  });
 });
 
 describe('Loading Logic - Visual Output', () => {
@@ -254,6 +306,47 @@ describe('Loading Logic - Visual Output', () => {
       expect(p.height).toBe(120);
       expect(p.type).toBe('industrial');
     });
+  });
+});
+
+describe('Loading Logic - Mixed DIN and EUP', () => {
+  it('22 DIN + 5 EUP should all fit on floor', () => {
+    // 22 DIN = 11 rows * 100cm = 1100cm
+    // Remaining: 1320 - 1100 = 220cm
+    // EUP mixed: 1 long row (120cm) = 3 EUP + 1 broad row (80cm) = 2 EUP = 5 EUP total
+    const result = calculateLoadingLogic(
+      'curtainSider',
+      [{ id: 1, weight: '100', quantity: 5 }],
+      [{ id: 2, weight: '100', quantity: 22 }],
+      false,
+      false,
+      'auto',
+      'DIN_FIRST'
+    );
+
+    expect(result.totalDinPalletsVisual).toBe(22);
+    expect(result.totalEuroPalletsVisual).toBe(5);
+    // No overflow warnings
+    expect(result.warnings.some(w => w.includes('konnten nicht'))).toBe(false);
+  });
+
+  it('26 DIN + EUP: no room left for EUP', () => {
+    // 26 DIN = 13 rows * 100cm = 1300cm
+    // Remaining: 1320 - 1300 = 20cm - not enough for any EUP
+    const result = calculateLoadingLogic(
+      'curtainSider',
+      [{ id: 1, weight: '100', quantity: 10 }],
+      [{ id: 2, weight: '100', quantity: 26 }],
+      false,
+      false,
+      'auto',
+      'DIN_FIRST'
+    );
+
+    expect(result.totalDinPalletsVisual).toBe(26);
+    expect(result.totalEuroPalletsVisual).toBe(0);
+    // Should have overflow warning for EUP
+    expect(result.warnings.some(w => w.includes('EUP') && w.includes('10'))).toBe(true);
   });
 });
 
@@ -322,5 +415,32 @@ describe('Loading Logic - Stacking Order', () => {
     // Should have pairs at x=1200, 1100, 1000, 900, 800, 700, 600
     expect(stackedXValues[0]).toBe(1200);
     expect(stackedXValues[1]).toBe(1200);
+  });
+
+  it('EUP stacking starts at rear (highest x) and moves toward front', () => {
+    // 40 EUP = 33 floor + 7 stacked
+    const result = calculateLoadingLogic(
+      'curtainSider',
+      [{ id: 1, weight: '100', quantity: 40, stackable: true }],
+      [],
+      true,
+      false,
+      'auto',
+      'EUP_FIRST'
+    );
+
+    const pallets = result.palletArrangement[0].pallets;
+    expect(pallets.length).toBe(40);
+
+    const stackedPallets = pallets.filter((p: any) => p.isStackedTier === 'top');
+    expect(stackedPallets.length).toBe(7);
+
+    // Stacked EUP should be at highest x values (rear)
+    const floorPallets = pallets.filter((p: any) => p.isStackedTier !== 'top');
+    const maxFloorX = Math.max(...floorPallets.map((p: any) => p.x));
+
+    // Stacked pallets should start from the rear
+    const stackedXValues = stackedPallets.map((p: any) => p.x).sort((a: number, b: number) => b - a);
+    expect(stackedXValues[0]).toBe(maxFloorX);
   });
 });

@@ -161,7 +161,16 @@ export const calculateLoadingLogic = (
   const truckLength = truckConfig.usableLength;
   const truckWidth = truckConfig.maxWidth;
 
-  // 1. EXPAND PALLETS - tracking which are stackable per entry
+  // For multi-unit trucks, get unit boundaries
+  const units = truckConfig.units;
+  const unitBoundaries: number[] = [];
+  let boundaryX = 0;
+  for (const unit of units) {
+    boundaryX += unit.length;
+    unitBoundaries.push(boundaryX);
+  }
+
+  // 1. EXPAND PALLETS
   type PalletSingle = { weight: number; stackable: boolean; entryId: number };
   const allEups: PalletSingle[] = [];
   const allDins: PalletSingle[] = [];
@@ -169,7 +178,6 @@ export const calculateLoadingLogic = (
   eupWeights.forEach(e => {
     const w = parseFloat(e.weight || '0') || 0;
     const q = Math.min(e.quantity || 0, MAX_PALLET_SIMULATION_QUANTITY);
-    // Pallet is stackable only if: global stacking enabled AND this entry marked stackable
     const isStackable = currentIsEUPStackable && e.stackable === true;
     for (let i = 0; i < q; i++) {
       allEups.push({ weight: w, stackable: isStackable, entryId: e.id });
@@ -190,282 +198,363 @@ export const calculateLoadingLogic = (
 
   if (totalWeight > (truckConfig.maxGrossWeightKg || MAX_GROSS_WEIGHT_KG)) {
     warnings.push(
-      `Gewichtslimit überschritten: ${KILOGRAM_FORMATTER.format(totalWeight)} kg geladen (Max: ${KILOGRAM_FORMATTER.format(truckConfig.maxGrossWeightKg || MAX_GROSS_WEIGHT_KG)} kg).`
+      `Gewichtslimit überschritten: ${KILOGRAM_FORMATTER.format(totalWeight)} kg (Max: ${KILOGRAM_FORMATTER.format(truckConfig.maxGrossWeightKg || MAX_GROSS_WEIGHT_KG)} kg).`
     );
   }
 
-  // Determine best EUP pattern
-  // Long: 120cm rows, 3 pallets per row (80cm each)
-  // Broad: 80cm rows, 2 pallets per row (120cm each)
-  let eupPattern: 'long' | 'broad' = 'long';
+  const stackingAllowed = capacity.supportsStacking;
+  const stackableEupCount = allEups.filter(p => p.stackable).length;
+  const stackableDinCount = allDins.filter(p => p.stackable).length;
+
+  // Helper: check if a pallet at position x with given width fits without crossing unit boundary
+  const fitsInUnit = (x: number, width: number): boolean => {
+    for (const boundary of unitBoundaries) {
+      if (x < boundary && x + width > boundary) {
+        return false; // Crosses boundary
+      }
+    }
+    return x + width <= truckLength;
+  };
+
+  // 2. PLACEMENT DATA
+  type FloorPos = { x: number; y: number; width: number; height: number; labelId: number; canStack: boolean; type: 'euro' | 'industrial' };
+  const floorPositions: FloorPos[] = [];
+  const placements: any[] = [];
+  let dinLabelCounter = 0;
+  let eupLabelCounter = 0;
+
+  // 3. PLACE DIN PALLETS
+  const dinRowDepth = 100;
+  const dinPalletWidth = 120;
+  const dinPerRow = 2;
+  
+  let currentX = 0;
+  let dinPlaced = 0;
+  const dinToPlace = Math.min(allDins.length, capacity.floorDIN);
+
+  while (dinPlaced < dinToPlace && currentX + dinRowDepth <= truckLength) {
+    // Check if this row fits without crossing unit boundary
+    if (!fitsInUnit(currentX, dinRowDepth)) {
+      // Skip to next unit boundary
+      for (const boundary of unitBoundaries) {
+        if (currentX < boundary) {
+          currentX = boundary;
+          break;
+        }
+      }
+      continue;
+    }
+
+    const palletsThisRow = Math.min(dinPerRow, dinToPlace - dinPlaced);
+    for (let col = 0; col < palletsThisRow; col++) {
+      const y = col === 0 ? 0 : (truckWidth - dinPalletWidth);
+      dinLabelCounter++;
+      const canStack = dinPlaced < allDins.length && allDins[dinPlaced].stackable;
+      
+      floorPositions.push({
+        x: currentX, y, width: dinRowDepth, height: dinPalletWidth,
+        labelId: dinLabelCounter, canStack, type: 'industrial'
+      });
+      placements.push({
+        x: currentX, y, width: dinRowDepth, height: dinPalletWidth,
+        type: 'industrial', labelId: dinLabelCounter,
+        isStackedTier: null, showAsFraction: false,
+        displayBaseLabelId: dinLabelCounter, displayStackedLabelId: null,
+        key: `din_${dinLabelCounter}`,
+      });
+      dinPlaced++;
+    }
+    currentX += dinRowDepth;
+  }
+
+  // 4. PLACE EUP PALLETS - Use mixed orientation to maximize fit
+  const eupToPlace = Math.min(allEups.length, capacity.floorEUP);
+  let eupPlaced = 0;
+  const remainingLength = truckLength - currentX;
+
+  // Calculate optimal EUP placement for remaining space
+  // Try: all long, all broad, or mixed (long rows first, then broad)
+  const calcEupFit = (length: number, pattern: 'long' | 'broad' | 'mixed'): { count: number; usedLength: number } => {
+    if (pattern === 'long') {
+      const rows = Math.floor(length / 120);
+      return { count: rows * 3, usedLength: rows * 120 };
+    } else if (pattern === 'broad') {
+      const rows = Math.floor(length / 80);
+      return { count: rows * 2, usedLength: rows * 80 };
+    } else {
+      // Mixed: try long rows first, then fill with broad
+      let best = { count: 0, usedLength: 0 };
+      for (let longRows = Math.floor(length / 120); longRows >= 0; longRows--) {
+        const usedByLong = longRows * 120;
+        const remaining = length - usedByLong;
+        const broadRows = Math.floor(remaining / 80);
+        const total = longRows * 3 + broadRows * 2;
+        if (total > best.count) {
+          best = { count: total, usedLength: usedByLong + broadRows * 80 };
+        }
+      }
+      return best;
+    }
+  };
+
+  // Determine best pattern
+  let eupPattern: 'long' | 'broad' | 'mixed' = 'long';
   if (currentEupLoadingPattern === 'broad') {
     eupPattern = 'broad';
   } else if (currentEupLoadingPattern === 'long') {
     eupPattern = 'long';
   } else {
-    // Auto: choose based on which gives more capacity
-    const longRows = Math.floor(truckLength / 120);
-    const broadRows = Math.floor(truckLength / 80);
-    const longCapacity = longRows * 3;
-    const broadCapacity = broadRows * 2;
+    // Auto: find best fit for remaining space
+    const longFit = calcEupFit(remainingLength, 'long');
+    const broadFit = calcEupFit(remainingLength, 'broad');
+    const mixedFit = calcEupFit(remainingLength, 'mixed');
     
-    // For mega (13.6m), broad gives 34 vs long gives 33
-    if (broadCapacity > longCapacity) {
-      eupPattern = 'broad';
-    } else {
-      eupPattern = 'long';
-    }
+    const maxCount = Math.max(longFit.count, broadFit.count, mixedFit.count);
+    if (mixedFit.count === maxCount) eupPattern = 'mixed';
+    else if (broadFit.count > longFit.count) eupPattern = 'broad';
+    else eupPattern = 'long';
   }
 
-  // Stacking support
-  const stackingAllowed = capacity.supportsStacking;
-
-  // Count how many pallets can actually be stacked (based on per-entry stackable flag)
-  const stackableEupCount = allEups.filter(p => p.stackable).length;
-  const stackableDinCount = allDins.filter(p => p.stackable).length;
-
-  // 2. CALCULATE FLOOR AND STACKED COUNTS
-  const calcMath = (total: number, stackableCount: number, floorCap: number, stackCap: number, canStack: boolean) => {
-    const floor = Math.min(total, floorCap);
-    if (!canStack || stackableCount === 0) {
-      return { floor, stacked: 0, total: floor, overflow: Math.max(0, total - floorCap) };
-    }
+  // Place EUP with chosen/calculated pattern
+  if (eupPattern === 'mixed') {
+    // First place long rows, then broad rows
+    const longRowDepth = 120;
+    const longPalletWidth = 80;
+    const longPerRow = 3;
     
-    // How many need to be stacked?
-    const needToStack = Math.max(0, total - floorCap);
-    // How many CAN be stacked? Limited by stackable count and capacity
-    const maxStackable = Math.min(stackableCount, stackCap - floorCap);
-    const stacked = Math.min(needToStack, maxStackable);
-    
-    const placed = floor + stacked;
-    return { floor, stacked, total: placed, overflow: Math.max(0, total - placed) };
-  };
-
-  const dinMath = calcMath(allDins.length, stackableDinCount, capacity.floorDIN, capacity.stackedDIN, stackingAllowed && currentIsDINStackable);
-  const eupMath = calcMath(allEups.length, stackableEupCount, capacity.floorEUP, capacity.stackedEUP, stackingAllowed && currentIsEUPStackable);
-
-  // Generate appropriate messages
-  if (dinMath.overflow > 0) {
-    if (stackableDinCount === 0 && currentIsDINStackable) {
-      warnings.push(`${dinMath.overflow} DIN-Palette(n) passen nicht - keine als stapelbar markiert.`);
-    } else {
-      warnings.push(`${dinMath.overflow} DIN-Palette(n) konnten nicht geladen werden.`);
-    }
-  }
-  if (eupMath.overflow > 0) {
-    if (stackableEupCount === 0 && currentIsEUPStackable) {
-      warnings.push(`${eupMath.overflow} EUP-Palette(n) passen nicht - keine als stapelbar markiert.`);
-    } else {
-      warnings.push(`${eupMath.overflow} EUP-Palette(n) konnten nicht geladen werden.`);
-    }
-  }
-
-  // Info about stacking
-  if (dinMath.stacked > 0) {
-    warnings.push(`${dinMath.stacked} DIN-Palette(n) gestapelt.`);
-  }
-  if (eupMath.stacked > 0) {
-    warnings.push(`${eupMath.stacked} EUP-Palette(n) gestapelt.`);
-  }
-
-  // 3. DETERMINE BLOCK ORDER
-  const dinStacked = dinMath.stacked > 0;
-  const eupStacked = eupMath.stacked > 0;
-  let dinFirst = true;
-  if (dinStacked && !eupStacked) {
-    dinFirst = false; // EUP front, DIN (stacked) rear
-  }
-
-  // 4. GENERATE VISUAL PLACEMENTS
-  const placements: any[] = [];
-  let dinLabelCounter = 0;
-  let eupLabelCounter = 0;
-
-  // Generate DIN block
-  const generateDinBlock = (startX: number): number => {
-    if (dinMath.floor === 0) return 0;
-
-    const rowDepth = 100; // 100cm along truck
-    const palletWidth = 120; // 120cm across truck
-    const palletsPerRow = 2;
-    const numRows = Math.ceil(dinMath.floor / palletsPerRow);
-
-    type FloorPos = { row: number; col: number; x: number; y: number; labelId: number; canStack: boolean };
-    const floorPositions: FloorPos[] = [];
-
-    // Place floor pallets
-    let palletIdx = 0;
-    for (let row = 0; row < numRows; row++) {
-      const x = startX + row * rowDepth;
-      const palletsThisRow = Math.min(palletsPerRow, dinMath.floor - row * palletsPerRow);
-      for (let col = 0; col < palletsThisRow; col++) {
-        const y = col === 0 ? 0 : (truckWidth - palletWidth);
-        dinLabelCounter++;
-        const canStack = palletIdx < allDins.length && allDins[palletIdx].stackable;
-        floorPositions.push({ row, col, x, y, labelId: dinLabelCounter, canStack });
-        placements.push({
-          x, y, width: rowDepth, height: palletWidth,
-          type: 'industrial', labelId: dinLabelCounter,
-          isStackedTier: null, showAsFraction: false,
-          displayBaseLabelId: dinLabelCounter, displayStackedLabelId: null,
-          key: `din_${dinLabelCounter}`,
-        });
-        palletIdx++;
-      }
-    }
-
-    // Stack pallets - from rear (last position) to front, only on stackable positions
-    if (dinMath.stacked > 0) {
-      let stackedCount = 0;
-      // Go from last position backward
-      for (let i = floorPositions.length - 1; i >= 0 && stackedCount < dinMath.stacked; i--) {
-        const basePos = floorPositions[i];
-        if (!basePos.canStack) continue; // Skip non-stackable positions
-
-        dinLabelCounter++;
-        stackedCount++;
-
-        // Update base pallet
-        const basePallet = placements.find((p: any) => p.type === 'industrial' && p.labelId === basePos.labelId);
-        if (basePallet) {
-          basePallet.isStackedTier = 'base';
-          basePallet.showAsFraction = true;
-          basePallet.displayStackedLabelId = dinLabelCounter;
+    // How many long rows can we fit?
+    let tempX = currentX;
+    while (eupPlaced < eupToPlace && tempX + longRowDepth <= truckLength) {
+      if (!fitsInUnit(tempX, longRowDepth)) {
+        for (const boundary of unitBoundaries) {
+          if (tempX < boundary) { tempX = boundary; break; }
         }
-
-        // Add top pallet
-        placements.push({
-          x: basePos.x, y: basePos.y, width: rowDepth, height: palletWidth,
-          type: 'industrial', labelId: dinLabelCounter,
-          isStackedTier: 'top', showAsFraction: true,
-          displayBaseLabelId: basePos.labelId, displayStackedLabelId: dinLabelCounter,
-          key: `din_${dinLabelCounter}_top`,
-        });
+        continue;
       }
-    }
-
-    return numRows * rowDepth;
-  };
-
-  // Generate EUP block
-  const generateEupBlock = (startX: number): number => {
-    if (eupMath.floor === 0) return 0;
-
-    const isLong = eupPattern === 'long';
-    const rowDepth = isLong ? 120 : 80;
-    const palletWidth = isLong ? 80 : 120;
-    const palletsPerRow = isLong ? 3 : 2;
-    const numRows = Math.ceil(eupMath.floor / palletsPerRow);
-
-    type FloorPos = { row: number; col: number; x: number; y: number; labelId: number; canStack: boolean };
-    const floorPositions: FloorPos[] = [];
-
-    let palletIdx = 0;
-    for (let row = 0; row < numRows; row++) {
-      const x = startX + row * rowDepth;
-      const palletsThisRow = Math.min(palletsPerRow, eupMath.floor - row * palletsPerRow);
-
+      
+      const palletsThisRow = Math.min(longPerRow, eupToPlace - eupPlaced);
+      if (palletsThisRow < longPerRow && tempX + 80 <= truckLength) {
+        // Not enough for full long row, switch to broad
+        break;
+      }
+      
       for (let col = 0; col < palletsThisRow; col++) {
-        let y: number;
-        if (isLong && palletsPerRow === 3) {
-          // 3 pallets of 80cm across 245cm: evenly distributed
-          const sectionWidth = truckWidth / palletsPerRow;
-          y = Math.floor(col * sectionWidth + (sectionWidth - palletWidth) / 2);
-        } else {
-          // 2 pallets: y=0 and y=truckWidth-palletWidth
-          y = col === 0 ? 0 : (truckWidth - palletWidth);
-        }
-
+        const sectionWidth = truckWidth / longPerRow;
+        const y = Math.floor(col * sectionWidth + (sectionWidth - longPalletWidth) / 2);
         eupLabelCounter++;
-        const canStack = palletIdx < allEups.length && allEups[palletIdx].stackable;
-        floorPositions.push({ row, col, x, y, labelId: eupLabelCounter, canStack });
+        const canStack = eupPlaced < allEups.length && allEups[eupPlaced].stackable;
+        
+        floorPositions.push({
+          x: tempX, y, width: longRowDepth, height: longPalletWidth,
+          labelId: eupLabelCounter, canStack, type: 'euro'
+        });
         placements.push({
-          x, y, width: rowDepth, height: palletWidth,
+          x: tempX, y, width: longRowDepth, height: longPalletWidth,
           type: 'euro', labelId: eupLabelCounter,
           isStackedTier: null, showAsFraction: false,
           displayBaseLabelId: eupLabelCounter, displayStackedLabelId: null,
           key: `eup_${eupLabelCounter}`,
         });
-        palletIdx++;
+        eupPlaced++;
       }
+      tempX += longRowDepth;
     }
-
-    // Stack EUP - from rear to front, only on stackable positions
-    if (eupMath.stacked > 0) {
-      let stackedCount = 0;
-      for (let i = floorPositions.length - 1; i >= 0 && stackedCount < eupMath.stacked; i--) {
-        const basePos = floorPositions[i];
-        if (!basePos.canStack) continue;
-
-        eupLabelCounter++;
-        stackedCount++;
-
-        const basePallet = placements.find((p: any) => p.type === 'euro' && p.labelId === basePos.labelId);
-        if (basePallet) {
-          basePallet.isStackedTier = 'base';
-          basePallet.showAsFraction = true;
-          basePallet.displayStackedLabelId = eupLabelCounter;
+    
+    // Now fill remaining with broad rows
+    const broadRowDepth = 80;
+    const broadPalletWidth = 120;
+    const broadPerRow = 2;
+    
+    while (eupPlaced < eupToPlace && tempX + broadRowDepth <= truckLength) {
+      if (!fitsInUnit(tempX, broadRowDepth)) {
+        for (const boundary of unitBoundaries) {
+          if (tempX < boundary) { tempX = boundary; break; }
         }
-
-        placements.push({
-          x: basePos.x, y: basePos.y, width: rowDepth, height: palletWidth,
-          type: 'euro', labelId: eupLabelCounter,
-          isStackedTier: 'top', showAsFraction: true,
-          displayBaseLabelId: basePos.labelId, displayStackedLabelId: eupLabelCounter,
-          key: `eup_${eupLabelCounter}_top`,
-        });
+        continue;
       }
+      
+      const palletsThisRow = Math.min(broadPerRow, eupToPlace - eupPlaced);
+      for (let col = 0; col < palletsThisRow; col++) {
+        const y = col === 0 ? 0 : (truckWidth - broadPalletWidth);
+        eupLabelCounter++;
+        const canStack = eupPlaced < allEups.length && allEups[eupPlaced].stackable;
+        
+        floorPositions.push({
+          x: tempX, y, width: broadRowDepth, height: broadPalletWidth,
+          labelId: eupLabelCounter, canStack, type: 'euro'
+        });
+        placements.push({
+          x: tempX, y, width: broadRowDepth, height: broadPalletWidth,
+          type: 'euro', labelId: eupLabelCounter,
+          isStackedTier: null, showAsFraction: false,
+          displayBaseLabelId: eupLabelCounter, displayStackedLabelId: null,
+          key: `eup_${eupLabelCounter}`,
+        });
+        eupPlaced++;
+      }
+      tempX += broadRowDepth;
     }
-
-    return numRows * rowDepth;
-  };
-
-  // Place blocks in order
-  let currentX = 0;
-  let dinBlockLen = 0;
-  let eupBlockLen = 0;
-
-  if (dinFirst) {
-    dinBlockLen = generateDinBlock(currentX);
-    currentX += dinBlockLen;
-    eupBlockLen = generateEupBlock(currentX);
+    currentX = tempX;
   } else {
-    eupBlockLen = generateEupBlock(currentX);
-    currentX += eupBlockLen;
-    dinBlockLen = generateDinBlock(currentX);
+    // Single pattern (long or broad)
+    const isLong = eupPattern === 'long';
+    const rowDepth = isLong ? 120 : 80;
+    const palletWidth = isLong ? 80 : 120;
+    const perRow = isLong ? 3 : 2;
+    
+    while (eupPlaced < eupToPlace && currentX + rowDepth <= truckLength) {
+      if (!fitsInUnit(currentX, rowDepth)) {
+        for (const boundary of unitBoundaries) {
+          if (currentX < boundary) { currentX = boundary; break; }
+        }
+        continue;
+      }
+      
+      const palletsThisRow = Math.min(perRow, eupToPlace - eupPlaced);
+      for (let col = 0; col < palletsThisRow; col++) {
+        let y: number;
+        if (isLong && perRow === 3) {
+          const sectionWidth = truckWidth / perRow;
+          y = Math.floor(col * sectionWidth + (sectionWidth - palletWidth) / 2);
+        } else {
+          y = col === 0 ? 0 : (truckWidth - palletWidth);
+        }
+        
+        eupLabelCounter++;
+        const canStack = eupPlaced < allEups.length && allEups[eupPlaced].stackable;
+        
+        floorPositions.push({
+          x: currentX, y, width: rowDepth, height: palletWidth,
+          labelId: eupLabelCounter, canStack, type: 'euro'
+        });
+        placements.push({
+          x: currentX, y, width: rowDepth, height: palletWidth,
+          type: 'euro', labelId: eupLabelCounter,
+          isStackedTier: null, showAsFraction: false,
+          displayBaseLabelId: eupLabelCounter, displayStackedLabelId: null,
+          key: `eup_${eupLabelCounter}`,
+        });
+        eupPlaced++;
+      }
+      currentX += rowDepth;
+    }
   }
 
-  const totalUsedLength = dinBlockLen + eupBlockLen;
-  const utilizationPercentage = truckLength > 0 
-    ? parseFloat(((totalUsedLength / truckLength) * 100).toFixed(1)) 
-    : 0;
+  // 5. STACKING - from rear (highest x) to front
+  // Sort floor positions by x descending (rear first), then by y descending
+  const dinFloorPositions = floorPositions.filter(p => p.type === 'industrial').sort((a, b) => b.x - a.x || b.y - a.y);
+  const eupFloorPositions = floorPositions.filter(p => p.type === 'euro').sort((a, b) => b.x - a.x || b.y - a.y);
 
-  // Summary message
-  if (dinMath.total > 0 || eupMath.total > 0) {
+  // Calculate stacking amounts
+  const dinNeedStack = Math.max(0, allDins.length - dinPlaced);
+  const eupNeedStack = Math.max(0, allEups.length - eupPlaced);
+  
+  const dinCanStackCount = dinFloorPositions.filter(p => p.canStack).length;
+  const eupCanStackCount = eupFloorPositions.filter(p => p.canStack).length;
+  
+  const dinStackCount = Math.min(dinNeedStack, dinCanStackCount, capacity.stackedDIN - capacity.floorDIN);
+  const eupStackCount = Math.min(eupNeedStack, eupCanStackCount, capacity.stackedEUP - capacity.floorEUP);
+
+  // Stack DIN
+  let dinStacked = 0;
+  for (const pos of dinFloorPositions) {
+    if (dinStacked >= dinStackCount) break;
+    if (!pos.canStack) continue;
+    
+    dinLabelCounter++;
+    dinStacked++;
+    
+    const basePallet = placements.find((p: any) => p.type === 'industrial' && p.labelId === pos.labelId);
+    if (basePallet) {
+      basePallet.isStackedTier = 'base';
+      basePallet.showAsFraction = true;
+      basePallet.displayStackedLabelId = dinLabelCounter;
+    }
+    
+    placements.push({
+      x: pos.x, y: pos.y, width: pos.width, height: pos.height,
+      type: 'industrial', labelId: dinLabelCounter,
+      isStackedTier: 'top', showAsFraction: true,
+      displayBaseLabelId: pos.labelId, displayStackedLabelId: dinLabelCounter,
+      key: `din_${dinLabelCounter}_top`,
+    });
+  }
+
+  // Stack EUP
+  let eupStacked = 0;
+  for (const pos of eupFloorPositions) {
+    if (eupStacked >= eupStackCount) break;
+    if (!pos.canStack) continue;
+    
+    eupLabelCounter++;
+    eupStacked++;
+    
+    const basePallet = placements.find((p: any) => p.type === 'euro' && p.labelId === pos.labelId);
+    if (basePallet) {
+      basePallet.isStackedTier = 'base';
+      basePallet.showAsFraction = true;
+      basePallet.displayStackedLabelId = eupLabelCounter;
+    }
+    
+    placements.push({
+      x: pos.x, y: pos.y, width: pos.width, height: pos.height,
+      type: 'euro', labelId: eupLabelCounter,
+      isStackedTier: 'top', showAsFraction: true,
+      displayBaseLabelId: pos.labelId, displayStackedLabelId: eupLabelCounter,
+      key: `eup_${eupLabelCounter}_top`,
+    });
+  }
+
+  // 6. WARNINGS AND STATS
+  const totalDinLoaded = dinPlaced + dinStacked;
+  const totalEupLoaded = eupPlaced + eupStacked;
+  
+  if (allDins.length > totalDinLoaded) {
+    const overflow = allDins.length - totalDinLoaded;
+    if (stackableDinCount === 0 && currentIsDINStackable && allDins.length > dinPlaced) {
+      warnings.push(`${overflow} DIN-Palette(n) passen nicht - keine als stapelbar markiert.`);
+    } else {
+      warnings.push(`${overflow} DIN-Palette(n) konnten nicht geladen werden.`);
+    }
+  }
+  
+  if (allEups.length > totalEupLoaded) {
+    const overflow = allEups.length - totalEupLoaded;
+    if (stackableEupCount === 0 && currentIsEUPStackable && allEups.length > eupPlaced) {
+      warnings.push(`${overflow} EUP-Palette(n) passen nicht - keine als stapelbar markiert.`);
+    } else {
+      warnings.push(`${overflow} EUP-Palette(n) konnten nicht geladen werden.`);
+    }
+  }
+
+  if (dinStacked > 0) warnings.push(`${dinStacked} DIN-Palette(n) gestapelt.`);
+  if (eupStacked > 0) warnings.push(`${eupStacked} EUP-Palette(n) gestapelt.`);
+
+  if (totalDinLoaded > 0 || totalEupLoaded > 0) {
     const parts: string[] = [];
-    if (dinMath.total > 0) parts.push(`${dinMath.total} DIN`);
-    if (eupMath.total > 0) parts.push(`${eupMath.total} EUP`);
+    if (totalDinLoaded > 0) parts.push(`${totalDinLoaded} DIN`);
+    if (totalEupLoaded > 0) parts.push(`${totalEupLoaded} EUP`);
     warnings.unshift(`Geladen: ${parts.join(' + ')} Palette(n).`);
   }
 
-  // Handle multi-unit trucks (e.g., road train with 2 units)
-  const units = truckConfig.units;
+  const utilizationPercentage = truckLength > 0 
+    ? parseFloat(((currentX / truckLength) * 100).toFixed(1)) 
+    : 0;
+
+  // 7. SPLIT INTO UNITS (for multi-unit trucks like road train)
   if (units.length > 1) {
-    // Split placements between units based on x position
     const unitArrangements = units.map((unit: any, unitIndex: number) => {
-      // Calculate the x offset for this unit
       let unitStartX = 0;
       for (let i = 0; i < unitIndex; i++) {
         unitStartX += units[i].length;
       }
       const unitEndX = unitStartX + unit.length;
 
-      // Filter pallets that belong to this unit and adjust their x coordinates
       const unitPallets = placements
-        .filter((p: any) => p.x >= unitStartX && p.x < unitEndX)
+        .filter((p: any) => p.x >= unitStartX && p.x + p.width <= unitEndX)
         .map((p: any) => ({
           ...p,
-          x: p.x - unitStartX, // Make x relative to this unit
+          x: p.x - unitStartX,
           key: `${unit.id}_${p.key}`,
         }));
 
@@ -479,14 +568,14 @@ export const calculateLoadingLogic = (
 
     return {
       palletArrangement: unitArrangements,
-      loadedIndustrialPalletsBase: dinMath.floor,
-      loadedEuroPalletsBase: eupMath.floor,
-      totalDinPalletsVisual: dinMath.total,
-      totalEuroPalletsVisual: eupMath.total,
+      loadedIndustrialPalletsBase: dinPlaced,
+      loadedEuroPalletsBase: eupPlaced,
+      totalDinPalletsVisual: totalDinLoaded,
+      totalEuroPalletsVisual: totalEupLoaded,
       utilizationPercentage,
       warnings: Array.from(new Set(warnings)),
       totalWeightKg: totalWeight,
-      eupLoadingPatternUsed: eupPattern,
+      eupLoadingPatternUsed: eupPattern === 'mixed' ? 'auto' : eupPattern,
     };
   }
 
@@ -497,13 +586,13 @@ export const calculateLoadingLogic = (
       unitWidth: truckConfig.units[0].width,
       pallets: placements,
     }],
-    loadedIndustrialPalletsBase: dinMath.floor,
-    loadedEuroPalletsBase: eupMath.floor,
-    totalDinPalletsVisual: dinMath.total,
-    totalEuroPalletsVisual: eupMath.total,
+    loadedIndustrialPalletsBase: dinPlaced,
+    loadedEuroPalletsBase: eupPlaced,
+    totalDinPalletsVisual: totalDinLoaded,
+    totalEuroPalletsVisual: totalEupLoaded,
     utilizationPercentage,
     warnings: Array.from(new Set(warnings)),
     totalWeightKg: totalWeight,
-    eupLoadingPatternUsed: eupPattern,
+    eupLoadingPatternUsed: eupPattern === 'mixed' ? 'auto' : eupPattern,
   };
 };
