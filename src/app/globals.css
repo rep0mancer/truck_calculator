@@ -247,41 +247,56 @@ main select option {
 
 main button {
   position: relative;
-  background: rgba(34, 197, 94, 0.15);
-  border: 1px solid rgba(34, 197, 94, 0.35);
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.32), rgba(22, 163, 74, 0.28));
+  border: 2px solid rgba(34, 197, 94, 0.65);
   border-radius: 10px !important;
   color: #064e3b;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
-  box-shadow: 0 18px 30px -24px rgba(14, 159, 110, 0.65);
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.5);
+  box-shadow: 
+    0 0 0 1px rgba(255, 255, 255, 0.3) inset,
+    0 18px 30px -24px rgba(14, 159, 110, 0.75),
+    0 2px 8px -2px rgba(22, 163, 74, 0.4);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   transition: transform 0.3s ease, background 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
 }
 
 main button:hover {
-  transform: translateY(-1px);
-  background: rgba(34, 197, 94, 0.22);
-  border-color: rgba(34, 197, 94, 0.45);
-  box-shadow: 0 24px 36px -28px rgba(34, 197, 94, 0.7);
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.42), rgba(22, 163, 74, 0.38));
+  border-color: rgba(34, 197, 94, 0.85);
+  box-shadow: 
+    0 0 0 1px rgba(255, 255, 255, 0.4) inset,
+    0 24px 38px -28px rgba(34, 197, 94, 0.85),
+    0 4px 12px -2px rgba(22, 163, 74, 0.5);
 }
 
 main button:active {
   transform: translateY(0);
-  background: rgba(22, 163, 74, 0.22);
+  background: linear-gradient(135deg, rgba(22, 163, 74, 0.38), rgba(21, 128, 61, 0.35));
+  border-color: rgba(22, 163, 74, 0.75);
 }
 
 main button.bg-destructive,
 main button[class*="destructive"] {
-  background: rgba(248, 113, 113, 0.15) !important;
-  border-color: rgba(248, 113, 113, 0.3) !important;
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.32), rgba(239, 68, 68, 0.28)) !important;
+  border: 2px solid rgba(248, 113, 113, 0.65) !important;
   color: #991b1b !important;
-  box-shadow: 0 18px 30px -24px rgba(239, 68, 68, 0.6);
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.5) !important;
+  box-shadow: 
+    0 0 0 1px rgba(255, 255, 255, 0.3) inset,
+    0 18px 30px -24px rgba(239, 68, 68, 0.75),
+    0 2px 8px -2px rgba(239, 68, 68, 0.4) !important;
 }
 
 main button.bg-destructive:hover,
 main button[class*="destructive"]:hover {
-  background: rgba(248, 113, 113, 0.25) !important;
-  border-color: rgba(248, 113, 113, 0.4) !important;
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.42), rgba(239, 68, 68, 0.38)) !important;
+  border-color: rgba(248, 113, 113, 0.85) !important;
+  box-shadow: 
+    0 0 0 1px rgba(255, 255, 255, 0.4) inset,
+    0 24px 38px -28px rgba(239, 68, 68, 0.85),
+    0 4px 12px -2px rgba(239, 68, 68, 0.5) !important;
 }
 
 main .flex.items-center.mt-2,
