@@ -1,3 +1,5 @@
+"use client";
+
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { PalletUnitArrangement } from './components/TruckVisualization';
@@ -56,7 +58,7 @@ const computeStackableCount = (entries: WeightEntry[]) =>
 
 export const usePlannerStore = create<PlannerState>()(
   devtools((set, get) => ({
-    selectedTruck: 'curtainSider',
+    selectedTruck: 'standard13_2', // FIX: Valid default
     ...createEmptyWeightEntries(),
     eupLoadingPattern: 'auto',
     isEUPStackable: false,
@@ -77,7 +79,8 @@ export const usePlannerStore = create<PlannerState>()(
     setSelectedTruck: (truck) =>
       set(() => {
         const updates: Partial<PlannerState> = { selectedTruck: truck };
-        if (['Waggon', 'Waggon2'].includes(truck)) {
+        // FIX: Correct Waggon Check
+        if (truck === 'waggon') {
           updates.isEUPStackable = false;
           updates.isDINStackable = false;
         }
@@ -96,7 +99,8 @@ export const usePlannerStore = create<PlannerState>()(
       set(
         () => {
           const emptyEntries = createEmptyWeightEntries();
-          const truckConfig = TRUCK_TYPES[get().selectedTruck];
+          // Safety fallback
+          const truckConfig = TRUCK_TYPES[get().selectedTruck] || TRUCK_TYPES.standard13_2;
           const emptyArrangement = truckConfig.units.map((unit) => ({
             unitId: unit.id,
             unitLength: unit.length,
@@ -136,6 +140,7 @@ export const usePlannerStore = create<PlannerState>()(
         palletTypeToMax === 'industrial'
           ? [{ id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0', stackable: state.isDINStackable }]
           : [];
+      
       const simResults = calculateLoadingLogic(
         state.selectedTruck,
         simEupWeights,
@@ -264,6 +269,7 @@ export const usePlannerStore = create<PlannerState>()(
 
       let multiTruckWarnings: string[] = [];
 
+      // Multi-truck checks
       if (dinQuantity > 0 && eupQuantity === 0) {
         const dinCapacitySim = [{ id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0', stackable: state.isDINStackable }];
         const dinCapacityResult = calculateLoadingLogic(
@@ -320,6 +326,7 @@ export const usePlannerStore = create<PlannerState>()(
         }
       }
 
+      // Calc remaining capacity for badges
       const weightToFillEup = state.eupWeights.length > 0 ? state.eupWeights[state.eupWeights.length - 1].weight || '0' : '0';
       const eupCapacitySim = [{ id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFillEup, stackable: state.isEUPStackable }];
       const eupCapacityResult = calculateLoadingLogic(
