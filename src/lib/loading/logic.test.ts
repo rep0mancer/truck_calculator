@@ -207,4 +207,94 @@ describe('Loading Logic - Visual Output', () => {
     expect(result.totalDinPalletsVisual).toBe(10);
     expect(result.totalEuroPalletsVisual).toBe(5);
   });
+
+  it('pallets have correct width and height properties', () => {
+    const result = calculateLoadingLogic(
+      'curtainSider',
+      [],
+      [{ id: 1, weight: '100', quantity: 4, stackable: true }],
+      false,
+      true,
+      'auto',
+      'DIN_FIRST'
+    );
+
+    const pallets = result.palletArrangement[0].pallets;
+    expect(pallets.length).toBe(4);
+
+    // DIN pallets: 100 along truck (width), 120 across (height)
+    pallets.forEach((p: any) => {
+      expect(p.width).toBe(100);
+      expect(p.height).toBe(120);
+      expect(p.type).toBe('industrial');
+    });
+  });
+});
+
+describe('Loading Logic - Stacking Order', () => {
+  it('stacking starts at rear position (highest x) and moves toward front', () => {
+    // 28 DIN = 26 floor + 2 stacked
+    // Floor: positions 1-26 at rows 0-12 (2 per row)
+    // Stacking should be on positions 26, 25 (rear row first, x=1200)
+    const result = calculateLoadingLogic(
+      'curtainSider',
+      [],
+      [{ id: 1, weight: '100', quantity: 28, stackable: true }],
+      false,
+      true,
+      'auto',
+      'DIN_FIRST'
+    );
+
+    const pallets = result.palletArrangement[0].pallets;
+    expect(pallets.length).toBe(28);
+
+    // Find stacked pallets (labelId 27, 28)
+    const stackedPallets = pallets.filter((p: any) => p.isStacked);
+    expect(stackedPallets.length).toBe(2);
+
+    // Floor positions: row 0 at x=0, row 1 at x=100, ..., row 12 at x=1200
+    // Positions 25,26 are at row 12 (x=1200)
+    // Stacked pallets should be at the highest x (rear)
+    const floorPallets = pallets.filter((p: any) => !p.isStacked);
+    const maxFloorX = Math.max(...floorPallets.map((p: any) => p.x));
+
+    // Both stacked pallets should be at the rear (max x = 1200)
+    expect(maxFloorX).toBe(1200);
+    stackedPallets.forEach((p: any) => {
+      expect(p.x).toBe(maxFloorX);
+    });
+  });
+
+  it('with 14 stacked DIN, stacking fills rear rows first', () => {
+    // 40 DIN = 26 floor + 14 stacked
+    // Stacking on positions 26,25,24,...,13 (rear to front)
+    const result = calculateLoadingLogic(
+      'curtainSider',
+      [],
+      [{ id: 1, weight: '100', quantity: 40, stackable: true }],
+      false,
+      true,
+      'auto',
+      'DIN_FIRST'
+    );
+
+    const pallets = result.palletArrangement[0].pallets;
+    expect(pallets.length).toBe(40);
+
+    const stackedPallets = pallets.filter((p: any) => p.isStacked);
+    expect(stackedPallets.length).toBe(14);
+
+    // Stacked pallets should have descending x values from rear
+    // 14 pallets = 7 rows (2 per row) starting from rear
+    // Row 12 (x=1200): 2 stacked
+    // Row 11 (x=1100): 2 stacked
+    // ...
+    // Row 6 (x=600): 2 stacked (14 total)
+
+    const stackedXValues = stackedPallets.map((p: any) => p.x).sort((a: number, b: number) => b - a);
+    // Should have pairs at x=1200, 1100, 1000, 900, 800, 700, 600
+    expect(stackedXValues[0]).toBe(1200);
+    expect(stackedXValues[1]).toBe(1200);
+  });
 });
