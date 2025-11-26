@@ -443,4 +443,101 @@ describe('Loading Logic - Stacking Order', () => {
     const stackedXValues = stackedPallets.map((p: any) => p.x).sort((a: number, b: number) => b - a);
     expect(stackedXValues[0]).toBe(maxFloorX);
   });
+
+  it('stacking at rear even when stackable entry is listed first', () => {
+    // Entry 1: 10 DIN stackable (should be placed at REAR after sorting)
+    // Entry 2: 20 DIN non-stackable (should be placed at FRONT after sorting)
+    // Total: 30 pallets, 26 floor capacity
+    // After sort: 20 non-stackable (front) + 6 stackable (rear) on floor
+    // Remaining 4 stackable need to be stacked on the 6 stackable floor positions
+    const result = calculateLoadingLogic(
+      'curtainSider',
+      [],
+      [
+        { id: 1, weight: '100', quantity: 10, stackable: true },  // Listed first but sorted to rear
+        { id: 2, weight: '100', quantity: 20, stackable: false }, // Listed second but sorted to front
+      ],
+      false,
+      true,
+      'auto',
+      'DIN_FIRST'
+    );
+
+    const pallets = result.palletArrangement[0].pallets;
+    const stackedPallets = pallets.filter((p: any) => p.isStackedTier === 'top');
+    
+    // 4 should be stacked (10 stackable total - 6 on floor = 4 to stack)
+    expect(stackedPallets.length).toBe(4);
+
+    // Stacking should start at the rear (highest x values where stackable pallets are)
+    // 20 non-stackable = 10 rows (x=0 to x=900), then 6 stackable = 3 rows (x=1000, 1100, 1200)
+    // Stacked pallets should be at x=1200 first (2), then x=1100 (2)
+    const stackedXValues = stackedPallets.map((p: any) => p.x).sort((a: number, b: number) => b - a);
+    expect(stackedXValues[0]).toBe(1200); // First stacked at rear
+    expect(stackedXValues[1]).toBe(1200); // Second stacked at rear
+    expect(stackedXValues[2]).toBe(1100); // Third in next row
+    expect(stackedXValues[3]).toBe(1100); // Fourth in next row
+  });
+
+  it('mixed stackable entries: stackable pallets placed at rear', () => {
+    // 5 stackable + 25 non-stackable = 30 pallets
+    // After sort: 25 non-stackable first, then 5 stackable
+    // Floor capacity = 26, so 25 non-stackable + 1 stackable on floor
+    // Remaining 4 stackable must stack, but only 1 stackable on floor = can only stack 1
+    const result = calculateLoadingLogic(
+      'curtainSider',
+      [],
+      [
+        { id: 1, weight: '100', quantity: 5, stackable: true },
+        { id: 2, weight: '100', quantity: 25, stackable: false },
+      ],
+      false,
+      true,
+      'auto',
+      'DIN_FIRST'
+    );
+
+    const pallets = result.palletArrangement[0].pallets;
+    
+    // 26 floor + 1 stacked = 27 loaded (3 overflow, not enough stackable floor positions)
+    expect(result.totalDinPalletsVisual).toBe(27);
+    
+    const stackedPallets = pallets.filter((p: any) => p.isStackedTier === 'top');
+    expect(stackedPallets.length).toBe(1);
+
+    // The stacked pallet should be at the rear (where the 1 stackable floor pallet is)
+    const floorPallets = pallets.filter((p: any) => p.isStackedTier !== 'top');
+    const maxFloorX = Math.max(...floorPallets.map((p: any) => p.x));
+    expect(stackedPallets[0].x).toBe(maxFloorX);
+  });
+
+  it('more stackable than needed: all stacking at rear positions', () => {
+    // 20 stackable + 6 non-stackable = 26 on floor (all fit)
+    // Need 4 more stacked = 30 total
+    // After sort: 6 non-stackable at front, 20 stackable at rear
+    const result = calculateLoadingLogic(
+      'curtainSider',
+      [],
+      [
+        { id: 1, weight: '100', quantity: 20, stackable: true },
+        { id: 2, weight: '100', quantity: 10, stackable: false },
+      ],
+      false,
+      true,
+      'auto',
+      'DIN_FIRST'
+    );
+
+    const pallets = result.palletArrangement[0].pallets;
+    expect(result.totalDinPalletsVisual).toBe(30);
+    
+    const stackedPallets = pallets.filter((p: any) => p.isStackedTier === 'top');
+    expect(stackedPallets.length).toBe(4);
+
+    // All stacking at highest x (rear) - 6 non-stackable = 3 rows, so stackable starts at x=300
+    // Stacking should be on rearmost stackable positions
+    const stackedXValues = stackedPallets.map((p: any) => p.x).sort((a: number, b: number) => b - a);
+    expect(stackedXValues[0]).toBe(1200); // rearmost
+    expect(stackedXValues[1]).toBe(1200);
+  });
 });

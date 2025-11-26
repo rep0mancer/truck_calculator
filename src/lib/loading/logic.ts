@@ -184,6 +184,9 @@ export const calculateLoadingLogic = (
     }
   });
 
+  // Sort EUPs: non-stackable first (front), stackable last (rear)
+  allEups.sort((a, b) => (a.stackable ? 1 : 0) - (b.stackable ? 1 : 0));
+
   dinWeights.forEach(e => {
     const w = parseFloat(e.weight || '0') || 0;
     const q = Math.min(e.quantity || 0, MAX_PALLET_SIMULATION_QUANTITY);
@@ -192,6 +195,9 @@ export const calculateLoadingLogic = (
       allDins.push({ weight: w, stackable: isStackable, entryId: e.id });
     }
   });
+
+  // Sort DINs: non-stackable first (front), stackable last (rear)
+  allDins.sort((a, b) => (a.stackable ? 1 : 0) - (b.stackable ? 1 : 0));
 
   const totalWeight = [...allDins, ...allEups].reduce((sum, p) => sum + p.weight, 0);
   const warnings: string[] = [];
