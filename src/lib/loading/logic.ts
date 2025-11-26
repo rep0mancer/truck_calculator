@@ -448,6 +448,48 @@ export const calculateLoadingLogic = (
     warnings.unshift(`Geladen: ${parts.join(' + ')} Palette(n).`);
   }
 
+  // Handle multi-unit trucks (e.g., road train with 2 units)
+  const units = truckConfig.units;
+  if (units.length > 1) {
+    // Split placements between units based on x position
+    const unitArrangements = units.map((unit: any, unitIndex: number) => {
+      // Calculate the x offset for this unit
+      let unitStartX = 0;
+      for (let i = 0; i < unitIndex; i++) {
+        unitStartX += units[i].length;
+      }
+      const unitEndX = unitStartX + unit.length;
+
+      // Filter pallets that belong to this unit and adjust their x coordinates
+      const unitPallets = placements
+        .filter((p: any) => p.x >= unitStartX && p.x < unitEndX)
+        .map((p: any) => ({
+          ...p,
+          x: p.x - unitStartX, // Make x relative to this unit
+          key: `${unit.id}_${p.key}`,
+        }));
+
+      return {
+        unitId: unit.id,
+        unitLength: unit.length,
+        unitWidth: unit.width,
+        pallets: unitPallets,
+      };
+    });
+
+    return {
+      palletArrangement: unitArrangements,
+      loadedIndustrialPalletsBase: dinMath.floor,
+      loadedEuroPalletsBase: eupMath.floor,
+      totalDinPalletsVisual: dinMath.total,
+      totalEuroPalletsVisual: eupMath.total,
+      utilizationPercentage,
+      warnings: Array.from(new Set(warnings)),
+      totalWeightKg: totalWeight,
+      eupLoadingPatternUsed: eupPattern,
+    };
+  }
+
   return {
     palletArrangement: [{
       unitId: truckConfig.units[0].id,

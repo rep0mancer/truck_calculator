@@ -188,6 +188,30 @@ describe('Loading Logic - Different truck types', () => {
     expect(capacity.floorDIN).toBe(28);
     expect(capacity.stackedDIN).toBe(56);
   });
+
+  it('roadTrain: shows both units with pallets distributed', () => {
+    const result = calculateLoadingLogic(
+      'roadTrain',
+      [],
+      [{ id: 1, weight: '100', quantity: 20, stackable: true }],
+      false,
+      true,
+      'auto',
+      'DIN_FIRST'
+    );
+
+    // Road train has 2 units
+    expect(result.palletArrangement.length).toBe(2);
+    expect(result.palletArrangement[0].unitId).toBe('unit1');
+    expect(result.palletArrangement[1].unitId).toBe('unit2');
+    
+    // Both units should have pallets
+    const unit1Pallets = result.palletArrangement[0].pallets.length;
+    const unit2Pallets = result.palletArrangement[1].pallets.length;
+    expect(unit1Pallets + unit2Pallets).toBe(20);
+    expect(unit1Pallets).toBeGreaterThan(0);
+    expect(unit2Pallets).toBeGreaterThan(0);
+  });
 });
 
 describe('Loading Logic - Visual Output', () => {

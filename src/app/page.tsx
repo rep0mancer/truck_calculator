@@ -10,7 +10,6 @@ import {
   TRUCK_TYPES,
   MAX_GROSS_WEIGHT_KG,
   KILOGRAM_FORMATTER,
-  type StackingStrategy,
 } from '@/lib/loading/logic';
 
 export default function HomePage() {
@@ -164,21 +163,6 @@ export default function HomePage() {
                     <label htmlFor="eupStackable" className={`ml-2 text-sm text-slate-800 ${isWaggonSelected ? 'text-slate-400' : ''}`}>Stapelbar (2-fach)</label>
                 </div>
             </div>
-
-          <div className="border-t pt-4">
-              <label className="block text-sm font-semibold text-slate-800 mb-1 drop-shadow-sm">Stacking-Modus</label>
-              <p className="text-xs text-slate-600 mb-2">Steuert, ob gestapelte Paletten bevorzugt in der Achszone bleiben oder maximal ausgenutzt werden.</p>
-              <div className="flex flex-col space-y-1">
-                  <label className="flex items-start text-sm text-slate-800">
-                      <input type="radio" name="stackingStrategy" value="axle_safe" checked={stackingStrategy==='axle_safe'} onChange={e=>setStackingStrategy(e.target.value as StackingStrategy)} className="h-5 w-5 mt-0.5"/>
-                      <span className="ml-2">Achslast-optimiert (Stacks starten in der Mitte, Bodenplätze bleiben frei)</span>
-                  </label>
-                  <label className="flex items-start text-sm text-slate-800">
-                      <input type="radio" name="stackingStrategy" value="max_pairs" checked={stackingStrategy==='max_pairs'} onChange={e=>setStackingStrategy(e.target.value as StackingStrategy)} className="h-5 w-5 mt-0.5"/>
-                      <span className="ml-2">Maximale Stapelanzahl (klassische Variante, stapelt so früh wie möglich)</span>
-                  </label>
-              </div>
-          </div>
 
             <div className="border-t pt-4">
               <label className="block text-sm font-semibold text-slate-800 mb-2">
