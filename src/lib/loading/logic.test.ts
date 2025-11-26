@@ -65,7 +65,8 @@ describe('Loading Logic - DIN Pallets Stacking', () => {
     expect(result.totalDinPalletsVisual).toBe(52);
     expect(result.loadedIndustrialPalletsBase).toBe(26);
     expect(result.totalDinPalletsVisual - result.loadedIndustrialPalletsBase).toBe(26);
-    expect(result.warnings.length).toBe(0);
+    // No overflow warnings (info messages are ok)
+    expect(result.warnings.some(w => w.includes('konnten nicht'))).toBe(false);
   });
 
   it('60 DIN pallets: overflow - only 52 loaded', () => {
@@ -133,7 +134,8 @@ describe('Loading Logic - EUP Pallets Stacking', () => {
     expect(result.totalEuroPalletsVisual).toBe(66);
     expect(result.loadedEuroPalletsBase).toBe(33);
     expect(result.totalEuroPalletsVisual - result.loadedEuroPalletsBase).toBe(33);
-    expect(result.warnings.length).toBe(0);
+    // No overflow warnings (info messages are ok)
+    expect(result.warnings.some(w => w.includes('konnten nicht'))).toBe(false);
   });
 });
 
