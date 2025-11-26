@@ -249,14 +249,14 @@ describe('Loading Logic - Stacking Order', () => {
     const pallets = result.palletArrangement[0].pallets;
     expect(pallets.length).toBe(28);
 
-    // Find stacked pallets (labelId 27, 28)
-    const stackedPallets = pallets.filter((p: any) => p.isStacked);
+    // Find stacked pallets (isStackedTier === 'top')
+    const stackedPallets = pallets.filter((p: any) => p.isStackedTier === 'top');
     expect(stackedPallets.length).toBe(2);
 
     // Floor positions: row 0 at x=0, row 1 at x=100, ..., row 12 at x=1200
     // Positions 25,26 are at row 12 (x=1200)
     // Stacked pallets should be at the highest x (rear)
-    const floorPallets = pallets.filter((p: any) => !p.isStacked);
+    const floorPallets = pallets.filter((p: any) => p.isStackedTier !== 'top');
     const maxFloorX = Math.max(...floorPallets.map((p: any) => p.x));
 
     // Both stacked pallets should be at the rear (max x = 1200)
@@ -282,7 +282,7 @@ describe('Loading Logic - Stacking Order', () => {
     const pallets = result.palletArrangement[0].pallets;
     expect(pallets.length).toBe(40);
 
-    const stackedPallets = pallets.filter((p: any) => p.isStacked);
+    const stackedPallets = pallets.filter((p: any) => p.isStackedTier === 'top');
     expect(stackedPallets.length).toBe(14);
 
     // Stacked pallets should have descending x values from rear
