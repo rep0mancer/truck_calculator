@@ -56,7 +56,7 @@ const computeStackableCount = (entries: WeightEntry[]) =>
 
 export const usePlannerStore = create<PlannerState>()(
   devtools((set, get) => ({
-    selectedTruck: 'curtainSider',
+    selectedTruck: 'standard13_2',
     ...createEmptyWeightEntries(),
     eupLoadingPattern: 'auto',
     isEUPStackable: false,
