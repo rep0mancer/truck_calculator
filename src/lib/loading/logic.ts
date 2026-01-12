@@ -14,8 +14,11 @@ export const MAX_GROSS_WEIGHT_KG = 24000;
 export const MAX_PALLET_SIMULATION_QUANTITY = 300;
 export const MAX_WEIGHT_PER_METER_KG = 1800;
 
-// Safe Zone: legacy constant, no longer used for choosing stack targets
-const FRONT_SAFE_ZONE_CM = 380;
+// Drive Axle Boundary: X position (in cm from front) separating the front region
+// (over/before the tractor's drive axle) from the rear region (behind drive axle).
+// For partial double-stacking, top-layer pallets are placed in the rear region first
+// to avoid overloading the tractor's drive axle group.
+const DEFAULT_DRIVE_AXLE_BOUNDARY_X_CM = 380;
 
 export const KILOGRAM_FORMATTER = new Intl.NumberFormat('de-DE', {
   maximumFractionDigits: 0,
@@ -32,6 +35,8 @@ export const TRUCK_TYPES = {
     usableLength: 1440,
     maxWidth: 245,
     maxGrossWeightKg: 24000,
+    // Drive axle boundary at ~380cm; rear region starts after this
+    driveAxleBoundaryX: DEFAULT_DRIVE_AXLE_BOUNDARY_X_CM,
   },
   standard13_2: {
     name: 'Planensattel (13,2m)',
@@ -42,6 +47,8 @@ export const TRUCK_TYPES = {
     usableLength: 1320,
     maxWidth: 245,
     maxGrossWeightKg: 24000,
+    // Drive axle boundary at ~380cm; rear region starts after this
+    driveAxleBoundaryX: DEFAULT_DRIVE_AXLE_BOUNDARY_X_CM,
   },
   mega13_6: {
     name: 'Mega (13,6m)',
@@ -52,6 +59,8 @@ export const TRUCK_TYPES = {
     usableLength: 1360,
     maxWidth: 245,
     maxGrossWeightKg: 24000,
+    // Drive axle boundary at ~380cm; rear region starts after this
+    driveAxleBoundaryX: DEFAULT_DRIVE_AXLE_BOUNDARY_X_CM,
   },
   frigo13_2: {
     name: 'Frigo (13,2m)',
@@ -62,6 +71,8 @@ export const TRUCK_TYPES = {
     usableLength: 1320,
     maxWidth: 245,
     maxGrossWeightKg: 20000,
+    // Drive axle boundary at ~380cm; rear region starts after this
+    driveAxleBoundaryX: DEFAULT_DRIVE_AXLE_BOUNDARY_X_CM,
   },
   smallTruck7_2: {
     name: 'Motorwagen (7,2m)',
@@ -72,6 +83,8 @@ export const TRUCK_TYPES = {
     usableLength: 720,
     maxWidth: 245,
     maxGrossWeightKg: 12000,
+    // Drive axle boundary at ~220cm for smaller truck (~30% of length)
+    driveAxleBoundaryX: 220,
   },
   waggon: {
     name: 'Waggon (16m)',
@@ -82,6 +95,8 @@ export const TRUCK_TYPES = {
     usableLength: 1600,
     maxWidth: 290,
     maxGrossWeightKg: 28000,
+    // Waggon has different load dynamics; boundary at ~400cm
+    driveAxleBoundaryX: 400,
   },
 };
 
@@ -193,6 +208,41 @@ type Row = {
   startX: number;
 };
 
+/**
+ * Returns slot indices in priority order for top-layer placement in partial double-stacking.
+ * Priority: 1) Rear region (behind drive axle boundary), back-to-front
+ *           2) Front region (at/before boundary), back-to-front
+ *
+ * @param slotCount Total number of slots
+ * @param driveAxleBoundarySlotIndex Last slot index in the front region (slots 0..boundaryIndex are front)
+ * @returns Array of slot indices in priority order
+ */
+export function getTopLayerSlotPriority(params: {
+  slotCount: number;
+  driveAxleBoundarySlotIndex: number;
+}): number[] {
+  const { slotCount, driveAxleBoundarySlotIndex } = params;
+  if (slotCount <= 0) return [];
+
+  const lastSlotIndex = slotCount - 1;
+  // Clamp boundary to valid range
+  const boundaryIdx = Math.max(-1, Math.min(driveAxleBoundarySlotIndex, lastSlotIndex));
+
+  const result: number[] = [];
+
+  // 1) Rear region: slots strictly BEHIND the boundary (boundaryIdx+1 .. lastSlotIndex), back-to-front
+  for (let i = lastSlotIndex; i > boundaryIdx; i--) {
+    result.push(i);
+  }
+
+  // 2) Front region: slots 0 .. boundaryIdx (inclusive), back-to-front
+  for (let i = boundaryIdx; i >= 0; i--) {
+    result.push(i);
+  }
+
+  return result;
+}
+
 // --- MAIN LOGIC ---
 
 export const calculateLoadingLogic = (
@@ -209,6 +259,7 @@ export const calculateLoadingLogic = (
 ) => {
   const truckConfig = TRUCK_TYPES[truckKey];
   const totalTruckLength = truckConfig.usableLength;
+  const driveAxleBoundaryX = truckConfig.driveAxleBoundaryX ?? DEFAULT_DRIVE_AXLE_BOUNDARY_X_CM;
 
   // 1. PALLET EXPANSION
   const allEups: PalletItem[] = [];
@@ -339,12 +390,13 @@ export const calculateLoadingLogic = (
         for (let attempt = 0; attempt < MAX_COMPRESSION_PASSES && !placed; attempt++) {
           // Let's try to stack `p` directly first.
           // Here we allow partially stacked rows, as long as they still have free top capacity.
-          let targetRow = findBestStackTarget(
+          const targetRow = findBestStackTarget(
             rows,
             p.type,
             stackingStrategy,
             rows.length,
-            true
+            true,
+            driveAxleBoundaryX
           );
 
           if (targetRow) {
@@ -368,7 +420,9 @@ export const calculateLoadingLogic = (
                 rows,
                 typeToCompress,
                 stackingStrategy,
-                sourceIndex
+                sourceIndex,
+                false,
+                driveAxleBoundaryX
               ); // Limit search to before source
 
               if (compressTarget && compressTarget.items.length >= sourceRow.items.length) {
@@ -429,7 +483,8 @@ export const calculateLoadingLogic = (
     type: string,
     strategy: StackingStrategy,
     beforeIndex: number = allRows.length,
-    allowPartiallyStacked: boolean = false
+    allowPartiallyStacked: boolean = false,
+    driveAxleBoundaryX: number = DEFAULT_DRIVE_AXLE_BOUNDARY_X_CM
   ) {
     // 1. Candidates by type and base stackability
     const baseCandidates = allRows
@@ -458,9 +513,19 @@ export const calculateLoadingLogic = (
 
     if (candidates.length === 0) return null;
 
-    // 3. Sort from BACK to FRONT (highest startX = furthest to the rear)
-    // This enforces: Stacked DIN and stacked EUP are always at the back.
-    candidates.sort((a, b) => b.startX - a.startX);
+    // 3. Sort with drive axle boundary priority:
+    //    - Rear region (startX > driveAxleBoundaryX) FIRST, back-to-front
+    //    - Then front region (startX <= driveAxleBoundaryX), back-to-front
+    // This ensures partial double-stacking places top pallets behind the drive axle first.
+    candidates.sort((a, b) => {
+      const aIsRear = a.startX > driveAxleBoundaryX;
+      const bIsRear = b.startX > driveAxleBoundaryX;
+      if (aIsRear !== bIsRear) {
+        return aIsRear ? -1 : 1; // Rear before front
+      }
+      // Within same region: higher startX first (back-to-front)
+      return b.startX - a.startX;
+    });
 
     return candidates[0];
   }
