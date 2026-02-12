@@ -1,3 +1,5 @@
+"use client";
+
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { PalletUnitArrangement } from './components/TruckVisualization';
@@ -56,7 +58,7 @@ const computeStackableCount = (entries: WeightEntry[]) =>
 
 export const usePlannerStore = create<PlannerState>()(
   devtools((set, get) => ({
-    selectedTruck: 'curtainSider',
+    selectedTruck: 'standard13_2', // FIX: Valid default
     ...createEmptyWeightEntries(),
     eupLoadingPattern: 'auto',
     isEUPStackable: false,
@@ -77,7 +79,8 @@ export const usePlannerStore = create<PlannerState>()(
     setSelectedTruck: (truck) =>
       set(() => {
         const updates: Partial<PlannerState> = { selectedTruck: truck };
-        if (['Waggon', 'Waggon2'].includes(truck)) {
+        // FIX: Correct Waggon Check
+        if (truck === 'waggon') {
           updates.isEUPStackable = false;
           updates.isDINStackable = false;
         }
@@ -96,7 +99,8 @@ export const usePlannerStore = create<PlannerState>()(
       set(
         () => {
           const emptyEntries = createEmptyWeightEntries();
-          const truckConfig = TRUCK_TYPES[get().selectedTruck];
+          // Safety fallback
+          const truckConfig = TRUCK_TYPES[get().selectedTruck] || TRUCK_TYPES.standard13_2;
           const emptyArrangement = truckConfig.units.map((unit) => ({
             unitId: unit.id,
             unitLength: unit.length,
@@ -136,13 +140,14 @@ export const usePlannerStore = create<PlannerState>()(
         palletTypeToMax === 'industrial'
           ? [{ id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0', stackable: state.isDINStackable }]
           : [];
+      
       const simResults = calculateLoadingLogic(
         state.selectedTruck,
         simEupWeights,
         simDinWeights,
         state.isEUPStackable,
         state.isDINStackable,
-        'auto',
+        state.eupLoadingPattern,
         palletTypeToMax === 'euro' ? 'EUP_FIRST' : 'DIN_FIRST',
         computeStackableCount(simEupWeights),
         computeStackableCount(simDinWeights),
@@ -174,36 +179,76 @@ export const usePlannerStore = create<PlannerState>()(
 
     fillRemaining: (typeToFill) => {
       const state = get();
-      const weightEntryToUse = typeToFill === 'euro' ? state.eupWeights[state.eupWeights.length - 1] : state.dinWeights[state.dinWeights.length - 1];
-      const weightToFill = weightEntryToUse?.weight || '0';
 
-      const eupSim = typeToFill === 'euro'
-        ? [...state.eupWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFill, stackable: state.isEUPStackable }]
-        : [...state.eupWeights];
-      const dinSim = typeToFill === 'industrial'
-        ? [...state.dinWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFill, stackable: state.isDINStackable }]
-        : [...state.dinWeights];
+      const currentLoadedEup = state.totalEuroPalletsVisual;
+      const currentLoadedDin = state.totalDinPalletsVisual;
+      const weightToFill = typeToFill === 'euro'
+        ? state.eupWeights[state.eupWeights.length - 1]?.weight || '0'
+        : state.dinWeights[state.dinWeights.length - 1]?.weight || '0';
 
-      const order = typeToFill === 'euro' ? 'DIN_FIRST' : 'EUP_FIRST';
+      const canFitAdditionalForOrder = (order: 'DIN_FIRST' | 'EUP_FIRST', additionalQuantity: number) => {
+        const eupSim =
+          typeToFill === 'euro' && additionalQuantity > 0
+            ? [...state.eupWeights, { id: -1, quantity: additionalQuantity, weight: weightToFill, stackable: state.isEUPStackable }]
+            : state.eupWeights;
 
-      const res = calculateLoadingLogic(
-        state.selectedTruck,
-        eupSim,
-        dinSim,
-        state.isEUPStackable,
-        state.isDINStackable,
-        'auto',
-        order,
-        computeStackableCount(eupSim),
-        computeStackableCount(dinSim),
-        state.stackingStrategy,
-      );
+        const dinSim =
+          typeToFill === 'industrial' && additionalQuantity > 0
+            ? [...state.dinWeights, { id: -1, quantity: additionalQuantity, weight: weightToFill, stackable: state.isDINStackable }]
+            : state.dinWeights;
 
-      const currentEups = state.eupWeights.reduce((s, e) => s + e.quantity, 0);
-      const currentDins = state.dinWeights.reduce((s, e) => s + e.quantity, 0);
+        const simulatedResult = calculateLoadingLogic(
+          state.selectedTruck,
+          eupSim,
+          dinSim,
+          state.isEUPStackable,
+          state.isDINStackable,
+          state.eupLoadingPattern,
+          order,
+          computeStackableCount(eupSim),
+          computeStackableCount(dinSim),
+          state.stackingStrategy,
+        );
 
-      const addedEups = res.totalEuroPalletsVisual - currentEups;
-      const addedDins = res.totalDinPalletsVisual - currentDins;
+        const keepsCurrentLoad =
+          simulatedResult.totalEuroPalletsVisual >= currentLoadedEup &&
+          simulatedResult.totalDinPalletsVisual >= currentLoadedDin;
+
+        if (!keepsCurrentLoad) return false;
+
+        if (typeToFill === 'euro') {
+          return simulatedResult.totalEuroPalletsVisual >= currentLoadedEup + additionalQuantity;
+        }
+
+        return simulatedResult.totalDinPalletsVisual >= currentLoadedDin + additionalQuantity;
+      };
+
+      const findMaxAdditionalForOrder = (order: 'DIN_FIRST' | 'EUP_FIRST') => {
+        let low = 0;
+        let high = MAX_PALLET_SIMULATION_QUANTITY;
+
+        while (low < high) {
+          const mid = Math.floor((low + high + 1) / 2);
+          if (canFitAdditionalForOrder(order, mid)) {
+            low = mid;
+          } else {
+            high = mid - 1;
+          }
+        }
+
+        return low;
+      };
+
+      const preferredOrder: 'DIN_FIRST' | 'EUP_FIRST' = typeToFill === 'industrial' ? 'DIN_FIRST' : 'EUP_FIRST';
+      const fallbackOrder: 'DIN_FIRST' | 'EUP_FIRST' = preferredOrder === 'DIN_FIRST' ? 'EUP_FIRST' : 'DIN_FIRST';
+
+      const additionalPreferred = findMaxAdditionalForOrder(preferredOrder);
+      const additionalFallback = findMaxAdditionalForOrder(fallbackOrder);
+      const additionalQuantity = Math.max(additionalPreferred, additionalFallback);
+
+      if (additionalQuantity <= 0) {
+        return false;
+      }
 
       let updated = false;
 
@@ -211,24 +256,22 @@ export const usePlannerStore = create<PlannerState>()(
         (existing) => {
           const updates: Partial<PlannerState> = { lastEdited: typeToFill === 'euro' ? 'eup' : 'din' };
 
-          if (typeToFill === 'euro' && addedEups > 0 && existing.eupWeights.length > 0) {
+          if (typeToFill === 'euro' && existing.eupWeights.length > 0) {
             const newWeights = [...existing.eupWeights];
             const lastIndex = newWeights.length - 1;
-            const updatedLastEntry = {
+            newWeights[lastIndex] = {
               ...newWeights[lastIndex],
-              quantity: newWeights[lastIndex].quantity + addedEups,
+              quantity: newWeights[lastIndex].quantity + additionalQuantity,
             };
-            newWeights[lastIndex] = updatedLastEntry;
             updates.eupWeights = newWeights;
             updated = true;
-          } else if (typeToFill === 'industrial' && addedDins > 0 && existing.dinWeights.length > 0) {
+          } else if (typeToFill === 'industrial' && existing.dinWeights.length > 0) {
             const newWeights = [...existing.dinWeights];
             const lastIndex = newWeights.length - 1;
-            const updatedLastEntry = {
+            newWeights[lastIndex] = {
               ...newWeights[lastIndex],
-              quantity: newWeights[lastIndex].quantity + addedDins,
+              quantity: newWeights[lastIndex].quantity + additionalQuantity,
             };
-            newWeights[lastIndex] = updatedLastEntry;
             updates.dinWeights = newWeights;
             updated = true;
           }
@@ -264,6 +307,7 @@ export const usePlannerStore = create<PlannerState>()(
 
       let multiTruckWarnings: string[] = [];
 
+      // Multi-truck checks
       if (dinQuantity > 0 && eupQuantity === 0) {
         const dinCapacitySim = [{ id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0', stackable: state.isDINStackable }];
         const dinCapacityResult = calculateLoadingLogic(
@@ -320,39 +364,64 @@ export const usePlannerStore = create<PlannerState>()(
         }
       }
 
+      // Calc remaining capacity for badges
       const weightToFillEup = state.eupWeights.length > 0 ? state.eupWeights[state.eupWeights.length - 1].weight || '0' : '0';
-      const eupCapacitySim = [{ id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFillEup, stackable: state.isEUPStackable }];
-      const eupCapacityResult = calculateLoadingLogic(
-        state.selectedTruck,
-        eupCapacitySim,
-        state.dinWeights,
-        state.isEUPStackable,
-        state.isDINStackable,
-        state.eupLoadingPattern,
-        'DIN_FIRST',
-        computeStackableCount(eupCapacitySim),
-        maxStackableDin,
-        state.stackingStrategy,
-      );
-      const maxEup = eupCapacityResult.totalEuroPalletsVisual;
-      const remainingEup = Math.max(0, maxEup - eupQuantity);
+const weightToFillDin = state.dinWeights.length > 0 ? state.dinWeights[state.dinWeights.length - 1].weight || '0' : '0';
+      
+      const canFitAdditional = (type: 'eup' | 'din', additionalQuantity: number) => {
+        const eupSim =
+          type === 'eup' && additionalQuantity > 0
+            ? [...state.eupWeights, { id: -1, quantity: additionalQuantity, weight: weightToFillEup, stackable: state.isEUPStackable }]
+            : state.eupWeights;
+        const dinSim =
+          type === 'din' && additionalQuantity > 0
+            ? [...state.dinWeights, { id: -1, quantity: additionalQuantity, weight: weightToFillDin, stackable: state.isDINStackable }]
+            : state.dinWeights;
 
-      const weightToFillDin = state.dinWeights.length > 0 ? state.dinWeights[state.dinWeights.length - 1].weight || '0' : '0';
-      const dinCapacitySim = [{ id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFillDin, stackable: state.isDINStackable }];
-      const dinCapacityResult = calculateLoadingLogic(
-        state.selectedTruck,
-        state.eupWeights,
-        dinCapacitySim,
-        state.isEUPStackable,
-        state.isDINStackable,
-        state.eupLoadingPattern,
-        'EUP_FIRST',
-        maxStackableEup,
-        computeStackableCount(dinCapacitySim),
-        state.stackingStrategy,
-      );
-      const maxDin = dinCapacityResult.totalDinPalletsVisual;
-      const remainingDin = Math.max(0, maxDin - dinQuantity);
+        const simulatedResult = calculateLoadingLogic(
+          state.selectedTruck,
+          eupSim,
+          dinSim,
+          state.isEUPStackable,
+          state.isDINStackable,
+          state.eupLoadingPattern,
+          'DIN_FIRST',
+          computeStackableCount(eupSim),
+          computeStackableCount(dinSim),
+          state.stackingStrategy,
+        );
+
+        const keepsCurrentLoad =
+          simulatedResult.totalEuroPalletsVisual >= primaryResults.totalEuroPalletsVisual &&
+          simulatedResult.totalDinPalletsVisual >= primaryResults.totalDinPalletsVisual;
+
+        if (!keepsCurrentLoad) return false;
+
+        if (type === 'eup') {
+          return simulatedResult.totalEuroPalletsVisual >= primaryResults.totalEuroPalletsVisual + additionalQuantity;
+        }
+
+        return simulatedResult.totalDinPalletsVisual >= primaryResults.totalDinPalletsVisual + additionalQuantity;
+      };
+
+      const findRemainingCapacity = (type: 'eup' | 'din') => {
+        let low = 0;
+        let high = MAX_PALLET_SIMULATION_QUANTITY;
+
+        while (low < high) {
+          const mid = Math.floor((low + high + 1) / 2);
+          if (canFitAdditional(type, mid)) {
+            low = mid;
+          } else {
+            high = mid - 1;
+          }
+        }
+
+        return low;
+      };
+
+      const remainingEup = findRemainingCapacity('eup');
+      const remainingDin = findRemainingCapacity('din');
 
       set(
         {

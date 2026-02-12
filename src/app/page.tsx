@@ -46,9 +46,14 @@ export default function HomePage() {
     recalculate,
   } = usePlannerStore();
   const { toast } = useToast();
-  const isWaggonSelected = ['Waggon', 'Waggon2'].includes(selectedTruck);
-  const selectedTruckConfig = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES];
+  
+  // FIX: Use correct key 'waggon'
+  const isWaggonSelected = selectedTruck === 'waggon';
+  
+  // FIX: Safety fallback if selectedTruck is stale/invalid in local state
+  const selectedTruckConfig = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES] || TRUCK_TYPES.standard13_2;
   const maxGrossWeightKg = selectedTruckConfig.maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG;
+  
   useEffect(() => {
     recalculate();
   }, [
