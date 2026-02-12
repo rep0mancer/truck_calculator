@@ -342,7 +342,7 @@ export const usePlannerStore = create<PlannerState>()(
         state.stackingStrategy,
       );
       const maxEup = eupCapacityResult.totalEuroPalletsVisual;
-      const remainingEup = Math.max(0, maxEup - eupQuantity);
+      const remainingEup = Math.max(0, maxEup - primaryResults.totalEuroPalletsVisual);
 
       const weightToFillDin = state.dinWeights.length > 0 ? state.dinWeights[state.dinWeights.length - 1].weight || '0' : '0';
       const dinCapacitySim = [{ id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFillDin, stackable: state.isDINStackable }];
@@ -359,7 +359,7 @@ export const usePlannerStore = create<PlannerState>()(
         state.stackingStrategy,
       );
       const maxDin = dinCapacityResult.totalDinPalletsVisual;
-      const remainingDin = Math.max(0, maxDin - dinQuantity);
+      const remainingDin = Math.max(0, maxDin - primaryResults.totalDinPalletsVisual);
 
       set(
         {
