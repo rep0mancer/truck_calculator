@@ -84,6 +84,121 @@ type PalletItem = {
   labelId: number;
 };
 
+const createVisualUnits = (truckConfig: (typeof TRUCK_TYPES)[keyof typeof TRUCK_TYPES]) =>
+  truckConfig.units.map(u => ({
+    unitId: u.id,
+    unitLength: u.length,
+    unitWidth: u.width,
+    pallets: [] as any[]
+  }));
+
+const createWaggonPallet = (
+  item: PalletItem,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+) => ({
+  key: item.id,
+  type: item.type,
+  width,
+  height,
+  x,
+  y,
+  labelId: item.labelId,
+  isStackedTier: 'base' as const,
+});
+
+const calculateWaggonLayout = (
+  truckConfig: (typeof TRUCK_TYPES)[keyof typeof TRUCK_TYPES],
+  eupItems: PalletItem[],
+  dinItems: PalletItem[],
+) => {
+  const visualUnits = createVisualUnits(truckConfig);
+  const mainUnit = visualUnits[0];
+  let loadedEuro = 0;
+  let loadedDin = 0;
+  let totalWeight = 0;
+  const warnings: string[] = [];
+
+  const onlyEup = eupItems.length > 0 && dinItems.length === 0;
+  const onlyDin = dinItems.length > 0 && eupItems.length === 0;
+
+  if (onlyEup) {
+    // Historic POE layout from previous versions: 38 EUP max.
+    const maxEup = Math.min(eupItems.length, 38);
+    const laneStartY = 5;
+
+    // Lane 1: 11x EUP längs (80x120)
+    for (let i = 0; i < 11 && loadedEuro < maxEup; i++) {
+      const item = eupItems[loadedEuro];
+      mainUnit.pallets.push(createWaggonPallet(item, 80, 120, i * 120, laneStartY));
+      loadedEuro++;
+      totalWeight += item.weight;
+    }
+
+    // Lane 2: 11x EUP längs (80x120)
+    for (let i = 0; i < 11 && loadedEuro < maxEup; i++) {
+      const item = eupItems[loadedEuro];
+      mainUnit.pallets.push(createWaggonPallet(item, 80, 120, i * 120, laneStartY + 80));
+      loadedEuro++;
+      totalWeight += item.weight;
+    }
+
+    // Lane 3: 16x EUP quer (120x80)
+    for (let i = 0; i < 16 && loadedEuro < maxEup; i++) {
+      const item = eupItems[loadedEuro];
+      mainUnit.pallets.push(createWaggonPallet(item, 120, 80, i * 80, laneStartY + 160));
+      loadedEuro++;
+      totalWeight += item.weight;
+    }
+
+    if (eupItems.length > loadedEuro) {
+      warnings.push(`Platzmangel / Gewichtslimit: ${eupItems.length - loadedEuro} Paletten konnten nicht geladen werden.`);
+    }
+  } else if (onlyDin) {
+    // Historic POE layout from previous versions: 26 DIN max.
+    const maxDin = Math.min(dinItems.length, 26);
+    const laneStartY = 25;
+
+    for (let i = 0; i < 13 && loadedDin < maxDin; i++) {
+      const left = dinItems[loadedDin];
+      mainUnit.pallets.push(createWaggonPallet(left, 120, 120, i * 120, laneStartY));
+      loadedDin++;
+      totalWeight += left.weight;
+
+      if (loadedDin < maxDin) {
+        const right = dinItems[loadedDin];
+        mainUnit.pallets.push(createWaggonPallet(right, 120, 120, i * 120, laneStartY + 120));
+        loadedDin++;
+        totalWeight += right.weight;
+      }
+    }
+
+    if (dinItems.length > loadedDin) {
+      warnings.push(`Platzmangel / Gewichtslimit: ${dinItems.length - loadedDin} Paletten konnten nicht geladen werden.`);
+    }
+  } else {
+    return null;
+  }
+
+  if (totalWeight > truckConfig.maxGrossWeightKg) {
+    warnings.push(`Gewicht überschritten: ${KILOGRAM_FORMATTER.format(totalWeight)} kg`);
+  }
+
+  return {
+    palletArrangement: visualUnits,
+    loadedIndustrialPalletsBase: loadedDin,
+    loadedEuroPalletsBase: loadedEuro,
+    totalDinPalletsVisual: loadedDin,
+    totalEuroPalletsVisual: loadedEuro,
+    utilizationPercentage: 0,
+    warnings: Array.from(new Set(warnings)),
+    totalWeightKg: totalWeight,
+    eupLoadingPatternUsed: onlyEup ? 'custom' : 'none',
+  };
+};
+
 function expandItems(
   weights: WeightEntry[],
   type: 'euro' | 'industrial',
@@ -118,8 +233,8 @@ export const calculateLoadingLogic = (
   dinWeights: WeightEntry[],
   currentIsEUPStackable: boolean,
   currentIsDINStackable: boolean,
-  _ignoredPattern: any, 
-  _ignoredOrder: any,
+  currentEupLoadingPattern: 'auto' | 'long' | 'broad',
+  placementOrder: 'DIN_FIRST' | 'EUP_FIRST',
   _maxEupStack: number,
   _maxDinStack: number,
   _strategy: StackingStrategy
@@ -137,6 +252,13 @@ export const calculateLoadingLogic = (
 
   const dinItems = dinItemsRaw.sort((a, b) => Number(a.stackable) - Number(b.stackable));
   const eupItems = eupItemsRaw.sort((a, b) => Number(a.stackable) - Number(b.stackable));
+
+  if (truckKey === 'waggon') {
+    const waggonLayout = calculateWaggonLayout(truckConfig, eupItems, dinItems);
+    if (waggonLayout) {
+      return waggonLayout;
+    }
+  }
 
   // 2. Phase A: Floor Loading
   
@@ -160,107 +282,146 @@ export const calculateLoadingLogic = (
   const TRUCK_WIDTH = truckConfig.maxWidth;
   const TRUCK_MAX_LEN = truckConfig.usableLength; 
   
-  // --- DIN PLACEMENT (Always Broad/Quer) ---
-  // DIN Broad: Consumes 100cm length, 120cm width.
-  
-  while (remainingDins.length > 0) {
-    if (currentX + 100 > TRUCK_MAX_LEN) break;
+  const placeDinRows = () => {
+    // --- DIN PLACEMENT (Always Broad/Quer) ---
+    // DIN Broad: Consumes 100cm length, 120cm width.
+    while (remainingDins.length > 0) {
+      if (currentX + 100 > TRUCK_MAX_LEN) break;
 
-    const p1 = remainingDins.shift()!;
-    const p2 = remainingDins.length > 0 ? remainingDins.shift() : null;
+      const p1 = remainingDins.shift()!;
+      const p2 = remainingDins.length > 0 ? remainingDins.shift() : null;
 
-    const rowItems: (PalletItem | null)[] = [p1, p2]; 
-    
-    // Center the 240cm block in the 244cm+ truck
-    const offset = (TRUCK_WIDTH - 240) / 2;
-    
-    const rowCoords = [
-      { y: offset, w: 120, l: 100 },
-      { y: offset + 120, w: 120, l: 100 } 
-    ];
+      const rowItems: (PalletItem | null)[] = [p1, p2];
+      const offset = (TRUCK_WIDTH - 240) / 2;
+      const rowCoords = [
+        { y: offset, w: 120, l: 100 },
+        { y: offset + 120, w: 120, l: 100 }
+      ];
 
-    // Gap Fill with EUP
-    if (!p2 && remainingEups.length > 0) {
-      const fillEup = remainingEups.shift()!;
-      rowItems[1] = fillEup; 
-      // EUP broad is 120x80. Fits in the 120x100 slot.
-      // We visualize it with its real length (80), but the row reserves 100.
-      rowCoords[1] = { y: offset + 120, w: 120, l: 80 };
+      // Gap Fill with EUP
+      if (!p2 && remainingEups.length > 0) {
+        const fillEup = remainingEups.shift()!;
+        rowItems[1] = fillEup;
+        // EUP broad is 120x80. Fits in the 120x100 slot.
+        // We visualize it with its real length (80), but the row reserves 100.
+        rowCoords[1] = { y: offset + 120, w: 120, l: 80 };
+      }
+
+      rows.push({
+        x: currentX,
+        length: 100,
+        type: 'din_row',
+        slots: rowItems,
+        stacked: [null, null],
+        slotCoords: rowCoords
+      });
+
+      currentX += 100;
+      currentWeight += p1.weight + (rowItems[1]?.weight || 0);
     }
+  };
 
-    rows.push({
-      x: currentX,
-      length: 100,
-      type: 'din_row',
-      slots: rowItems,
-      stacked: [null, null],
-      slotCoords: rowCoords
-    });
+  const placeEupRows = () => {
+    // --- EUP PLACEMENT ---
+    while (remainingEups.length > 0) {
+      let useBroad = false;
 
-    currentX += 100;
-    currentWeight += p1.weight + (rowItems[1]?.weight || 0);
-  }
-
-  // --- EUP PLACEMENT ---
-  
-  while (remainingEups.length > 0) {
-    // Logic: Prefer 3-wide (Long) unless end of truck or few items left
-    let useBroad = false;
-    if (remainingEups.length <= 2) {
+      if (currentEupLoadingPattern === 'broad') {
         useBroad = true;
-    } else {
-        // If 1.2m (Long) doesn't fit, try 0.8m (Broad)
-        if (currentX + 120 > TRUCK_MAX_LEN && currentX + 80 <= TRUCK_MAX_LEN) {
-            useBroad = true;
+      } else if (currentEupLoadingPattern === 'long') {
+        useBroad = false;
+      } else {
+        // auto: Prefer 3-wide (Long) unless end of truck or few items left
+        if (remainingEups.length <= 2) {
+          useBroad = true;
+        } else if (currentX + 120 > TRUCK_MAX_LEN && currentX + 80 <= TRUCK_MAX_LEN) {
+          useBroad = true;
         }
+      }
+
+      if (useBroad) {
+        // EUP Broad: 80cm length, 120cm width. 2 fit.
+        if (currentX + 80 > TRUCK_MAX_LEN) break;
+
+        const p1 = remainingEups.shift()!;
+        const p2 = remainingEups.shift() || null;
+
+        const offset = (TRUCK_WIDTH - 240) / 2;
+        rows.push({
+          x: currentX,
+          length: 80,
+          type: 'eup_row_broad',
+          slots: [p1, p2],
+          stacked: [null, null],
+          slotCoords: [
+            { y: offset, w: 120, l: 80 },
+            { y: offset + 120, w: 120, l: 80 }
+          ]
+        });
+        currentX += 80;
+        currentWeight += p1.weight + (p2?.weight || 0);
+      } else {
+        // EUP Long: 120cm length, 80cm width. 3 fit.
+        if (currentX + 120 > TRUCK_MAX_LEN) {
+          if (currentEupLoadingPattern === 'long') {
+            break;
+          }
+          if (currentX + 80 <= TRUCK_MAX_LEN) {
+            useBroad = true;
+          } else {
+            break;
+          }
+        }
+
+        if (useBroad) {
+          const p1 = remainingEups.shift()!;
+          const p2 = remainingEups.shift() || null;
+          const offset = (TRUCK_WIDTH - 240) / 2;
+          rows.push({
+            x: currentX,
+            length: 80,
+            type: 'eup_row_broad',
+            slots: [p1, p2],
+            stacked: [null, null],
+            slotCoords: [
+              { y: offset, w: 120, l: 80 },
+              { y: offset + 120, w: 120, l: 80 }
+            ]
+          });
+          currentX += 80;
+          currentWeight += p1.weight + (p2?.weight || 0);
+          continue;
+        }
+
+        const p1 = remainingEups.shift()!;
+        const p2 = remainingEups.shift() || null;
+        const p3 = remainingEups.shift() || null;
+
+        const offset = (TRUCK_WIDTH - 240) / 2;
+        rows.push({
+          x: currentX,
+          length: 120,
+          type: 'eup_row_long',
+          slots: [p1, p2, p3],
+          stacked: [null, null, null],
+          slotCoords: [
+            { y: offset, w: 80, l: 120 },
+            { y: offset + 80, w: 80, l: 120 },
+            { y: offset + 160, w: 80, l: 120 }
+          ]
+        });
+        currentX += 120;
+        currentWeight += p1.weight + (p2?.weight || 0) + (p3?.weight || 0);
+      }
     }
+  };
 
-    if (useBroad) {
-       // EUP Broad: 80cm length, 120cm width. 2 fit.
-       if (currentX + 80 > TRUCK_MAX_LEN) break;
-       
-       const p1 = remainingEups.shift()!;
-       const p2 = remainingEups.shift() || null; 
-       
-       const offset = (TRUCK_WIDTH - 240) / 2;
-       rows.push({
-         x: currentX,
-         length: 80,
-         type: 'eup_row_broad',
-         slots: [p1, p2],
-         stacked: [null, null],
-         slotCoords: [
-           { y: offset, w: 120, l: 80 },
-           { y: offset + 120, w: 120, l: 80 }
-         ]
-       });
-       currentX += 80;
-       currentWeight += p1.weight + (p2?.weight || 0);
-
-    } else {
-       // EUP Long: 120cm length, 80cm width. 3 fit.
-       if (currentX + 120 > TRUCK_MAX_LEN) break;
-       
-       const p1 = remainingEups.shift()!;
-       const p2 = remainingEups.shift() || null;
-       const p3 = remainingEups.shift() || null;
-
-       const offset = (TRUCK_WIDTH - 240) / 2;
-       rows.push({
-         x: currentX,
-         length: 120,
-         type: 'eup_row_long',
-         slots: [p1, p2, p3],
-         stacked: [null, null, null],
-         slotCoords: [
-           { y: offset, w: 80, l: 120 },
-           { y: offset + 80, w: 80, l: 120 },
-           { y: offset + 160, w: 80, l: 120 }
-         ]
-       });
-       currentX += 120;
-       currentWeight += p1.weight + (p2?.weight || 0) + (p3?.weight || 0);
-    }
+  if (placementOrder === 'EUP_FIRST') {
+    placeEupRows();
+    placeDinRows();
+  } else {
+    placeDinRows();
+    placeEupRows();
   }
 
   // 3. Phase B: Reverse Stacking
@@ -417,6 +578,6 @@ export const calculateLoadingLogic = (
     utilizationPercentage: Math.min(100, (currentX / truckConfig.totalLength) * 100),
     warnings: Array.from(new Set(finalWarnings)),
     totalWeightKg: currentWeight,
-    eupLoadingPatternUsed: 'auto',
+    eupLoadingPatternUsed: currentEupLoadingPattern,
   };
 };

@@ -147,7 +147,7 @@ export const usePlannerStore = create<PlannerState>()(
         simDinWeights,
         state.isEUPStackable,
         state.isDINStackable,
-        'auto',
+        state.eupLoadingPattern,
         palletTypeToMax === 'euro' ? 'EUP_FIRST' : 'DIN_FIRST',
         computeStackableCount(simEupWeights),
         computeStackableCount(simDinWeights),
@@ -197,15 +197,15 @@ export const usePlannerStore = create<PlannerState>()(
         dinSim,
         state.isEUPStackable,
         state.isDINStackable,
-        'auto',
+        state.eupLoadingPattern,
         order,
         computeStackableCount(eupSim),
         computeStackableCount(dinSim),
         state.stackingStrategy,
       );
 
-      const currentEups = state.eupWeights.reduce((s, e) => s + e.quantity, 0);
-      const currentDins = state.dinWeights.reduce((s, e) => s + e.quantity, 0);
+      const currentEups = state.totalEuroPalletsVisual;
+      const currentDins = state.totalDinPalletsVisual;
 
       const addedEups = res.totalEuroPalletsVisual - currentEups;
       const addedDins = res.totalDinPalletsVisual - currentDins;
