@@ -328,7 +328,10 @@ export const usePlannerStore = create<PlannerState>()(
 
       // Calc remaining capacity for badges
       const weightToFillEup = state.eupWeights.length > 0 ? state.eupWeights[state.eupWeights.length - 1].weight || '0' : '0';
-      const eupCapacitySim = [{ id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFillEup, stackable: state.isEUPStackable }];
+      const eupCapacitySim = [
+        ...state.eupWeights,
+        { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFillEup, stackable: state.isEUPStackable },
+      ];
       const eupCapacityResult = calculateLoadingLogic(
         state.selectedTruck,
         eupCapacitySim,
@@ -341,11 +344,13 @@ export const usePlannerStore = create<PlannerState>()(
         maxStackableDin,
         state.stackingStrategy,
       );
-      const maxEup = eupCapacityResult.totalEuroPalletsVisual;
-      const remainingEup = Math.max(0, maxEup - primaryResults.totalEuroPalletsVisual);
+      const remainingEup = Math.max(0, eupCapacityResult.totalEuroPalletsVisual - primaryResults.totalEuroPalletsVisual);
 
       const weightToFillDin = state.dinWeights.length > 0 ? state.dinWeights[state.dinWeights.length - 1].weight || '0' : '0';
-      const dinCapacitySim = [{ id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFillDin, stackable: state.isDINStackable }];
+      const dinCapacitySim = [
+        ...state.dinWeights,
+        { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFillDin, stackable: state.isDINStackable },
+      ];
       const dinCapacityResult = calculateLoadingLogic(
         state.selectedTruck,
         state.eupWeights,
@@ -358,8 +363,7 @@ export const usePlannerStore = create<PlannerState>()(
         computeStackableCount(dinCapacitySim),
         state.stackingStrategy,
       );
-      const maxDin = dinCapacityResult.totalDinPalletsVisual;
-      const remainingDin = Math.max(0, maxDin - primaryResults.totalDinPalletsVisual);
+      const remainingDin = Math.max(0, dinCapacityResult.totalDinPalletsVisual - primaryResults.totalDinPalletsVisual);
 
       set(
         {
