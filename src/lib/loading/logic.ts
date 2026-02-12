@@ -129,29 +129,23 @@ const calculateWaggonLayout = (
     const maxEup = Math.min(eupItems.length, 38);
     const laneStartY = 5;
 
+    const addEupLane = (count: number, palletWidth: number, palletHeight: number, xStep: number, yPos: number) => {
+      for (let i = 0; i < count && loadedEuro < maxEup; i++) {
+        const item = eupItems[loadedEuro];
+        mainUnit.pallets.push(createWaggonPallet(item, palletWidth, palletHeight, i * xStep, yPos));
+        loadedEuro++;
+        totalWeight += item.weight;
+      }
+    };
+
     // Lane 1: 11x EUP längs (80x120)
-    for (let i = 0; i < 11 && loadedEuro < maxEup; i++) {
-      const item = eupItems[loadedEuro];
-      mainUnit.pallets.push(createWaggonPallet(item, 80, 120, i * 120, laneStartY));
-      loadedEuro++;
-      totalWeight += item.weight;
-    }
+    addEupLane(11, 80, 120, 120, laneStartY);
 
     // Lane 2: 11x EUP längs (80x120)
-    for (let i = 0; i < 11 && loadedEuro < maxEup; i++) {
-      const item = eupItems[loadedEuro];
-      mainUnit.pallets.push(createWaggonPallet(item, 80, 120, i * 120, laneStartY + 80));
-      loadedEuro++;
-      totalWeight += item.weight;
-    }
+    addEupLane(11, 80, 120, 120, laneStartY + 80);
 
     // Lane 3: 16x EUP quer (120x80)
-    for (let i = 0; i < 16 && loadedEuro < maxEup; i++) {
-      const item = eupItems[loadedEuro];
-      mainUnit.pallets.push(createWaggonPallet(item, 120, 80, i * 80, laneStartY + 160));
-      loadedEuro++;
-      totalWeight += item.weight;
-    }
+    addEupLane(16, 120, 80, 80, laneStartY + 160);
 
     if (eupItems.length > loadedEuro) {
       warnings.push(`Platzmangel / Gewichtslimit: ${eupItems.length - loadedEuro} Paletten konnten nicht geladen werden.`);
