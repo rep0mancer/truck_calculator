@@ -84,6 +84,115 @@ type PalletItem = {
   labelId: number;
 };
 
+const createVisualUnits = (truckConfig: (typeof TRUCK_TYPES)[keyof typeof TRUCK_TYPES]) =>
+  truckConfig.units.map(u => ({
+    unitId: u.id,
+    unitLength: u.length,
+    unitWidth: u.width,
+    pallets: [] as any[]
+  }));
+
+const createWaggonPallet = (
+  item: PalletItem,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+) => ({
+  key: item.id,
+  type: item.type,
+  width,
+  height,
+  x,
+  y,
+  labelId: item.labelId,
+  isStackedTier: 'base' as const,
+});
+
+const calculateWaggonLayout = (
+  truckConfig: (typeof TRUCK_TYPES)[keyof typeof TRUCK_TYPES],
+  eupItems: PalletItem[],
+  dinItems: PalletItem[],
+) => {
+  const visualUnits = createVisualUnits(truckConfig);
+  const mainUnit = visualUnits[0];
+  let loadedEuro = 0;
+  let loadedDin = 0;
+  let totalWeight = 0;
+  const warnings: string[] = [];
+
+  const onlyEup = eupItems.length > 0 && dinItems.length === 0;
+  const onlyDin = dinItems.length > 0 && eupItems.length === 0;
+
+  if (onlyEup) {
+    // Historic POE layout from previous versions: 38 EUP max.
+    const maxEup = Math.min(eupItems.length, 38);
+    const laneStartY = 5;
+
+    const addEupLane = (count: number, palletWidth: number, palletHeight: number, xStep: number, yPos: number) => {
+      for (let i = 0; i < count && loadedEuro < maxEup; i++) {
+        const item = eupItems[loadedEuro];
+        mainUnit.pallets.push(createWaggonPallet(item, palletWidth, palletHeight, i * xStep, yPos));
+        loadedEuro++;
+        totalWeight += item.weight;
+      }
+    };
+
+    // Lane 1: 11x EUP längs (80x120)
+    addEupLane(11, 80, 120, 120, laneStartY);
+
+    // Lane 2: 11x EUP längs (80x120)
+    addEupLane(11, 80, 120, 120, laneStartY + 80);
+
+    // Lane 3: 16x EUP quer (120x80)
+    addEupLane(16, 120, 80, 80, laneStartY + 160);
+
+    if (eupItems.length > loadedEuro) {
+      warnings.push(`Platzmangel / Gewichtslimit: ${eupItems.length - loadedEuro} Paletten konnten nicht geladen werden.`);
+    }
+  } else if (onlyDin) {
+    // Historic POE layout from previous versions: 26 DIN max.
+    const maxDin = Math.min(dinItems.length, 26);
+    const laneStartY = 25;
+
+    for (let i = 0; i < 13 && loadedDin < maxDin; i++) {
+      const left = dinItems[loadedDin];
+      mainUnit.pallets.push(createWaggonPallet(left, 120, 120, i * 120, laneStartY));
+      loadedDin++;
+      totalWeight += left.weight;
+
+      if (loadedDin < maxDin) {
+        const right = dinItems[loadedDin];
+        mainUnit.pallets.push(createWaggonPallet(right, 120, 120, i * 120, laneStartY + 120));
+        loadedDin++;
+        totalWeight += right.weight;
+      }
+    }
+
+    if (dinItems.length > loadedDin) {
+      warnings.push(`Platzmangel / Gewichtslimit: ${dinItems.length - loadedDin} Paletten konnten nicht geladen werden.`);
+    }
+  } else {
+    return null;
+  }
+
+  if (totalWeight > truckConfig.maxGrossWeightKg) {
+    warnings.push(`Gewicht überschritten: ${KILOGRAM_FORMATTER.format(totalWeight)} kg`);
+  }
+
+  return {
+    palletArrangement: visualUnits,
+    loadedIndustrialPalletsBase: loadedDin,
+    loadedEuroPalletsBase: loadedEuro,
+    totalDinPalletsVisual: loadedDin,
+    totalEuroPalletsVisual: loadedEuro,
+    utilizationPercentage: 0,
+    warnings: Array.from(new Set(warnings)),
+    totalWeightKg: totalWeight,
+    eupLoadingPatternUsed: onlyEup ? 'custom' : 'none',
+  };
+};
+
 function expandItems(
   weights: WeightEntry[],
   type: 'euro' | 'industrial',
@@ -137,6 +246,13 @@ export const calculateLoadingLogic = (
 
   const dinItems = dinItemsRaw.sort((a, b) => Number(a.stackable) - Number(b.stackable));
   const eupItems = eupItemsRaw.sort((a, b) => Number(a.stackable) - Number(b.stackable));
+
+  if (truckKey === 'waggon') {
+    const waggonLayout = calculateWaggonLayout(truckConfig, eupItems, dinItems);
+    if (waggonLayout) {
+      return waggonLayout;
+    }
+  }
 
   // 2. Phase A: Floor Loading
   
