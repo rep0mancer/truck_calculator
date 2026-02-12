@@ -328,6 +328,13 @@ export const calculateLoadingLogic = (
 
       if (currentEupLoadingPattern === 'broad') {
         useBroad = true;
+
+        // Broad mode optimization: if exactly 120cm remain and at least 3 EUP are left,
+        // finish with one long row (3 pallets) so broad mode can also reach 33 on 13.2m.
+        const remainingLength = TRUCK_MAX_LEN - currentX;
+        if (remainingLength === 120 && remainingEups.length >= 3) {
+          useBroad = false;
+        }
       } else if (currentEupLoadingPattern === 'long') {
         useBroad = false;
       } else {
