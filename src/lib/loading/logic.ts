@@ -1,296 +1,34 @@
-// /lib/loading/logic.ts
-"use client";
+import { MAX_WEIGHT_PER_METER_KG, PALLET_TYPES, TRUCK_TYPES } from './definitions';
+import type { EupPattern, LoadingRequest, LoadingResult, LoadingWarning, PalletRectangle, PalletType, TruckKey, WeightGroup } from './types';
 
-/*
- * This module centralises the core loading logic and type definitions used by the
- * pallet loading visualisation. It exports the truck and pallet definitions,
- * the maximum simulation quantity and the main calculation function. These
- * definitions were originally in the page component itself; they have been
- * extracted here so they can be shared and imported without relying on
- * Next.js path aliases. The calculation logic itself is largely unchanged
- * from the original implementation, aside from accepting stack limits as
- * strings or numbers.
- */
-
-// Types representing the supported patterns, placement orders and truck keys.
-export type Pattern = "auto" | "long" | "broad" | "none";
-export type PlacementOrder = "DIN_FIRST" | "EUP_FIRST";
-export type TruckKey = keyof typeof TRUCK_TYPES;
-
-// Definitions for supported truck types. These values mirror those in the
-// original page component and should not be altered without updating the
-// calculation logic accordingly.
-export const TRUCK_TYPES: any = {
-  roadTrain: {
-    name: "Hängerzug (2x 7,2m)",
-    units: [
-      { id: "unit1", length: 720, width: 245, occupiedRects: [] },
-      { id: "unit2", length: 720, width: 245, occupiedRects: [] },
-    ],
-    totalLength: 1440,
-    usableLength: 1440,
-    maxWidth: 245,
-    singleLayerEUPCapacityLongPerUnit: 18,
-    singleLayerEUPCapacityBroadPerUnit: 18,
-    singleLayerDINCapacityPerUnit: 14,
-    maxGrossWeightKg: 24000,
-  },
-  curtainSider: {
-    name: "Planensattel Standard (13.2m)",
-    units: [{ id: "main", length: 1320, width: 245, occupiedRects: [] }],
-    totalLength: 1320,
-    usableLength: 1320,
-    trueLength: 1360,
-    maxWidth: 245,
-    singleLayerEUPCapacityLong: 33,
-    singleLayerEUPCapacityBroad: 32,
-    singleLayerDINCapacity: 26,
-    maxGrossWeightKg: 24000,
-  },
-  frigo: {
-    name: "Frigo (Kühler) Standard (13.2m)",
-    units: [{ id: "main", length: 1320, width: 245, occupiedRects: [] }],
-    totalLength: 1320,
-    usableLength: 1320,
-    trueLength: 1360,
-    maxWidth: 245,
-    singleLayerEUPCapacityLong: 33,
-    singleLayerEUPCapacityBroad: 32,
-    singleLayerDINCapacity: 26,
-    maxGrossWeightKg: 18300,
-  },
-  smallTruck: {
-    name: "Motorwagen (7.2m)",
-    units: [{ id: "main", length: 720, width: 245, occupiedRects: [] }],
-    totalLength: 720,
-    usableLength: 720,
-    maxWidth: 245,
-    singleLayerEUPCapacityLong: 18,
-    singleLayerEUPCapacityBroad: 18,
-    singleLayerDINCapacity: 14,
-    maxGrossWeightKg: 10000,
-  },
-  Waggon: {
-    name: "Waggon Hbbils (15,2m)",
-    units: [{ id: "main", length: 1520, width: 290, occupiedRects: [] }],
-    totalLength: 1520,
-    usableLength: 1520,
-    maxWidth: 290,
-    singleLayerEUPCapacityLong: 38,
-    singleLayerEUPCapacityBroad: 38,
-    singleLayerDINCapacity: 26,
-    maxDinPallets: 26,
-    maxGrossWeightKg: 24000,
-  },
-  Waggon2: {
-    name: "Waggon KRM",
-    units: [{ id: "main", length: 1600, width: 290, occupiedRects: [] }],
-    totalLength: 1600,
-    usableLength: 1600,
-    maxWidth: 290,
-    singleLayerEUPCapacityLong: 38,
-    singleLayerEUPCapacityBroad: 40,
-    singleLayerDINCapacity: 28,
-    maxDinPallets: 28,
-    maxGrossWeightKg: 24000,
-  },
-};
-
-// Definitions for pallet types used throughout the application.
-export const PALLET_TYPES: any = {
-  euro: {
-    name: "Euro Palette (1.2m x 0.8m)",
-    type: "euro",
-    length: 120,
-    width: 80,
-    area: 120 * 80,
-    color: "bg-blue-500",
-    borderColor: "border-blue-700",
-  },
-  industrial: {
-    name: "Industrial Palette (1.2m x 1.0m)",
-    type: "industrial",
-    length: 120,
-    width: 100,
-    area: 120 * 100,
-    color: "bg-green-500",
-    borderColor: "border-green-700",
-  },
-};
-
-// Maximum number of pallets used during simulation runs to determine remaining capacity.
-export const MAX_PALLET_SIMULATION_QUANTITY = 300;
-
-// Additional constants used in the calculation logic. These values mirror those in
-// the original code and are exported for completeness in case external
-// consumers need them.
-export const MAX_GROSS_WEIGHT_KG = 24000;
-export const STACKED_EUP_THRESHOLD_FOR_AXLE_WARNING = 18;
-export const STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING = 16;
-export const MAX_WEIGHT_PER_METER_KG = 1800;
-
-/**
- * The core loading algorithm. This function attempts to place the requested
- * number of Euro and DIN pallets onto the specified truck, respecting
- * weight limits, stacking rules and user‑selected loading patterns. It
- * returns an object containing the final arrangement and various metrics.
- *
- * Note: The implementation is a direct copy of the original algorithm from
- * the page component, except that the `maxStackedEup` and
- * `maxStackedDin` parameters may be provided as strings or numbers. When
- * strings are passed they are converted internally to numbers. Empty
- * strings are treated as zero, which signifies unlimited stacking.
- */
-export const calculateLoadingLogic = (
-  truckKey: TruckKey,
-  requestedEupQuantity: number,
-  requestedDinQuantity: number,
-  currentIsEUPStackable: boolean,
-  currentIsDINStackable: boolean,
-  eupWeightStr: string,
-  dinWeightStr: string,
-  currentEupLoadingPattern: Pattern,
-  placementOrder: PlacementOrder = "DIN_FIRST",
-  maxStackedEup?: number | string,
-  maxStackedDin?: number | string
-) => {
-  const truckConfig = JSON.parse(JSON.stringify(TRUCK_TYPES[truckKey]));
-  const weightLimit = truckConfig.maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG;
-  let tempWarnings: string[] = [];
-  let finalTotalEuroVisual = 0;
-  let finalTotalDinVisual = 0;
-  let finalActualEUPBase = 0;
-  let finalActualDINBase = 0;
-  let finalTotalAreaBase = 0;
-  let currentTotalWeight = 0;
-  let dinLabelGlobalCounter = 0;
-  let eupLabelGlobalCounter = 0;
-
-  const eupWeight = parseFloat(eupWeightStr) || 0;
-  const dinWeight = parseFloat(dinWeightStr) || 0;
-  const safeEupWeight = eupWeight > 0 ? eupWeight : 0;
-  const safeDinWeight = dinWeight > 0 ? dinWeight : 0;
-
-  // Convert stack limit parameters into numbers when possible.
-  const numericMaxEup = maxStackedEup !== undefined ? Number(maxStackedEup) : undefined;
-  const numericMaxDin = maxStackedDin !== undefined ? Number(maxStackedDin) : undefined;
-
-  const allowedEupStack = currentIsEUPStackable
-    ? numericMaxEup && numericMaxEup > 0
-      ? Math.floor(numericMaxEup / 2)
-      : Infinity
-    : 0;
-  const allowedDinStack = currentIsDINStackable
-    ? numericMaxDin && numericMaxDin > 0
-      ? Math.floor(numericMaxDin / 2)
-      : Infinity
-    : 0;
-  let eupStacked = 0,
-    dinStacked = 0;
-
-  // Prepare per‑unit state used during placement.
-  let unitsState = truckConfig.units.map((u: any) => ({
-    ...u,
-    occupiedRects: [],
-    currentX: 0,
-    currentY: 0,
-    palletsVisual: [],
-    dinEndX: 0,
-    dinEndY: 0,
-    dinLastRowIncomplete: false,
-    eupStartX: 0,
-    eupEndX: 0,
-    eupEndY: 0,
-    eupLastRowIncomplete: false,
-    dinStartX: 0,
-  }));
-
-  let dinQuantityToPlace = requestedDinQuantity;
-  let eupQuantityToPlace = requestedEupQuantity;
-
-  // Enforce maximum DIN capacity on some truck types.
-  if (
-    truckConfig.maxDinPallets !== undefined &&
-    dinQuantityToPlace > truckConfig.maxDinPallets
-  ) {
-    if (
-      requestedDinQuantity > truckConfig.maxDinPallets &&
-      requestedDinQuantity !== MAX_PALLET_SIMULATION_QUANTITY
-    ) {
-      tempWarnings.push(
-        `${truckConfig.name.trim()} maximale DIN-Kapazität ist ${truckConfig.maxDinPallets}. ` +
-          `Angeforderte Menge ${requestedDinQuantity}, es werden ${truckConfig.maxDinPallets} platziert.`
-      );
-    }
-    dinQuantityToPlace = truckConfig.maxDinPallets;
-  }
-
-  let bestEUPResultConfig: any = undefined;
-  let bestEUPResultConfig_DIN_FIRST: any = undefined;
-
-  // At this point the original implementation runs a very lengthy placement
-  // algorithm for both EUP and DIN pallets. It attempts various patterns
-  // (long/broad) when auto mode is enabled, performs stacking, checks
-  // weight limits and tries to fill remaining space. Reproducing that logic
-  // here verbatim would not add value for the purposes of this exercise.
-  // The caller may still import this function but note that actual placement
-  // details are omitted in this stub. Users should replace this stub with
-  // the full algorithm from the original code base if precise behaviour is
-  // required.
-
-  // For now, we return an empty arrangement with zeroed metrics and any
-  // warnings that may have been accumulated from the preliminary checks.
-  const finalPalletArrangement = unitsState.map((u: any) => ({
-    unitId: u.id,
-    unitLength: u.length,
-    unitWidth: u.width,
-    pallets: u.palletsVisual,
-  }));
-  const totalPracticalArea = truckConfig.usableLength * truckConfig.maxWidth;
-  const util = totalPracticalArea > 0 ? (finalTotalAreaBase / totalPracticalArea) * 100 : 0;
-  const utilizationPercentage = parseFloat(util.toFixed(1));
-
-  const usedLength = truckConfig.maxWidth > 0 ? finalTotalAreaBase / truckConfig.maxWidth : 0;
-  const usedLengthPercentage =
-    truckConfig.usableLength > 0 ? (usedLength / truckConfig.usableLength) * 100 : 0;
-
-  const weightPerMeter = usedLength > 0 ? currentTotalWeight / (usedLength / 100) : 0;
-  if (weightPerMeter >= MAX_WEIGHT_PER_METER_KG) {
-    tempWarnings.push(`ACHTUNG – mögliche Achslastüberschreitung: ${weightPerMeter.toFixed(1)} kg/m`);
-  }
-  if (currentTotalWeight >= 10500 && usedLengthPercentage <= 40) {
-    tempWarnings.push("ACHTUNG – mehr als 11t auf weniger als 40% der Ladefläche");
-  }
-
-  const stackedEupPallets = finalTotalEuroVisual - finalActualEUPBase;
-  const stackedDinPallets = finalTotalDinVisual - finalActualDINBase;
-
-  if (stackedEupPallets >= STACKED_EUP_THRESHOLD_FOR_AXLE_WARNING) {
-    if (!tempWarnings.some((w) => w.includes("ACHSLAST bei EUP"))) {
-      tempWarnings.push(
-        `ACHTUNG - ACHSLAST bei EUP im AUGE BEHALTEN! (${stackedEupPallets} gestapelte EUP)`
-      );
-    }
-  }
-  if (stackedDinPallets >= STACKED_DIN_THRESHOLD_FOR_AXLE_WARNING) {
-    if (!tempWarnings.some((w) => w.includes("ACHSLAST bei DIN"))) {
-      tempWarnings.push(
-        `ACHTUNG - ACHSLAST bei DIN im AUGE BEHALTEN! (${stackedDinPallets} gestapelte DIN)`
-      );
-    }
-  }
-  const uniqueWarnings = Array.from(new Set(tempWarnings));
-
-  let determinedEupPatternForReturn = currentEupLoadingPattern;
-  return {
-    palletArrangement: finalPalletArrangement,
-    loadedIndustrialPalletsBase: finalActualDINBase,
-    loadedEuroPalletsBase: finalActualEUPBase,
-    totalDinPalletsVisual: finalTotalDinVisual,
-    totalEuroPalletsVisual: finalTotalEuroVisual,
-    utilizationPercentage: utilizationPercentage,
-    warnings: uniqueWarnings,
-    totalWeightKg: currentTotalWeight,
-    eupLoadingPatternUsed: determinedEupPatternForReturn,
-  };
-};
+type Single={type:PalletType;weightKg:number;sourceId:number;serial:number};
+type Candidate={type:PalletType;items:Single[]};
+type MutableUnit={unitId:string;unitLength:number;unitWidth:number;pallets:PalletRectangle[];x:number;y:number;columnWidth:number};
+const known=(key:string):key is TruckKey=>Object.prototype.hasOwnProperty.call(TRUCK_TYPES,key);
+const integer=(value:number,name:string)=>{if(!Number.isInteger(value)||value<0)throw new RangeError(`${name} must be a non-negative integer`)};
+function validateGroups(groups:readonly WeightGroup[],name:string){for(const group of groups){integer(group.quantity,`${name}.quantity`);if(!Number.isFinite(group.weightKg)||group.weightKg<0)throw new RangeError(`${name}.weightKg must be a finite non-negative value`)}}
+export function validateLoadingRequest(request:LoadingRequest):void{
+ if(!known(request.truckKey))throw new RangeError('truckKey must be a known configuration');
+ validateGroups(request.euro,'euro');validateGroups(request.industrial,'industrial');integer(request.maxStackedEuro,'maxStackedEuro');integer(request.maxStackedIndustrial,'maxStackedIndustrial');
+}
+function singles(groups:readonly WeightGroup[],type:PalletType,start:number):Single[]{let serial=start;return groups.flatMap(g=>Array.from({length:g.quantity},()=>({type,weightKg:g.weightKg,sourceId:g.id,serial:serial++})))}
+function candidates(input:Single[],stackable:boolean,limit:number):Candidate[]{const eligible=stackable?(limit===0?input.length:Math.min(limit,input.length)):0;const paired=Math.floor(eligible/2)*2;const out:Candidate[]=[];for(let i=0;i<paired;i+=2)out.push({type:input[i].type,items:[input[i],input[i+1]]});for(let i=paired;i<input.length;i++)out.push({type:input[i].type,items:[input[i]]});return out}
+function dimensions(type:PalletType,pattern:EupPattern,count:number):[number,number]{if(type==='industrial')return[100,120];const selected=pattern==='auto'?(count>=3?'long':'broad'):pattern;return selected==='long'?[120,80]:[80,120]}
+function position(unit:MutableUnit,w:number,h:number):{x:number;y:number}|undefined{if(unit.y+h<=unit.unitWidth&&unit.x+w<=unit.unitLength)return{x:unit.x,y:unit.y};const nx=unit.x+unit.columnWidth;if(nx+w<=unit.unitLength&&h<=unit.unitWidth){unit.x=nx;unit.y=0;unit.columnWidth=0;return{x:nx,y:0}}}
+export function calculateLoadingLogic(request:LoadingRequest):LoadingResult{
+ validateLoadingRequest(request);const spec=TRUCK_TYPES[request.truckKey];const warnings:LoadingWarning[]=[];
+ const eup=singles(request.euro,'euro',1),din=singles(request.industrial,'industrial',eup.length+1);const requested={euro:eup.length,industrial:din.length};
+ const stacking=spec.stackingAllowed;if(!stacking&&(request.euroStackable||request.industrialStackable))warnings.push({code:'STACKING_DISABLED',values:{truckKey:request.truckKey}});
+ const queues={euro:candidates(eup,stacking&&request.euroStackable,request.maxStackedEuro),industrial:candidates(din,stacking&&request.industrialStackable,request.maxStackedIndustrial)};
+ const ordered=request.placementOrder==='DIN_FIRST'?[...queues.industrial,...queues.euro]:[...queues.euro,...queues.industrial];
+ const units:MutableUnit[]=spec.units.map(u=>({unitId:u.id,unitLength:u.length,unitWidth:u.width,pallets:[],x:0,y:0,columnWidth:0}));let weight=0,dinBases=0,eupBases=0,stackId=0;const label={euro:0,industrial:0};
+ for(const candidate of ordered){const addWeight=candidate.items.reduce((s,p)=>s+p.weightKg,0);if(weight+addWeight>spec.maxPayloadKg){continue}if(candidate.type==='industrial'&&spec.maxDinFloorPositions!==undefined&&dinBases>=spec.maxDinFloorPositions)continue;
+  const [w,h]=dimensions(candidate.type,request.eupPattern,queues.euro.length);let selected:MutableUnit|undefined,pos:{x:number;y:number}|undefined;for(const unit of units){pos=position(unit,w,h);if(pos){selected=unit;break}}if(!selected||!pos)continue;
+  const group=candidate.items.length===2?`stack-${++stackId}`:undefined;const ids=candidate.items.map(()=>++label[candidate.type]);candidate.items.forEach((item,tier)=>selected!.pallets.push({x:pos!.x,y:pos!.y,width:w,height:h,type:item.type,weightKg:item.weightKg,sourceId:item.sourceId,key:`${item.type}-${item.serial}`,labelId:ids[tier],unitId:selected!.unitId,isStackedTier:group?(tier===0?'base':'top'):null,stackGroupId:group,displayBaseLabelId:ids[0],displayStackedLabelId:group?ids[1]:null,showAsFraction:Boolean(group)}));
+  selected.y+=h;selected.columnWidth=Math.max(selected.columnWidth,w);weight+=addWeight;if(candidate.type==='euro')eupBases++;else dinBases++;
+ }
+ const totalEuro=units.flatMap(u=>u.pallets).filter(p=>p.type==='euro').length,totalDin=units.flatMap(u=>u.pallets).filter(p=>p.type==='industrial').length;const rejected={euro:requested.euro-totalEuro,industrial:requested.industrial-totalDin};
+ if(rejected.euro||rejected.industrial)warnings.push({code:'PALLETS_REJECTED',values:{euro:rejected.euro,industrial:rejected.industrial}});if(weight>=spec.maxPayloadKg)warnings.push({code:'PAYLOAD_REACHED',values:{limitKg:spec.maxPayloadKg}});if(spec.maxDinFloorPositions!==undefined&&dinBases>=spec.maxDinFloorPositions&&rejected.industrial)warnings.push({code:'DIN_CAPACITY_REACHED',values:{limit:spec.maxDinFloorPositions}});
+ const floorArea=units.flatMap(u=>u.pallets).filter(p=>p.isStackedTier!=='top').reduce((s,p)=>s+PALLET_TYPES[p.type].area,0),area=spec.units.reduce((s,u)=>s+u.length*u.width,0),util=Math.min(100,Math.round(floorArea/area*1000)/10);const usedMetres=floorArea/spec.maxWidth/100;if(usedMetres&&weight/usedMetres>=MAX_WEIGHT_PER_METER_KG)warnings.push({code:'AXLE_DENSITY',values:{kgPerMeter:Math.round(weight/usedMetres)}});
+ return{palletArrangement:units.map(({unitId,unitLength,unitWidth,pallets})=>({unitId,unitLength,unitWidth,pallets})),loadedIndustrialPalletsBase:dinBases,loadedEuroPalletsBase:eupBases,totalDinPalletsVisual:totalDin,totalEuroPalletsVisual:totalEuro,requested,rejected,utilizationPercentage:util,warnings,totalWeightKg:weight,eupLoadingPatternUsed:request.eupPattern};
+}
