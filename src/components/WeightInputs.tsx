@@ -20,7 +20,8 @@ interface WeightInputsProps {
 export function WeightInputs({ entries, onChange, palletType, locale }: WeightInputsProps) {
   const t = translations[locale];
   const handleAddEntry = () => {
-    onChange([...entries, { id: Date.now(), weight: '', quantity: 0 }]);
+    const maxId = entries.reduce((max, entry) => Math.max(max, entry.id), 0);
+    onChange([...entries, { id: maxId + 1, weight: '', quantity: 0 }]);
   };
 
   const handleRemoveEntry = (id: number) => {
