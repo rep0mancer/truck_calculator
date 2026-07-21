@@ -11,7 +11,7 @@ export interface MetricsPanelProps {
 export default function MetricsPanel({ plan }: MetricsPanelProps) {
   if (!plan) {
     return (
-      <p className="mt-3 text-sm text-slate-600">No plan computed yet. Adjust inputs and click "Compute plan".</p>
+      <p className="mt-3 text-sm text-slate-600">No plan computed yet. Adjust inputs and click &quot;Compute plan&quot;.</p>
     );
   }
 
