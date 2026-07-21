@@ -1,2 +1,8 @@
 # Ignore node_modules across the repo
 node_modules/
+# Next.js and TypeScript build output
+.next/
+*.tsbuildinfo
+
+# Local browser artifacts
+artifacts/
