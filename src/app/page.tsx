@@ -50,7 +50,7 @@ export default function HomePage() {
       dinStackLimit
     );
     
-    const multiTruckWarnings = [];
+    const multiTruckWarnings: string[] = [];
     
     if (dinQuantity > 0 && eupQuantity === 0) {
         const dinCapacityResult = calculateLoadingLogic(selectedTruck as keyof typeof TRUCK_TYPES, [], [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], isEUPStackable, isDINStackable, eupLoadingPattern as 'auto' | 'long' | 'broad', 'DIN_FIRST', eupStackLimit, dinStackLimit);
