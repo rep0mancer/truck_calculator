@@ -1,4 +1,4 @@
-export type Locale = 'de' | 'en';
+export type Locale = 'de' | 'en' | 'it' | 'hr' | 'sk' | 'cs' | 'uk';
 
 export const translations = {
   de: {
@@ -17,25 +17,75 @@ export const translations = {
     loaded: 'Loaded pallets (visual)', industrial: 'Industrial (DIN)', euro: 'Euro (EUP)', base: 'Floor positions', remaining: 'Remaining capacity', roomFor: 'Room for:', more: 'more', or: 'or', pallet: 'pallet', pallets: 'pallets',
     weight: 'Estimated weight', max: 'Max', messages: 'Messages', noProblems: 'No problems detected.', quantity: 'Quantity', weightPer: 'Weight', addWeightGroup: 'Add weight group', decrease: 'Decrease quantity', increase: 'Increase quantity', remove: 'Remove group', filledTitle: 'Truck filled', filledDescription: 'Free space was filled with {type} pallets.',
   },
+
+  it: {
+    title: 'Calcolatore spazio di carico', subtitle: 'Visualizzazione del posizionamento pallet secondo gli standard europei', truckType: 'Tipo di veicolo:', reset: 'Ripristina tutto',
+    dinPallets: 'Pallet industriali (DIN)', euroPallets: 'Europallet (EUP)', fillDin: 'Riempi lo spazio con DIN', fillEup: 'Riempi lo spazio con EUP',
+    stackable: 'Impilabile (doppio)', stackLimit: 'Pallet impilabili (0 = tutti)', loadingPattern: 'Schema di carico EUP:', selected: 'Selezionato', none: 'Nessuno',
+    auto: 'Ottimizza automaticamente', long: 'Longitudinale (3 affiancati)', broad: 'Trasversale (2 affiancati)', visualization: 'Visualizzazione spazio di carico', unit: 'Unità', front: 'Fronte', empty: 'Nessun pallet da visualizzare.',
+    loaded: 'Pallet caricati (vista)', industrial: 'Industriali (DIN)', euro: 'Euro (EUP)', base: 'Posti a terra', remaining: 'Capacità residua', roomFor: 'Spazio per:', more: 'altri', or: 'oppure', pallet: 'pallet', pallets: 'pallet',
+    weight: 'Peso stimato', max: 'Max', messages: 'Messaggi', noProblems: 'Nessun problema rilevato.', quantity: 'Quantità', weightPer: 'Peso', addWeightGroup: 'Aggiungi gruppo di peso', decrease: 'Riduci quantità', increase: 'Aumenta quantità', remove: 'Rimuovi gruppo', filledTitle: 'Veicolo riempito', filledDescription: 'Lo spazio libero è stato riempito con pallet {type}.',
+  },
+  hr: {
+    title: 'Kalkulator utovarnog prostora', subtitle: 'Prikaz smještaja paleta prema europskim standardima', truckType: 'Vrsta vozila:', reset: 'Poništi sve',
+    dinPallets: 'Industrijske palete (DIN)', euroPallets: 'Euro palete (EUP)', fillDin: 'Popuni preostalo s DIN', fillEup: 'Popuni preostalo s EUP',
+    stackable: 'Slaganje u dva nivoa', stackLimit: 'Palete za slaganje (0 = sve)', loadingPattern: 'Uzorak utovara EUP:', selected: 'Odabrano', none: 'Nijedan',
+    auto: 'Automatska optimizacija', long: 'Uzdužno (3 usporedno)', broad: 'Poprečno (2 usporedno)', visualization: 'Prikaz utovarnog prostora', unit: 'Jedinica', front: 'Prednja strana', empty: 'Nema paleta za prikaz.',
+    loaded: 'Utovarene palete (prikaz)', industrial: 'Industrijske (DIN)', euro: 'Euro (EUP)', base: 'Podna mjesta', remaining: 'Preostali kapacitet', roomFor: 'Mjesta za:', more: 'još', or: 'ili', pallet: 'paletu', pallets: 'paleta',
+    weight: 'Procijenjena težina', max: 'Maks.', messages: 'Poruke', noProblems: 'Nema uočenih problema.', quantity: 'Količina', weightPer: 'Težina', addWeightGroup: 'Dodaj grupu težine', decrease: 'Smanji količinu', increase: 'Povećaj količinu', remove: 'Ukloni grupu', filledTitle: 'Vozilo je popunjeno', filledDescription: 'Slobodan prostor popunjen je paletama {type}.',
+  },
+  sk: {
+    title: 'Kalkulačka nákladného priestoru', subtitle: 'Vizualizácia uloženia paliet podľa európskych noriem', truckType: 'Typ vozidla:', reset: 'Obnoviť všetko',
+    dinPallets: 'Priemyselné palety (DIN)', euroPallets: 'Europalety (EUP)', fillDin: 'Vyplniť zvyšok DIN', fillEup: 'Vyplniť zvyšok EUP',
+    stackable: 'Stohovateľné (2 vrstvy)', stackLimit: 'Stohovateľné palety (0 = všetky)', loadingPattern: 'Vzor nakladania EUP:', selected: 'Vybrané', none: 'Žiadny',
+    auto: 'Automaticky optimalizovať', long: 'Pozdĺžne (3 vedľa seba)', broad: 'Priečne (2 vedľa seba)', visualization: 'Vizualizácia nákladného priestoru', unit: 'Jednotka', front: 'Predná časť', empty: 'Žiadne palety na zobrazenie.',
+    loaded: 'Naložené palety (vizuálne)', industrial: 'Priemyselné (DIN)', euro: 'Euro (EUP)', base: 'Podlahové miesta', remaining: 'Zostávajúca kapacita', roomFor: 'Miesto pre:', more: 'ďalších', or: 'alebo', pallet: 'paletu', pallets: 'paliet',
+    weight: 'Odhadovaná hmotnosť', max: 'Max.', messages: 'Správy', noProblems: 'Neboli zistené žiadne problémy.', quantity: 'Počet', weightPer: 'Hmotnosť', addWeightGroup: 'Pridať hmotnostnú skupinu', decrease: 'Znížiť počet', increase: 'Zvýšiť počet', remove: 'Odstrániť skupinu', filledTitle: 'Vozidlo naplnené', filledDescription: 'Voľný priestor bol vyplnený paletami {type}.',
+  },
+  cs: {
+    title: 'Kalkulačka nákladového prostoru', subtitle: 'Vizualizace uložení palet podle evropských norem', truckType: 'Typ vozidla:', reset: 'Obnovit vše',
+    dinPallets: 'Průmyslové palety (DIN)', euroPallets: 'Europalety (EUP)', fillDin: 'Vyplnit zbytek DIN', fillEup: 'Vyplnit zbytek EUP',
+    stackable: 'Stohovatelné (2 vrstvy)', stackLimit: 'Stohovatelné palety (0 = všechny)', loadingPattern: 'Vzor nakládání EUP:', selected: 'Vybráno', none: 'Žádný',
+    auto: 'Automaticky optimalizovat', long: 'Podélně (3 vedle sebe)', broad: 'Příčně (2 vedle sebe)', visualization: 'Vizualizace nákladového prostoru', unit: 'Jednotka', front: 'Přední část', empty: 'Žádné palety k zobrazení.',
+    loaded: 'Naložené palety (vizuálně)', industrial: 'Průmyslové (DIN)', euro: 'Euro (EUP)', base: 'Podlahová místa', remaining: 'Zbývající kapacita', roomFor: 'Místo pro:', more: 'dalších', or: 'nebo', pallet: 'paletu', pallets: 'palet',
+    weight: 'Odhadovaná hmotnost', max: 'Max.', messages: 'Zprávy', noProblems: 'Nebyly zjištěny žádné problémy.', quantity: 'Počet', weightPer: 'Hmotnost', addWeightGroup: 'Přidat hmotnostní skupinu', decrease: 'Snížit počet', increase: 'Zvýšit počet', remove: 'Odstranit skupinu', filledTitle: 'Vozidlo naplněno', filledDescription: 'Volný prostor byl vyplněn paletami {type}.',
+  },
+  uk: {
+    title: 'Калькулятор вантажного простору', subtitle: 'Візуалізація розміщення палет за європейськими стандартами', truckType: 'Тип транспорту:', reset: 'Скинути все',
+    dinPallets: 'Промислові палети (DIN)', euroPallets: 'Європалети (EUP)', fillDin: 'Заповнити залишок DIN', fillEup: 'Заповнити залишок EUP',
+    stackable: 'Штабелювання (2 яруси)', stackLimit: 'Палети для штабелювання (0 = усі)', loadingPattern: 'Схема завантаження EUP:', selected: 'Вибрано', none: 'Немає',
+    auto: 'Автоматична оптимізація', long: 'Поздовжньо (3 поруч)', broad: 'Поперечно (2 поруч)', visualization: 'Візуалізація вантажного простору', unit: 'Секція', front: 'Передня частина', empty: 'Немає палет для відображення.',
+    loaded: 'Завантажені палети (візуально)', industrial: 'Промислові (DIN)', euro: 'Євро (EUP)', base: 'Місця на підлозі', remaining: 'Залишкова місткість', roomFor: 'Місце для:', more: 'ще', or: 'або', pallet: 'палети', pallets: 'палет',
+    weight: 'Орієнтовна вага', max: 'Макс.', messages: 'Повідомлення', noProblems: 'Проблем не виявлено.', quantity: 'Кількість', weightPer: 'Вага', addWeightGroup: 'Додати вагову групу', decrease: 'Зменшити кількість', increase: 'Збільшити кількість', remove: 'Видалити групу', filledTitle: 'Транспорт заповнено', filledDescription: 'Вільний простір заповнено палетами {type}.',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof translations.de;
 
 export function translateWarning(warning: string, locale: Locale): string {
   if (locale === 'de') return warning;
+  const localized = {
+    en: ['Weight limit reached.', 'Info: stacking is not possible on rail wagons and was disabled.', 'WARNING – more than 10.5 t is concentrated on less than 40% of the load floor.', 'Not all pallets could be loaded. Remaining: ', ' and ', 'WARNING – possible axle-load exceedance: '],
+    it: ['Limite di peso raggiunto.', 'Info: sui carri ferroviari non è possibile impilare; la funzione è stata disattivata.', 'ATTENZIONE – oltre 10,5 t sono concentrate su meno del 40% del piano di carico.', 'Non è stato possibile caricare tutti i pallet. Rimanenti: ', ' e ', 'ATTENZIONE – possibile superamento del carico per asse: '],
+    hr: ['Dosegnuto je ograničenje težine.', 'Info: slaganje na željezničkim vagonima nije moguće i isključeno je.', 'UPOZORENJE – više od 10,5 t nalazi se na manje od 40% utovarne površine.', 'Nije moguće utovariti sve palete. Preostalo: ', ' i ', 'UPOZORENJE – moguće prekoračenje osovinskog opterećenja: '],
+    sk: ['Bol dosiahnutý hmotnostný limit.', 'Info: stohovanie na železničných vozňoch nie je možné a bolo vypnuté.', 'UPOZORNENIE – viac ako 10,5 t je sústredených na menej ako 40% ložnej plochy.', 'Nepodarilo sa naložiť všetky palety. Zostáva: ', ' a ', 'UPOZORNENIE – možné prekročenie zaťaženia nápravy: '],
+    cs: ['Byl dosažen hmotnostní limit.', 'Info: stohování na železničních vozech není možné a bylo vypnuto.', 'UPOZORNĚNÍ – více než 10,5 t je soustředěno na méně než 40% ložné plochy.', 'Nepodařilo se naložit všechny palety. Zbývá: ', ' a ', 'UPOZORNĚNÍ – možné překročení zatížení nápravy: '],
+    uk: ['Досягнуто обмеження ваги.', 'Інформація: штабелювання у залізничних вагонах неможливе й було вимкнене.', 'УВАГА – понад 10,5 т зосереджено на менш ніж 40% вантажної площі.', 'Не вдалося завантажити всі палети. Залишилось: ', ' і ', 'УВАГА – можливе перевищення навантаження на вісь: '],
+  };
+  const text = localized[locale];
   const exact: Record<string, string> = {
-    'Gewichtslimit erreicht.': 'Weight limit reached.',
-    'Info: Stapeln ist auf dem Waggon nicht möglich und wurde deaktiviert.': 'Info: stacking is not possible on rail wagons and was disabled.',
-    'ACHTUNG – mehr als 10.5t auf weniger als 40% der Ladefläche': 'WARNING – more than 10.5 t is concentrated on less than 40% of the load floor.',
+    'Gewichtslimit erreicht.': text[0],
+    'Info: Stapeln ist auf dem Waggon nicht möglich und wurde deaktiviert.': text[1],
+    'ACHTUNG – mehr als 10.5t auf weniger als 40% der Ladefläche': text[2],
   };
   if (exact[warning]) return exact[warning];
   return warning
     .replace(/Die maximale Kapazität des Waggons von (\d+) EUP wurde überschritten\. (\d+) Palette\(n\) konnten nicht geladen werden\./, 'The wagon capacity of $1 EUP was exceeded. $2 pallet(s) could not be loaded.')
-    .replace(/Konnte nicht alle Paletten laden\. Übrig: /, 'Not all pallets could be loaded. Remaining: ')
-    .replace(/ und /g, ' and ')
+    .replace(/Konnte nicht alle Paletten laden\. Übrig: /, text[3])
+    .replace(/ und /g, text[4])
     .replace(/Für diesen Auftrag werden (\d+) volle LKWs benötigt\./, 'This order requires $1 full trucks.')
     .replace(/Benötigt (\d+) LKWs: (\d+) volle LKW\(s\) und 1 LKW mit (\d+) Paletten\./, 'Requires $1 trucks: $2 full truck(s) and 1 truck with $3 pallets.')
     .replace(/maximale DIN-Kapazität ist (\d+)\. Angeforderte Menge (\d+), es werden (\d+) platziert\./, 'maximum DIN capacity is $1. $2 requested; $3 will be placed.')
-    .replace(/ACHTUNG – mögliche Achslastüberschreitung: /, 'WARNING – possible axle-load exceedance: ')
+    .replace(/ACHTUNG – mögliche Achslastüberschreitung: /, text[5])
     .replace(/ACHTUNG - ACHSLAST bei (DIN|EUP) im AUGE BEHALTEN! \((\d+) gestapelte (DIN|EUP)\)/, 'WARNING – monitor axle load for $1! ($2 stacked $3)');
 }
