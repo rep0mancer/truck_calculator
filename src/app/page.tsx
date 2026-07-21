@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { WeightInputs } from '@/components/WeightInputs';
+import { LoadingCandidate, SelectionRejectionReason, selectLoadingCandidates } from '@/lib/loading/selectionPolicy';
 
 // Define the type for a single weight entry
 type WeightEntry = {
@@ -292,53 +293,48 @@ const calculateLoadingLogic = (
 
 
   const lengthPerPosition = (type: 'euro' | 'industrial') => (type === 'euro' ? 40 : 50);
-  const attemptAdd = (type: 'euro' | 'industrial', addWeight: number, singlesToAdd: Array<any>) => {
+  const attemptAdd = ({ type, weight: addWeight, pallets: singlesToAdd }: LoadingCandidate<any>): SelectionRejectionReason | undefined => {
     const addLen = lengthPerPosition(type);
     const wouldUseCm = usedLoadingCm + addLen;
     const wouldWeigh = currentWeight + (addWeight || 0);
-    if (wouldUseCm > lengthLimitCm) return false;
+    if (wouldUseCm > lengthLimitCm) return 'geometry';
     if (weightLimit > 0 && wouldWeigh > weightLimit) {
       if (!warnings.some(w => w.includes('Gewichtslimit'))) warnings.push('Gewichtslimit erreicht.');
-      return false;
+      return 'payload';
     }
-    if (type === 'industrial' && typeof maxDinBase === 'number' && usedDinBasePositions + 1 > maxDinBase) return false;
+    if (type === 'industrial' && typeof maxDinBase === 'number' && usedDinBasePositions + 1 > maxDinBase) return 'type-capacity';
     // Accept
     finalPalletManifest.push(...singlesToAdd);
     usedLoadingCm = wouldUseCm;
     currentWeight = wouldWeigh;
     if (type === 'industrial') { usedDinBasePositions += 1; finalActualDINBase += 1; } else { finalActualEUPBase += 1; }
-    return true;
+    return undefined;
   };
 
-  // Master priority depending on placementOrder
-  const selectionStop = { stopped: false };
-  const tryPairs = (pairs: Array<any>, type: 'euro' | 'industrial') => {
-    for (const pair of pairs) {
-      if (selectionStop.stopped) break;
-      const singles = pair.pair as Array<any>;
-      const addWeight = pair.weight || singles.reduce((s, p) => s + (p.weight || 0), 0);
-      const added = attemptAdd(type, addWeight, singles);
-      if (!added) { selectionStop.stopped = true; break; }
-    }
-  };
-  const trySingles = (singles: Array<any>, type: 'euro' | 'industrial') => {
-    for (const single of singles) {
-      if (selectionStop.stopped) break;
-      const added = attemptAdd(type, single.weight || 0, [single]);
-      if (!added) { selectionStop.stopped = true; break; }
-    }
-  };
+  // Stable first-fit: preserve the selected type priority and user order inside
+  // each type (requested stacked pairs, then its unpaired remainder). Rejected
+  // candidates are skipped rather than globally stopping later evaluation.
+  const candidatesFor = (pairs: Array<any>, singles: Array<any>, type: 'euro' | 'industrial'): LoadingCandidate<any>[] => [
+    ...pairs.map(pair => ({ type, weight: pair.weight, pallets: pair.pair })),
+    ...singles.map(single => ({ type, weight: single.weight || 0, pallets: [single] })),
+  ];
+  const dinCandidates = candidatesFor(stackedDinCandidates, dinSingleCandidates, 'industrial');
+  const eupCandidates = candidatesFor(stackedEupCandidates, eupSingleCandidates, 'euro');
+  const orderedCandidates = placementOrder === 'DIN_FIRST'
+    ? [...dinCandidates, ...eupCandidates]
+    : [...eupCandidates, ...dinCandidates];
+  const { skipped } = selectLoadingCandidates(orderedCandidates, attemptAdd);
 
-  if (placementOrder === 'DIN_FIRST') {
-    tryPairs(stackedDinCandidates, 'industrial');
-    if (!selectionStop.stopped) trySingles(dinSingleCandidates, 'industrial');
-    if (!selectionStop.stopped) tryPairs(stackedEupCandidates, 'euro');
-    if (!selectionStop.stopped) trySingles(eupSingleCandidates, 'euro');
-  } else {
-    tryPairs(stackedEupCandidates, 'euro');
-    if (!selectionStop.stopped) trySingles(eupSingleCandidates, 'euro');
-    if (!selectionStop.stopped) tryPairs(stackedDinCandidates, 'industrial');
-    if (!selectionStop.stopped) trySingles(dinSingleCandidates, 'industrial');
+  const reasonLabels: Record<SelectionRejectionReason, string> = {
+    payload: 'Gewichtslimit',
+    'type-capacity': 'Typkapazität',
+    geometry: 'Ladefläche',
+  };
+  if (skipped.length > 0) {
+    const skippedDetails = skipped.flatMap(candidate => candidate.pallets.map(pallet =>
+      `${pallet.type === 'industrial' ? 'DIN' : 'EUP'}-${pallet.sourceId}/${pallet.id} (${reasonLabels[candidate.reason]})`
+    ));
+    warnings.push(`Übersprungene Paletten: ${skippedDetails.join(', ')}.`);
   }
 
   // Leftover warning
