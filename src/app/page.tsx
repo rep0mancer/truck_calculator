@@ -25,7 +25,7 @@ export default function HomePage() {
   const [totalEuroPalletsVisual, setTotalEuroPalletsVisual] = useState(0);
   const [totalDinPalletsVisual, setTotalDinPalletsVisual] = useState(0);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [palletArrangement, setPalletArrangement] = useState([]);
+  const [palletArrangement, setPalletArrangement] = useState<any[]>([]);
   const [totalWeightKg, setTotalWeightKg] = useState(0);
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
   const [remainingCapacity, setRemainingCapacity] = useState<{ eup: number, din: number }>({ eup: 0, din: 0 });
