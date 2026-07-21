@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { WeightInputs } from '@/components/WeightInputs';
+import { validateWeightEntries, type LoadingValidationError, type ValidatedWeightEntry } from '@/lib/loading/validation';
 
 // Define the type for a single weight entry
 type WeightEntry = {
@@ -200,18 +201,35 @@ const calculateLoadingLogic = (
   maxStackedDin?: number | string
 ) => {
   const truckConfig = JSON.parse(JSON.stringify(TRUCK_TYPES[truckKey]));
+  const eupValidation = validateWeightEntries(eupWeights);
+  const dinValidation = validateWeightEntries(dinWeights);
+  const validationErrors = [
+    ...(eupValidation.success ? [] : eupValidation.errors),
+    ...(dinValidation.success ? [] : dinValidation.errors),
+  ];
+  if (!eupValidation.success || !dinValidation.success) {
+    return {
+      palletArrangement: [], loadedIndustrialPalletsBase: 0, loadedEuroPalletsBase: 0,
+      totalDinPalletsVisual: 0, totalEuroPalletsVisual: 0, utilizationPercentage: 0,
+      warnings: [], totalWeightKg: 0, eupLoadingPatternUsed: currentEupLoadingPattern,
+      validationErrors,
+    };
+  }
+  // Only typed, validated values cross the loading-engine boundary.
+  const validatedEupWeights = eupValidation.data;
+  const validatedDinWeights = dinValidation.data;
 
   // --- START: WAGGON-SPECIFIC LOGIC ---
   const isWaggon = ['Waggon', 'Waggon2'].includes(truckKey);
   let isEUPStackable = isWaggon ? false : currentIsEUPStackable;
   let isDINStackable = isWaggon ? false : currentIsDINStackable;
 
-  const isDinEmpty = dinWeights.every(entry => entry.quantity === 0);
-  const isEupPresent = eupWeights.some(entry => entry.quantity > 0);
+  const isDinEmpty = validatedDinWeights.every(entry => entry.quantity === 0);
+  const isEupPresent = validatedEupWeights.some(entry => entry.quantity > 0);
 
   // Special layout for EUP-only on a Waggon.
   if (isWaggon && isDinEmpty && isEupPresent) {
-    const result = calculateWaggonEuroLayout(eupWeights, truckConfig);
+    const result = calculateWaggonEuroLayout(validatedEupWeights.map(entry => ({ ...entry, weight: String(entry.weight) })), truckConfig);
     if (currentIsEUPStackable) {
        result.warnings.push("Info: Stapeln ist auf dem Waggon nicht möglich und wurde deaktiviert.");
     }
@@ -224,21 +242,19 @@ const calculateLoadingLogic = (
 
   // Helper to create individual pallets from user inputs
   let uniqueIdSeed = 1;
-  const flattenToSingles = (entries: WeightEntry[], type: 'euro' | 'industrial') => {
+  const flattenToSingles = (entries: ValidatedWeightEntry[], type: 'euro' | 'industrial') => {
     const result: Array<any> = [];
     for (const entry of entries) {
-      const qty = Math.max(0, Number(entry.quantity) || 0);
-      const parsedWeight = parseFloat(entry.weight as unknown as string) || 0;
-      for (let i = 0; i < qty; i++) {
-        result.push({ type, weight: parsedWeight, isStacked: false, id: uniqueIdSeed++, sourceId: entry.id });
+      for (let i = 0; i < entry.quantity; i++) {
+        result.push({ type, weight: entry.weight, isStacked: false, id: uniqueIdSeed++, sourceId: entry.id });
       }
     }
     return result;
   };
 
   // Create base single lists
-  const allEupSingles = flattenToSingles(eupWeights, 'euro');
-  const allDinSingles = flattenToSingles(dinWeights, 'industrial');
+  const allEupSingles = flattenToSingles(validatedEupWeights, 'euro');
+  const allDinSingles = flattenToSingles(validatedDinWeights, 'industrial');
   const requestedEupQuantity = allEupSingles.length;
   const requestedDinQuantity = allDinSingles.length;
 
@@ -388,7 +404,7 @@ const calculateLoadingLogic = (
     let currentX = 0;
     let currentY = 0;
     let currentRowHeight = 0;
-    let activeEupPatternForRow = currentEupLoadingPattern;
+    let activeEupPatternForRow: 'auto' | 'long' | 'broad' | 'none' = currentEupLoadingPattern;
     // Use a traditional for loop for stability, as we manually advance the index
     for (let i = 0; i < placementQueue.length; /* no increment */) {
       const palletToPlace = placementQueue[i];
@@ -512,6 +528,7 @@ const calculateLoadingLogic = (
     warnings: Array.from(new Set(warnings)),
     totalWeightKg: currentWeight,
     eupLoadingPatternUsed: currentEupLoadingPattern === 'auto' ? 'auto' : (currentEupLoadingPattern || 'none'),
+    validationErrors: [],
   };
 };
 
@@ -535,12 +552,22 @@ export default function HomePage() {
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
   const [remainingCapacity, setRemainingCapacity] = useState<{ eup: number, din: number }>({ eup: 0, din: 0 });
   const [lastEdited, setLastEdited] = useState<'eup' | 'din'>('eup');
+  const [dinValidationErrors, setDinValidationErrors] = useState<LoadingValidationError[]>([]);
+  const [eupValidationErrors, setEupValidationErrors] = useState<LoadingValidationError[]>([]);
   const { toast } = useToast();
   const isWaggonSelected = ['Waggon', 'Waggon2'].includes(selectedTruck);
   const selectedTruckConfig = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES];
   const maxGrossWeightKg = selectedTruckConfig.maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG;
+  const hasInvalidEntries = dinValidationErrors.length > 0 || eupValidationErrors.length > 0;
 
   const calculateAndSetState = useCallback(() => {
+    const boundaryValidation = [...(validateWeightEntries(eupWeights).success ? [] : (validateWeightEntries(eupWeights) as { errors: LoadingValidationError[] }).errors),
+      ...(validateWeightEntries(dinWeights).success ? [] : (validateWeightEntries(dinWeights) as { errors: LoadingValidationError[] }).errors)];
+    if (boundaryValidation.length > 0) {
+      setPalletArrangement([]); setTotalWeightKg(0); setTotalDinPalletsVisual(0); setTotalEuroPalletsVisual(0);
+      setWarnings(['Bitte korrigieren Sie die markierten Eingaben.']);
+      return;
+    }
     const eupQuantity = eupWeights.reduce((sum, entry) => sum + entry.quantity, 0);
     const dinQuantity = dinWeights.reduce((sum, entry) => sum + entry.quantity, 0);
 
@@ -756,9 +783,10 @@ export default function HomePage() {
   };
 
   const renderPallet = (pallet: any, displayScale = 0.3) => {
-    if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) return null;
+    const palletType = pallet?.type as keyof typeof PALLET_TYPES;
+    if (!pallet || !palletType || !PALLET_TYPES[palletType]) return null;
     const palette = palletVisualPalette[pallet.type] ?? palletVisualPalette.euro;
-    const d = PALLET_TYPES[pallet.type];
+    const d = PALLET_TYPES[palletType];
     const w = pallet.height * displayScale; const h = pallet.width * displayScale;
     const x = pallet.y * displayScale; const y = pallet.x * displayScale;
     let txt = pallet.showAsFraction && pallet.displayStackedLabelId ? `${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId}` : `${pallet.labelId}`;
@@ -868,9 +896,9 @@ export default function HomePage() {
            
             <div className="border-t pt-4">
                 <label className="block text-sm font-semibold text-slate-800 mb-2 drop-shadow-sm">Industriepaletten (DIN)</label>
-                <WeightInputs entries={dinWeights} onChange={(entries)=>{ setLastEdited('din'); setDinWeights(entries); }} palletType="DIN" />
-                <button onClick={() => handleMaximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl">Max. DIN</button>
-                <button onClick={() => handleFillRemaining('industrial')} className="mt-1 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl">Rest mit max. DIN füllen</button>
+                <WeightInputs entries={dinWeights} onChange={(entries)=>{ setLastEdited('din'); setDinWeights(entries); }} onValidationChange={setDinValidationErrors} palletType="DIN" />
+                <button disabled={hasInvalidEntries} onClick={() => handleMaximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl disabled:cursor-not-allowed disabled:opacity-50">Max. DIN</button>
+                <button disabled={hasInvalidEntries} onClick={() => handleFillRemaining('industrial')} className="mt-1 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl disabled:cursor-not-allowed disabled:opacity-50">Rest mit max. DIN füllen</button>
                 <div className="flex items-center mt-2">
                     <input type="checkbox" id="dinStackable" checked={isDINStackable} onChange={e=>setIsDINStackable(e.target.checked)} disabled={isWaggonSelected} className="h-5 w-5 disabled:cursor-not-allowed"/>
                     <label htmlFor="dinStackable" className={`ml-2 text-sm text-slate-800 ${isWaggonSelected ? 'text-slate-400' : ''}`}>Stapelbar (2-fach)</label>
@@ -882,9 +910,9 @@ export default function HomePage() {
 
             <div className="border-t pt-4">
                 <label className="block text-sm font-semibold text-slate-800 mb-2 drop-shadow-sm">Europaletten (EUP)</label>
-                <WeightInputs entries={eupWeights} onChange={(entries)=>{ setLastEdited('eup'); setEupWeights(entries); }} palletType="EUP" />
-                <button onClick={() => handleMaximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl">Max. EUP</button>
-                <button onClick={() => handleFillRemaining('euro')} className="mt-1 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl">Rest mit max. EUP füllen</button>
+                <WeightInputs entries={eupWeights} onChange={(entries)=>{ setLastEdited('eup'); setEupWeights(entries); }} onValidationChange={setEupValidationErrors} palletType="EUP" />
+                <button disabled={hasInvalidEntries} onClick={() => handleMaximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl disabled:cursor-not-allowed disabled:opacity-50">Max. EUP</button>
+                <button disabled={hasInvalidEntries} onClick={() => handleFillRemaining('euro')} className="mt-1 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl disabled:cursor-not-allowed disabled:opacity-50">Rest mit max. EUP füllen</button>
                 <div className="flex items-center mt-2">
                     <input type="checkbox" id="eupStackable" checked={isEUPStackable} onChange={e=>setIsEUPStackable(e.target.checked)} disabled={isWaggonSelected} className="h-5 w-5 disabled:cursor-not-allowed"/>
                     <label htmlFor="eupStackable" className={`ml-2 text-sm text-slate-800 ${isWaggonSelected ? 'text-slate-400' : ''}`}>Stapelbar (2-fach)</label>
