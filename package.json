@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "vitest run",
+    "test:loading": "vitest run src/lib/loading/logic.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
