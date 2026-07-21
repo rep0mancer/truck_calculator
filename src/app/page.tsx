@@ -340,7 +340,7 @@ export default function HomePage() {
   return (
     <div className="container mx-auto p-4 font-sans space-y-6">
       <header className="relative bg-gradient-to-r from-blue-700 to-blue-900 p-5 rounded-t-lg shadow-lg mb-6 text-slate-100">
-        <div className="mt-4 flex flex-wrap justify-center gap-2 lg:absolute lg:right-4 lg:top-3 lg:mt-0 lg:max-w-[26rem] lg:justify-end" role="group" aria-label="Language / Sprache">
+        <div className="relative z-10 mt-4 flex flex-wrap justify-center gap-2 lg:absolute lg:right-4 lg:top-3 lg:mt-0 lg:max-w-[26rem] lg:justify-end" role="group" aria-label="Language / Sprache">
           {LANGUAGES.map(language => (
             <button
               key={language.code}
@@ -351,7 +351,7 @@ export default function HomePage() {
               title={language.label}
               className={`flex min-h-11 min-w-11 items-center justify-center rounded-xl border-2 px-2 text-2xl leading-none shadow-sm transition duration-150 hover:-translate-y-0.5 hover:scale-105 hover:bg-white/25 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70 active:translate-y-0 active:scale-95 ${locale === language.code ? 'border-white bg-white/30 shadow-lg' : 'border-white/40 bg-white/10 opacity-85 hover:opacity-100'}`}
             >
-              <Image src={language.flagSrc} alt="" width={28} height={21} className="h-auto w-7 rounded-sm shadow-sm" />
+              <Image src={language.flagSrc} alt="" width={28} height={21} className="pointer-events-none h-auto w-7 select-none rounded-sm shadow-sm" />
             </button>
           ))}
         </div>
