@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { WeightInputs } from '@/components/WeightInputs';
+import { queryAdditionalCapacity } from '@/lib/capacity';
 
 // Define the type for a single weight entry
 type WeightEntry = {
@@ -185,6 +186,11 @@ const calculateWaggonEuroLayout = (
     warnings,
     totalWeightKg: currentWeight,
     eupLoadingPatternUsed: 'custom', // Indicate a special pattern was used
+    loadedBySource: (eupWeights || []).reduce((counts, entry) => {
+      const alreadyLoaded = Object.values(counts).reduce((sum, count) => sum + count, 0);
+      counts[entry.id] = Math.min(entry.quantity, Math.max(0, placedCount - alreadyLoaded));
+      return counts;
+    }, {} as Record<number, number>),
   };
 };
 
@@ -388,7 +394,7 @@ const calculateLoadingLogic = (
     let currentX = 0;
     let currentY = 0;
     let currentRowHeight = 0;
-    let activeEupPatternForRow = currentEupLoadingPattern;
+    let activeEupPatternForRow: 'auto' | 'long' | 'broad' | 'none' = currentEupLoadingPattern;
     // Use a traditional for loop for stability, as we manually advance the index
     for (let i = 0; i < placementQueue.length; /* no increment */) {
       const palletToPlace = placementQueue[i];
@@ -512,6 +518,10 @@ const calculateLoadingLogic = (
     warnings: Array.from(new Set(warnings)),
     totalWeightKg: currentWeight,
     eupLoadingPatternUsed: currentEupLoadingPattern === 'auto' ? 'auto' : (currentEupLoadingPattern || 'none'),
+    loadedBySource: finalPalletManifest.reduce((counts, pallet) => {
+      counts[pallet.sourceId] = (counts[pallet.sourceId] || 0) + 1;
+      return counts;
+    }, {} as Record<number, number>),
   };
 };
 
@@ -535,10 +545,27 @@ export default function HomePage() {
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
   const [remainingCapacity, setRemainingCapacity] = useState<{ eup: number, din: number }>({ eup: 0, din: 0 });
   const [lastEdited, setLastEdited] = useState<'eup' | 'din'>('eup');
+  const [additionalEupWeight, setAdditionalEupWeight] = useState('0');
+  const [additionalDinWeight, setAdditionalDinWeight] = useState('0');
   const { toast } = useToast();
   const isWaggonSelected = ['Waggon', 'Waggon2'].includes(selectedTruck);
   const selectedTruckConfig = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES];
   const maxGrossWeightKg = selectedTruckConfig.maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG;
+
+  const queryCapacity = useCallback((
+    kind: 'euro' | 'industrial',
+    baseEup = eupWeights,
+    baseDin = dinWeights,
+    weight = kind === 'euro' ? additionalEupWeight : additionalDinWeight
+  ) => queryAdditionalCapacity(baseEup, baseDin, kind, weight, (eup, din, order) =>
+    calculateLoadingLogic(
+      selectedTruck as keyof typeof TRUCK_TYPES, eup, din,
+      isEUPStackable, isDINStackable,
+      eupLoadingPattern as 'auto' | 'long' | 'broad', order,
+      eupStackLimit, dinStackLimit
+    )
+  ), [selectedTruck, eupWeights, dinWeights, additionalEupWeight, additionalDinWeight,
+    isEUPStackable, isDINStackable, eupLoadingPattern, eupStackLimit, dinStackLimit]);
 
   const calculateAndSetState = useCallback(() => {
     const eupQuantity = eupWeights.reduce((sum, entry) => sum + entry.quantity, 0);
@@ -558,8 +585,7 @@ export default function HomePage() {
     let multiTruckWarnings = [];
     
     if (dinQuantity > 0 && eupQuantity === 0) {
-        const dinCapacityResult = calculateLoadingLogic(selectedTruck as keyof typeof TRUCK_TYPES, [], [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], isEUPStackable, isDINStackable, eupLoadingPattern as 'auto' | 'long' | 'broad', 'DIN_FIRST', eupStackLimit, dinStackLimit);
-        const maxDinCapacity = dinCapacityResult.totalDinPalletsVisual;
+        const maxDinCapacity = queryCapacity('industrial', [], [], additionalDinWeight).additionallyFeasible;
 
         if (maxDinCapacity > 0 && dinQuantity > maxDinCapacity) {
             const totalTrucks = Math.ceil(dinQuantity / maxDinCapacity);
@@ -573,8 +599,7 @@ export default function HomePage() {
             }
         }
     } else if (eupQuantity > 0 && dinQuantity === 0) {
-        const eupCapacityResult = calculateLoadingLogic(selectedTruck as keyof typeof TRUCK_TYPES, [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], [], isEUPStackable, isDINStackable, eupLoadingPattern as 'auto' | 'long' | 'broad', 'EUP_FIRST', eupStackLimit, dinStackLimit);
-        const maxEupCapacity = eupCapacityResult.totalEuroPalletsVisual;
+        const maxEupCapacity = queryCapacity('euro', [], [], additionalEupWeight).additionallyFeasible;
 
         if (maxEupCapacity > 0 && eupQuantity > maxEupCapacity) {
             const totalTrucks = Math.ceil(eupQuantity / maxEupCapacity);
@@ -599,46 +624,12 @@ export default function HomePage() {
     setTotalWeightKg(primaryResults.totalWeightKg);
     setActualEupLoadingPattern(primaryResults.eupLoadingPatternUsed);
     
-    // Compute remaining capacity using simulation to account for repooling
-    const truckConfig = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES];
-    const weightLimit = truckConfig.maxGrossWeightKg ?? MAX_GROSS_WEIGHT_KG;
-    const remainingWeightKg = Math.max(0, weightLimit - primaryResults.totalWeightKg);
+    setRemainingCapacity({
+      eup: queryCapacity('euro').additionallyFeasible,
+      din: queryCapacity('industrial').additionallyFeasible,
+    });
     
-    // For remaining EUP
-    const weightToFillEup = eupWeights.length > 0 ? eupWeights[eupWeights.length - 1].weight || '0' : '0';
-    const eupCapacityResult = calculateLoadingLogic(
-      selectedTruck as keyof typeof TRUCK_TYPES,
-      [{ id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFillEup }],
-      dinWeights,
-      isEUPStackable,
-      isDINStackable,
-      eupLoadingPattern as 'auto' | 'long' | 'broad',
-      'DIN_FIRST',
-      eupStackLimit,
-      dinStackLimit
-    );
-    const maxEup = eupCapacityResult.totalEuroPalletsVisual;
-    const remainingEup = Math.max(0, maxEup - eupQuantity);
-    
-    // For remaining DIN
-    const weightToFillDin = dinWeights.length > 0 ? dinWeights[dinWeights.length - 1].weight || '0' : '0';
-    const dinCapacityResult = calculateLoadingLogic(
-      selectedTruck as keyof typeof TRUCK_TYPES,
-      eupWeights,
-      [{ id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFillDin }],
-      isEUPStackable,
-      isDINStackable,
-      eupLoadingPattern as 'auto' | 'long' | 'broad',
-      'EUP_FIRST',
-      eupStackLimit,
-      dinStackLimit
-    );
-    const maxDin = dinCapacityResult.totalDinPalletsVisual;
-    const remainingDin = Math.max(0, maxDin - dinQuantity);
-    
-    setRemainingCapacity({ eup: remainingEup, din: remainingDin });
-    
-  }, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, eupStackLimit, dinStackLimit]);
+  }, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, eupStackLimit, dinStackLimit, additionalEupWeight, additionalDinWeight, queryCapacity]);
 
   useEffect(() => {
     calculateAndSetState();
@@ -655,73 +646,23 @@ export default function HomePage() {
   };
 
   const handleMaximizePallets = (palletTypeToMax: 'euro' | 'industrial') => {
-    const simResults = calculateLoadingLogic(
-        selectedTruck as keyof typeof TRUCK_TYPES,
-        palletTypeToMax === 'euro' ? [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}] : [],
-        palletTypeToMax === 'industrial' ? [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}] : [],
-        isEUPStackable, isDINStackable,
-        'auto',
-        palletTypeToMax === 'euro' ? 'EUP_FIRST' : 'DIN_FIRST',
-        eupStackLimit, dinStackLimit
-    );
+    const capacity = queryCapacity(palletTypeToMax, [], []);
     if (palletTypeToMax === 'industrial') {
-        setDinWeights([{ id: Date.now(), weight: '', quantity: simResults.totalDinPalletsVisual }]);
+        setDinWeights([{ id: Date.now(), weight: additionalDinWeight, quantity: capacity.additionallyFeasible }]);
         setEupWeights([{ id: Date.now() + 1, weight: '', quantity: 0 }]);
     } else if (palletTypeToMax === 'euro') {
-        setEupWeights([{ id: Date.now(), weight: '', quantity: simResults.totalEuroPalletsVisual }]);
+        setEupWeights([{ id: Date.now(), weight: additionalEupWeight, quantity: capacity.additionallyFeasible }]);
         setDinWeights([{ id: Date.now() + 1, weight: '', quantity: 0 }]);
     }
   };
  
   const handleFillRemaining = (typeToFill: 'euro' | 'industrial') => {
-    const weightEntryToUse = typeToFill === 'euro' ? eupWeights[eupWeights.length - 1] : dinWeights[dinWeights.length - 1];
-    const weightToFill = weightEntryToUse?.weight || '0';
+    const feasible = queryCapacity(typeToFill).additionallyFeasible;
 
-    const eupSim = typeToFill === 'euro' 
-        ? [...eupWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFill }]
-        : [...eupWeights];
-    const dinSim = typeToFill === 'industrial'
-        ? [...dinWeights, { id: -1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: weightToFill }]
-        : [...dinWeights];
-
-    const order = typeToFill === 'euro' ? 'DIN_FIRST' : 'EUP_FIRST';
-
-    const res = calculateLoadingLogic(
-        selectedTruck as keyof typeof TRUCK_TYPES, eupSim, dinSim,
-        isEUPStackable, isDINStackable, 'auto', order,
-        eupStackLimit, dinStackLimit
-    );
-
-    const currentEups = eupWeights.reduce((s, e) => s + e.quantity, 0);
-    const currentDins = dinWeights.reduce((s, e) => s + e.quantity, 0);
-
-    const addedEups = res.totalEuroPalletsVisual - currentEups;
-    const addedDins = res.totalDinPalletsVisual - currentDins;
-
-    if (typeToFill === 'euro' && addedEups > 0) {
-        setEupWeights(weights => {
-            const newWeights = [...weights];
-            const lastEntryIndex = newWeights.length - 1;
-            // Create a new object for the last entry to avoid direct state mutation
-            const updatedLastEntry = { 
-                ...newWeights[lastEntryIndex], 
-                quantity: newWeights[lastEntryIndex].quantity + addedEups 
-            };
-            newWeights[lastEntryIndex] = updatedLastEntry;
-            return newWeights;
-        });
-    } else if (typeToFill === 'industrial' && addedDins > 0) {
-        setDinWeights(weights => {
-            const newWeights = [...weights];
-            const lastEntryIndex = newWeights.length - 1;
-            // Create a new object for the last entry to avoid direct state mutation
-            const updatedLastEntry = { 
-                ...newWeights[lastEntryIndex], 
-                quantity: newWeights[lastEntryIndex].quantity + addedDins 
-            };
-            newWeights[lastEntryIndex] = updatedLastEntry;
-            return newWeights;
-        });
+    if (typeToFill === 'euro' && feasible > 0) {
+        setEupWeights(weights => [...weights, { id: Date.now(), quantity: feasible, weight: additionalEupWeight }]);
+    } else if (typeToFill === 'industrial' && feasible > 0) {
+        setDinWeights(weights => [...weights, { id: Date.now(), quantity: feasible, weight: additionalDinWeight }]);
     }
     toast({ title: 'LKW aufgefüllt', description: `Freier Platz wurde mit ${typeToFill.toUpperCase()} Paletten gefüllt.` });
   };
@@ -756,9 +697,10 @@ export default function HomePage() {
   };
 
   const renderPallet = (pallet: any, displayScale = 0.3) => {
-    if (!pallet || !pallet.type || !PALLET_TYPES[pallet.type]) return null;
+    if (!pallet || !pallet.type || !(pallet.type in PALLET_TYPES)) return null;
+    const palletType = pallet.type as keyof typeof PALLET_TYPES;
     const palette = palletVisualPalette[pallet.type] ?? palletVisualPalette.euro;
-    const d = PALLET_TYPES[pallet.type];
+    const d = PALLET_TYPES[palletType];
     const w = pallet.height * displayScale; const h = pallet.width * displayScale;
     const x = pallet.y * displayScale; const y = pallet.x * displayScale;
     let txt = pallet.showAsFraction && pallet.displayStackedLabelId ? `${pallet.displayBaseLabelId}/${pallet.displayStackedLabelId}` : `${pallet.labelId}`;
@@ -869,6 +811,8 @@ export default function HomePage() {
             <div className="border-t pt-4">
                 <label className="block text-sm font-semibold text-slate-800 mb-2 drop-shadow-sm">Industriepaletten (DIN)</label>
                 <WeightInputs entries={dinWeights} onChange={(entries)=>{ setLastEdited('din'); setDinWeights(entries); }} palletType="DIN" />
+                <label htmlFor="additionalDinWeight" className="mt-2 block text-xs text-slate-700">Gewicht je zusätzlicher DIN-Palette (kg)</label>
+                <input id="additionalDinWeight" type="number" min="0" value={additionalDinWeight} onChange={e => setAdditionalDinWeight(e.target.value)} className="mt-1 block w-full py-1 px-2 text-xs" />
                 <button onClick={() => handleMaximizePallets('industrial')} className="mt-2 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl">Max. DIN</button>
                 <button onClick={() => handleFillRemaining('industrial')} className="mt-1 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl">Rest mit max. DIN füllen</button>
                 <div className="flex items-center mt-2">
@@ -883,6 +827,8 @@ export default function HomePage() {
             <div className="border-t pt-4">
                 <label className="block text-sm font-semibold text-slate-800 mb-2 drop-shadow-sm">Europaletten (EUP)</label>
                 <WeightInputs entries={eupWeights} onChange={(entries)=>{ setLastEdited('eup'); setEupWeights(entries); }} palletType="EUP" />
+                <label htmlFor="additionalEupWeight" className="mt-2 block text-xs text-slate-700">Gewicht je zusätzlicher EUP-Palette (kg)</label>
+                <input id="additionalEupWeight" type="number" min="0" value={additionalEupWeight} onChange={e => setAdditionalEupWeight(e.target.value)} className="mt-1 block w-full py-1 px-2 text-xs" />
                 <button onClick={() => handleMaximizePallets('euro')} className="mt-2 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl">Max. EUP</button>
                 <button onClick={() => handleFillRemaining('euro')} className="mt-1 w-full py-1.5 px-3 text-xs font-semibold tracking-wide rounded-2xl">Rest mit max. EUP füllen</button>
                 <div className="flex items-center mt-2">

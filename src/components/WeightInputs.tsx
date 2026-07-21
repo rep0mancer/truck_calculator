@@ -13,12 +13,12 @@ interface WeightInputsProps {
   entries: WeightEntry[];
   onChange: (entries: WeightEntry[]) => void;
   palletType: 'EUP' | 'DIN';
-  preferredId: number | null;
-  onSetPreferred: (id: number | null) => void;
-  groupName: string;
+  preferredId?: number | null;
+  onSetPreferred?: (id: number | null) => void;
+  groupName?: string;
 }
 
-export function WeightInputs({ entries, onChange, palletType, preferredId, onSetPreferred }: WeightInputsProps) {
+export function WeightInputs({ entries, onChange, palletType, preferredId = null, onSetPreferred = () => {} }: WeightInputsProps) {
   const handleAddEntry = () => {
     onChange([...entries, { id: Date.now(), weight: '', quantity: 0 }]);
   };
