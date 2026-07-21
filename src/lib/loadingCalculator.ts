@@ -21,37 +21,67 @@ export const KILOGRAM_FORMATTER = new Intl.NumberFormat('de-DE', { maximumFracti
 type Kind = 'euro' | 'industrial';
 type Single = { id: number; type: Kind; weight: number; sourceId: number };
 type Pattern = 'auto' | 'long' | 'broad';
+type PlannedRow =
+  | { kind: 'DIN'; length: 100; dinCount: 1 | 2 }
+  | { kind: 'EUP_BROAD'; length: 80; eupCount: 1 | 2 }
+  | { kind: 'EUP_LONG'; length: 120; eupCount: 1 | 2 | 3 }
+  | { kind: 'MIXED_DIN_EUP'; length: 100; dinCount: 1; eupCount: 1 };
+type RowPlan = { rows: PlannedRow[]; length: number };
+type UnitAllocation = { din: number; eup: number; plan: RowPlan };
 
-function rowsForEuro(count: number, pattern: Pattern): number[] | null {
+function euroRows(count: number, pattern: Pattern): PlannedRow[] | null {
   if (count === 0) return [];
-  const choices = pattern === 'long' ? [3] : pattern === 'broad' ? [2] : [2, 3];
-  let best: number[] | null = null;
-  for (let longRows = 0; longRows <= (choices.includes(3) ? Math.ceil(count / 3) : 0); longRows++) {
-    const remaining = Math.max(0, count - longRows * 3);
-    const broadRows = choices.includes(2) ? Math.ceil(remaining / 2) : (remaining === 0 ? 0 : Infinity);
-    if (!Number.isFinite(broadRows)) continue;
-    const candidate = [...Array(longRows).fill(3), ...Array(broadRows).fill(2)];
-    if (!best || rowLength(candidate) < rowLength(best) || (rowLength(candidate) === rowLength(best) && candidate.join() > best.join())) best = candidate;
+  let best: PlannedRow[] | null = null;
+  const maxLong = pattern === 'broad' ? 0 : Math.ceil(count / 3);
+  const maxBroad = pattern === 'long' ? 0 : Math.ceil(count / 2);
+  for (let long = 0; long <= maxLong; long++) for (let broad = 0; broad <= maxBroad; broad++) {
+    if (long * 3 + broad * 2 < count) continue;
+    let left = count;
+    const candidate: PlannedRow[] = [];
+    for (let i = 0; i < broad && left > 0; i++) {
+      const eupCount = Math.min(2, left) as 1 | 2;
+      candidate.push({ kind: 'EUP_BROAD', length: 80, eupCount }); left -= eupCount;
+    }
+    for (let i = 0; i < long && left > 0; i++) {
+      const eupCount = Math.min(3, left) as 1 | 2 | 3;
+      candidate.push({ kind: 'EUP_LONG', length: 120, eupCount }); left -= eupCount;
+    }
+    if (left > 0) continue;
+    const candidateLength = candidate.reduce((sum, row) => sum + row.length, 0);
+    const bestLength = best?.reduce((sum, row) => sum + row.length, 0) ?? Infinity;
+    // Stable final tie-break: broad rows precede long rows, then retain enumeration order.
+    if (candidateLength < bestLength || (candidateLength === bestLength && candidate.length < (best?.length ?? Infinity))) best = candidate;
   }
   return best;
 }
 
-function rowLength(rows: number[]): number {
-  return rows.reduce((sum, count) => sum + (count === 3 ? 120 : 80), 0);
+/** Produces the canonical geometry consumed by both feasibility and rendering. */
+function planRows(din: number, eup: number, pattern: Pattern, unitWidth: number): RowPlan | null {
+  let best: RowPlan | null = null;
+  const mayMix = unitWidth >= 240 && pattern !== 'long';
+  for (const mixed of mayMix ? [0, 1] : [0]) {
+    if (mixed > din % 2 || mixed > eup) continue;
+    const rows: PlannedRow[] = [];
+    const pureDin = din - mixed;
+    for (let remaining = pureDin; remaining > 0; remaining -= 2) rows.push({ kind: 'DIN', length: 100, dinCount: Math.min(2, remaining) as 1 | 2 });
+    if (mixed) rows.push({ kind: 'MIXED_DIN_EUP', length: 100, dinCount: 1, eupCount: 1 });
+    const eupPlan = euroRows(eup - mixed, pattern);
+    if (!eupPlan) continue;
+    rows.push(...eupPlan);
+    const candidate = { rows, length: rows.reduce((sum, row) => sum + row.length, 0) };
+    if (!best || candidate.length < best.length || (candidate.length === best.length && candidate.rows.length < best.rows.length)) best = candidate;
+  }
+  return best;
 }
 
-function requiredLength(din: number, eup: number, pattern: Pattern): number {
-  const eupRows = rowsForEuro(eup, pattern);
-  return Math.ceil(din / 2) * 100 + (eupRows ? rowLength(eupRows) : Infinity);
-}
-
-function allocationForUnits(din: number, eup: number, lengths: number[], pattern: Pattern): Array<{ din: number; eup: number }> | null {
-  const search = (unit: number, d: number, e: number): Array<{ din: number; eup: number }> | null => {
-    if (unit === lengths.length) return d === 0 && e === 0 ? [] : null;
+function allocationForUnits(din: number, eup: number, units: ReadonlyArray<{ length: number; width: number }>, pattern: Pattern): UnitAllocation[] | null {
+  const search = (unit: number, d: number, e: number): UnitAllocation[] | null => {
+    if (unit === units.length) return d === 0 && e === 0 ? [] : null;
     for (let di = d; di >= 0; di--) for (let eu = e; eu >= 0; eu--) {
-      if (requiredLength(di, eu, pattern) > lengths[unit]) continue;
+      const plan = planRows(di, eu, pattern, units[unit].width);
+      if (!plan || plan.length > units[unit].length) continue;
       const tail = search(unit + 1, d - di, e - eu);
-      if (tail) return [{ din: di, eup: eu }, ...tail];
+      if (tail) return [{ din: di, eup: eu, plan }, ...tail];
     }
     return null;
   };
@@ -86,11 +116,10 @@ export function calculateLoadingLogic(
   const priority: Kind[] = placementOrder === 'DIN_FIRST' ? ['industrial', 'euro'] : ['euro', 'industrial'];
   const floor: Record<Kind, Single[]> = { euro: [], industrial: [] };
   const rejected: Record<Kind, Single[]> = { euro: [], industrial: [] };
-  const lengths = truck.units.map(unit => unit.length);
-  const allocationCache = new Map<string, Array<{ din: number; eup: number }> | null>();
+  const allocationCache = new Map<string, UnitAllocation[] | null>();
   const getAllocation = (din: number, eup: number) => {
     const key = `${din}:${eup}`;
-    if (!allocationCache.has(key)) allocationCache.set(key, allocationForUnits(din, eup, lengths, pattern));
+    if (!allocationCache.has(key)) allocationCache.set(key, allocationForUnits(din, eup, truck.units, pattern));
     return allocationCache.get(key)!;
   };
   const maxDin = 'maxDinPallets' in truck ? truck.maxDinPallets : Infinity;
@@ -126,8 +155,11 @@ export function calculateLoadingLogic(
     const stackedEup = unitEup.splice(Math.max(0, unitEup.length - tops.euro.length));
     const takeDinTops = tops.industrial.splice(0, stackedDin.length);
     const takeEupTops = tops.euro.splice(0, stackedEup.length);
-    const classifiedLength = () => requiredLength(unitDin.length, 0, pattern) + requiredLength(0, unitEup.length, pattern) + requiredLength(stackedDin.length, 0, pattern) + requiredLength(0, stackedEup.length, pattern);
-    while (classifiedLength() > unit.length && (stackedDin.length || stackedEup.length)) {
+    const classifiedPlans = () => ({
+      normal: planRows(unitDin.length, unitEup.length, pattern, unit.width)!,
+      stacked: planRows(stackedDin.length, stackedEup.length, pattern, unit.width)!,
+    });
+    while (classifiedPlans().normal.length + classifiedPlans().stacked.length > unit.length && (stackedDin.length || stackedEup.length)) {
       // Splitting normal and stacked blocks can consume an extra boundary row.
       // Keep every floor pallet and drop only the last top until the four ordered
       // blocks have a physically valid representation.
@@ -148,30 +180,30 @@ export function calculateLoadingLogic(
       pallets.push(visual);
       if (top) pallets.push({ ...visual, isStackedTier: 'top', labelId: base.type === 'euro' ? ++eupLabel : ++dinLabel, key: `${base.type}_${base.id}_stack` });
     };
-    const blocks: Array<{ type: Kind; bases: Single[]; top: Single[] }> = [
-      { type: 'industrial', bases: unitDin, top: [] },
-      { type: 'euro', bases: unitEup, top: [] },
-      { type: 'industrial', bases: stackedDin, top: takeDinTops },
-      { type: 'euro', bases: stackedEup, top: takeEupTops },
-    ];
-    const rearStackLength = requiredLength(stackedDin.length, 0, pattern) + requiredLength(0, stackedEup.length, pattern);
-    for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
-      const block = blocks[blockIndex];
-      if (blockIndex === 2) x = Math.max(x, unit.length - rearStackLength);
-      if (block.type === 'industrial') {
-        for (let i = 0; i < block.bases.length; i += 2) {
-          for (let lane = 0; lane < 2 && i + lane < block.bases.length; lane++) add(block.bases[i + lane], block.top[i + lane], x, lane * 120, 100, 120);
-          x += 100;
+    const renderPlan = (plan: RowPlan, dinBases: Single[], dinTops: Single[], eupBases: Single[], eupTops: Single[]) => {
+      let dinIndex = 0; let eupIndex = 0;
+      for (const row of plan.rows) {
+        if (row.kind === 'DIN') {
+          for (let lane = 0; lane < row.dinCount; lane++) add(dinBases[dinIndex], dinTops[dinIndex++], x, lane * 120, 100, 120);
+        } else if (row.kind === 'EUP_BROAD') {
+          for (let lane = 0; lane < row.eupCount; lane++) add(eupBases[eupIndex], eupTops[eupIndex++], x, lane * 120, 80, 120);
+        } else if (row.kind === 'EUP_LONG') {
+          for (let lane = 0; lane < row.eupCount; lane++) add(eupBases[eupIndex], eupTops[eupIndex++], x, lane * 80, 120, 80);
+        } else {
+          add(dinBases[dinIndex], dinTops[dinIndex++], x, 0, 100, 120);
+          add(eupBases[eupIndex], eupTops[eupIndex++], x, 120, 80, 120);
         }
-        continue;
+        x += row.length;
       }
-      const rows = rowsForEuro(block.bases.length, pattern)!; let offset = 0;
-      for (const rowCount of rows) {
-        const broad = rowCount <= 2;
-        for (let lane = 0; lane < rowCount && offset + lane < block.bases.length; lane++) add(block.bases[offset + lane], block.top[offset + lane], x, lane * (broad ? 120 : 80), broad ? 80 : 120, broad ? 120 : 80);
-        offset += rowCount; x += broad ? 80 : 120;
-      }
-    }
+    };
+    // Without stacking this is the exact UnitAllocation plan that admitted the
+    // pallets; capacity and visualization therefore cannot diverge.
+    const plans = stackedDin.length || stackedEup.length
+      ? classifiedPlans()
+      : { normal: counts.plan, stacked: { rows: [], length: 0 } as RowPlan };
+    renderPlan(plans.normal, unitDin, [], unitEup, []);
+    x = Math.max(x, unit.length - plans.stacked.length);
+    renderPlan(plans.stacked, stackedDin, takeDinTops, stackedEup, takeEupTops);
     return { unitId: unit.id, unitLength: unit.length, unitWidth: unit.width, pallets };
   });
 
