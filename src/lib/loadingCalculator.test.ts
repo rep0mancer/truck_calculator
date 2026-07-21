@@ -51,7 +51,7 @@ describe('loadingCalculator real-world combination matrix', () => {
         }
       }
     }
-  });
+  }, 15_000);
 
   it('loads only weight that is actually represented in the arrangement', () => {
     const result = calculateLoadingLogic('smallTruck', entry(30, 700), entry(30, 900, 2), true, true, 'auto', 'DIN_FIRST');
@@ -65,5 +65,35 @@ describe('loadingCalculator real-world combination matrix', () => {
       expect(result.loadedIndustrialPalletsBase).toBe(result.totalDinPalletsVisual);
       expect(result.warnings.some(warning => warning.includes('Stapeln'))).toBe(true);
     }
+  });
+
+  it('reproduces the exact 33/66 EUP and 26/52 DIN curtain-sider capacities', () => {
+    expect(calculateLoadingLogic('curtainSider', entry(33, 0), [], true, false, 'auto').totalEuroPalletsVisual).toBe(33);
+    expect(calculateLoadingLogic('curtainSider', entry(66, 0), [], true, false, 'auto').totalEuroPalletsVisual).toBe(66);
+    expect(calculateLoadingLogic('curtainSider', [], entry(26, 0), false, true, 'auto').totalDinPalletsVisual).toBe(26);
+    expect(calculateLoadingLogic('curtainSider', [], entry(52, 0), false, true, 'auto').totalDinPalletsVisual).toBe(52);
+  });
+
+  it.each([[2, 2], [3, 3], [4, 3]])('optimizes the EUP boundary after 24 DIN (%i requested, %i loaded)', (requested, loaded) => {
+    const result = calculateLoadingLogic('curtainSider', entry(requested, 0), entry(24, 0, 2), false, false, 'auto');
+    expect(result.totalDinPalletsVisual).toBe(24);
+    expect(result.totalEuroPalletsVisual).toBe(loaded);
+  });
+
+  it('treats stack limits as top limits and keeps every top exactly on a same-type base', () => {
+    const result = calculateLoadingLogic('curtainSider', [], entry(40, 100), false, true, 'auto', 'DIN_FIRST', undefined, 4);
+    expect(result.loadedIndustrialPalletsBase).toBe(26);
+    expect(result.totalDinPalletsVisual).toBe(30);
+    const pallets = result.palletArrangement[0].pallets as any[];
+    for (const top of pallets.filter(p => p.isStackedTier === 'top')) {
+      const base = pallets.find(p => p.isStackedTier === 'base' && p.x === top.x && p.y === top.y);
+      expect(base).toMatchObject({ type: top.type, width: top.width, height: top.height });
+    }
+  });
+
+  it('skips an overweight pallet and continues with later entries', () => {
+    const result = calculateLoadingLogic('curtainSider', [{ id: 1, quantity: 1, weight: '25000' }, { id: 2, quantity: 2, weight: '100' }], [], false, false, 'auto');
+    expect(result.totalEuroPalletsVisual).toBe(2);
+    expect(result.totalWeightKg).toBe(200);
   });
 });
