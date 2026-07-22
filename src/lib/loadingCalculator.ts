@@ -78,6 +78,8 @@ export const KILOGRAM_FORMATTER = new Intl.NumberFormat('de-DE', { maximumFracti
 type Kind = 'euro' | 'industrial';
 type Single = { id: number; type: Kind; weight: number; sourceId: number };
 type Pattern = 'auto' | 'long' | 'broad';
+/** overflow-only preserves the legacy policy; force pairs cargo before floor planning. */
+export type StackingStrategy = 'overflow-only' | 'force';
 type PlannedRow =
   | { kind: 'DIN'; length: 100; dinCount: 1 | 2 }
   | { kind: 'EUP_BROAD'; length: 80; eupCount: 1 | 2 }
@@ -162,6 +164,8 @@ export function calculateLoadingLogic(
   placementOrder: 'DIN_FIRST' | 'EUP_FIRST' = 'DIN_FIRST',
   maxStackedEup?: number | string,
   maxStackedDin?: number | string,
+  eupStackingStrategy: StackingStrategy = 'overflow-only',
+  dinStackingStrategy: StackingStrategy = 'overflow-only',
 ) {
   const truck = TRUCK_TYPES[truckKey];
   let id = 0;
@@ -183,20 +187,41 @@ export function calculateLoadingLogic(
   const maxDin = 'maxDinPallets' in truck ? truck.maxDinPallets : Infinity;
   let weight = 0;
 
-  // Phase one. A rejected heavy or geometrically unsuitable pallet never blocks a later candidate.
-  for (const type of priority) for (const pallet of requested[type]) {
-    const d = floor.industrial.length + (type === 'industrial' ? 1 : 0);
-    const e = floor.euro.length + (type === 'euro' ? 1 : 0);
-    if (weight + pallet.weight <= truck.maxGrossWeightKg && d <= maxDin && getAllocation(d, e)) {
-      floor[type].push(pallet); weight += pallet.weight;
-    } else rejected[type].push(pallet);
-  }
-
-  // Phase two. Limits count TOP pallets (not pairs and not floor pallets).
   const tops: Record<Kind, Single[]> = { euro: [], industrial: [] };
   const canStack = { euro: eupStackable && !truckKey.startsWith('Waggon'), industrial: dinStackable && !truckKey.startsWith('Waggon') };
   const limits = { euro: stackLimit(maxStackedEup), industrial: stackLimit(maxStackedDin) };
+  const strategies = { euro: eupStackingStrategy, industrial: dinStackingStrategy };
+
+  // Phase one. A rejected heavy or geometrically unsuitable pallet never blocks a later candidate.
+  for (const type of priority) {
+    const cargo = requested[type];
+    // Forced pairs follow flattened input order: first is base, second is top.
+    // An odd final pallet is a base. Paired bases are kept together at the end
+    // so rendering's stacked block retains the exact base/top association.
+    const forcedPairCount = canStack[type] && strategies[type] === 'force'
+      ? Math.min(Math.floor(cargo.length / 2), limits[type]) : 0;
+    const candidates: Array<{ base: Single; top?: Single }> = [];
+    for (let index = 0; index < forcedPairCount * 2; index += 2) candidates.push({ base: cargo[index], top: cargo[index + 1] });
+    const unpaired = cargo.slice(forcedPairCount * 2).map(base => ({ base }));
+    for (const candidate of [...unpaired, ...candidates]) {
+      const pallet = candidate.base;
+      const d = floor.industrial.length + (type === 'industrial' ? 1 : 0);
+      const e = floor.euro.length + (type === 'euro' ? 1 : 0);
+      if (weight + pallet.weight <= truck.maxGrossWeightKg && d <= maxDin && getAllocation(d, e)) {
+        floor[type].push(pallet); weight += pallet.weight;
+        if (candidate.top && weight + candidate.top.weight <= truck.maxGrossWeightKg) {
+          tops[type].push(candidate.top); weight += candidate.top.weight;
+        } else if (candidate.top) rejected[type].push(candidate.top);
+      } else {
+        rejected[type].push(pallet);
+        if (candidate.top) rejected[type].push(candidate.top);
+      }
+    }
+  }
+
+  // Phase two. Limits count TOP pallets (not pairs and not floor pallets).
   for (const type of priority) if (canStack[type]) {
+    if (strategies[type] === 'force') continue;
     for (const pallet of rejected[type]) {
       if (tops[type].length >= floor[type].length || tops[type].length >= limits[type]) continue;
       if (weight + pallet.weight > truck.maxGrossWeightKg) continue;
@@ -234,9 +259,9 @@ export function calculateLoadingLogic(
     let dinLabel = 0; let eupLabel = 0;
     const add = (base: Single, top: Single | undefined, px: number, py: number, width: number, height: number) => {
       const labelId = base.type === 'euro' ? ++eupLabel : ++dinLabel;
-      const visual = { x: px, y: py, width, height, weight: base.weight, type: base.type, isStackedTier: top ? 'base' : null, unitId: unit.id, labelId, displayBaseLabelId: labelId, displayStackedLabelId: top ? labelId + 1 : null, showAsFraction: Boolean(top), key: `${base.type}_${base.id}` };
+      const visual = { x: px, y: py, width, height, type: base.type, weight: base.weight, sourceId: base.sourceId, isStackedTier: top ? 'base' : null, unitId: unit.id, labelId, displayBaseLabelId: labelId, displayStackedLabelId: top ? labelId + 1 : null, showAsFraction: Boolean(top), key: `${base.type}_${base.id}` };
       pallets.push(visual);
-      if (top) pallets.push({ ...visual, weight: top.weight, isStackedTier: 'top', labelId: base.type === 'euro' ? ++eupLabel : ++dinLabel, key: `${base.type}_${base.id}_stack` });
+      if (top) pallets.push({ ...visual, weight: top.weight, sourceId: top.sourceId, isStackedTier: 'top', labelId: base.type === 'euro' ? ++eupLabel : ++dinLabel, key: `${base.type}_${top.id}_stack` });
     };
     const renderPlan = (plan: RowPlan, dinBases: Single[], dinTops: Single[], eupBases: Single[], eupTops: Single[]) => {
       let dinIndex = 0; let eupIndex = 0;

@@ -33,6 +33,8 @@ export default function HomePage() {
   const [isDINStackable, setIsDINStackable] = useState(false);
   const [eupStackLimit, setEupStackLimit] = useState(0);
   const [dinStackLimit, setDinStackLimit] = useState(0);
+  const [eupStackingStrategy, setEupStackingStrategy] = useState<StackingStrategy>('overflow-only');
+  const [dinStackingStrategy, setDinStackingStrategy] = useState<StackingStrategy>('overflow-only');
   const [loadedEuroPalletsBase, setLoadedEuroPalletsBase] = useState(0);
   const [loadedIndustrialPalletsBase, setLoadedIndustrialPalletsBase] = useState(0);
   const [totalEuroPalletsVisual, setTotalEuroPalletsVisual] = useState(0);
@@ -61,13 +63,15 @@ export default function HomePage() {
       eupLoadingPattern as 'auto' | 'long' | 'broad',
       placementOrder,
       eupStackLimit,
-      dinStackLimit
+      dinStackLimit,
+      eupStackingStrategy,
+      dinStackingStrategy
     );
     
     const multiTruckWarnings: string[] = [];
     
     if (dinQuantity > 0 && eupQuantity === 0) {
-        const dinCapacityResult = calculateLoadingLogic(selectedTruck as keyof typeof TRUCK_TYPES, [], [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], isEUPStackable, isDINStackable, eupLoadingPattern as 'auto' | 'long' | 'broad', 'DIN_FIRST', eupStackLimit, dinStackLimit);
+        const dinCapacityResult = calculateLoadingLogic(selectedTruck as keyof typeof TRUCK_TYPES, [], [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], isEUPStackable, isDINStackable, eupLoadingPattern as 'auto' | 'long' | 'broad', 'DIN_FIRST', eupStackLimit, dinStackLimit, eupStackingStrategy, dinStackingStrategy);
         const maxDinCapacity = dinCapacityResult.totalDinPalletsVisual;
 
         if (maxDinCapacity > 0 && dinQuantity > maxDinCapacity) {
@@ -82,7 +86,7 @@ export default function HomePage() {
             }
         }
     } else if (eupQuantity > 0 && dinQuantity === 0) {
-        const eupCapacityResult = calculateLoadingLogic(selectedTruck as keyof typeof TRUCK_TYPES, [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], [], isEUPStackable, isDINStackable, eupLoadingPattern as 'auto' | 'long' | 'broad', 'EUP_FIRST', eupStackLimit, dinStackLimit);
+        const eupCapacityResult = calculateLoadingLogic(selectedTruck as keyof typeof TRUCK_TYPES, [{id: 1, quantity: MAX_PALLET_SIMULATION_QUANTITY, weight: '0'}], [], isEUPStackable, isDINStackable, eupLoadingPattern as 'auto' | 'long' | 'broad', 'EUP_FIRST', eupStackLimit, dinStackLimit, eupStackingStrategy, dinStackingStrategy);
         const maxEupCapacity = eupCapacityResult.totalEuroPalletsVisual;
 
         if (maxEupCapacity > 0 && eupQuantity > maxEupCapacity) {
@@ -119,7 +123,9 @@ export default function HomePage() {
       eupLoadingPattern as 'auto' | 'long' | 'broad',
       'DIN_FIRST',
       eupStackLimit,
-      dinStackLimit
+      dinStackLimit,
+      eupStackingStrategy,
+      dinStackingStrategy
     );
     const maxEup = eupCapacityResult.totalEuroPalletsVisual;
     const remainingEup = Math.max(0, maxEup - eupQuantity);
@@ -135,14 +141,16 @@ export default function HomePage() {
       eupLoadingPattern as 'auto' | 'long' | 'broad',
       'EUP_FIRST',
       eupStackLimit,
-      dinStackLimit
+      dinStackLimit,
+      eupStackingStrategy,
+      dinStackingStrategy
     );
     const maxDin = dinCapacityResult.totalDinPalletsVisual;
     const remainingDin = Math.max(0, maxDin - dinQuantity);
     
     setRemainingCapacity({ eup: remainingEup, din: remainingDin });
     
-  }, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, placementOrder, eupStackLimit, dinStackLimit]);
+  }, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, placementOrder, eupStackLimit, dinStackLimit, eupStackingStrategy, dinStackingStrategy]);
 
   useEffect(() => {
     calculateAndSetState();
@@ -165,6 +173,8 @@ export default function HomePage() {
     setIsDINStackable(false);
     setEupStackLimit(0);
     setDinStackLimit(0);
+    setEupStackingStrategy('overflow-only');
+    setDinStackingStrategy('overflow-only');
     setEupLoadingPattern('auto');
     setPlacementOrder('DIN_FIRST');
   };
@@ -177,7 +187,7 @@ export default function HomePage() {
         isEUPStackable, isDINStackable,
         'auto',
         palletTypeToMax === 'euro' ? 'EUP_FIRST' : 'DIN_FIRST',
-        eupStackLimit, dinStackLimit
+        eupStackLimit, dinStackLimit, eupStackingStrategy, dinStackingStrategy
     );
     if (palletTypeToMax === 'industrial') {
         setDinWeights([{ id: Date.now(), weight: '', quantity: simResults.totalDinPalletsVisual }]);
@@ -204,7 +214,7 @@ export default function HomePage() {
     const res = calculateLoadingLogic(
         selectedTruck as keyof typeof TRUCK_TYPES, eupSim, dinSim,
         isEUPStackable, isDINStackable, 'auto', order,
-        eupStackLimit, dinStackLimit
+        eupStackLimit, dinStackLimit, eupStackingStrategy, dinStackingStrategy
     );
 
     const currentEups = eupWeights.reduce((s, e) => s + e.quantity, 0);
@@ -412,7 +422,8 @@ export default function HomePage() {
                     <label htmlFor="dinStackable" className={`ml-2 text-sm text-slate-800 ${isWaggonSelected ? 'text-slate-400' : ''}`}>{t.stackable}</label>
                 </div>
                 {isDINStackable && !isWaggonSelected && (
-                    <input type="number" min="0" value={dinStackLimit} onChange={e=>setDinStackLimit(Math.max(0, parseInt(e.target.value,10)||0))} className="mt-1 block w-full py-1 px-2 sm:text-xs" placeholder={t.stackLimit}/>
+                    <><input type="number" min="0" value={dinStackLimit} onChange={e=>setDinStackLimit(Math.max(0, parseInt(e.target.value,10)||0))} className="mt-1 block w-full py-1 px-2 sm:text-xs" placeholder={t.stackLimit}/>
+                    <select aria-label={t.stackingStrategy} value={dinStackingStrategy} onChange={e=>setDinStackingStrategy(e.target.value as StackingStrategy)} className="mt-1 block w-full py-1 px-2 text-xs"><option value="overflow-only">{t.stackOnlyWhenRequired}</option><option value="force">{t.forceStacking}</option></select></>
                 )}
             </div>
 
@@ -426,7 +437,8 @@ export default function HomePage() {
                     <label htmlFor="eupStackable" className={`ml-2 text-sm text-slate-800 ${isWaggonSelected ? 'text-slate-400' : ''}`}>{t.stackable}</label>
                 </div>
                 {isEUPStackable && !isWaggonSelected && (
-                    <input type="number" min="0" value={eupStackLimit} onChange={e=>setEupStackLimit(Math.max(0, parseInt(e.target.value,10)||0))} className="mt-1 block w-full py-1 px-2 sm:text-xs" placeholder={t.stackLimit}/>
+                    <><input type="number" min="0" value={eupStackLimit} onChange={e=>setEupStackLimit(Math.max(0, parseInt(e.target.value,10)||0))} className="mt-1 block w-full py-1 px-2 sm:text-xs" placeholder={t.stackLimit}/>
+                    <select aria-label={t.stackingStrategy} value={eupStackingStrategy} onChange={e=>setEupStackingStrategy(e.target.value as StackingStrategy)} className="mt-1 block w-full py-1 px-2 text-xs"><option value="overflow-only">{t.stackOnlyWhenRequired}</option><option value="force">{t.forceStacking}</option></select></>
                 )}
             </div>
 
