@@ -102,6 +102,22 @@ describe('loadingCalculator real-world combination matrix', () => {
       expect(result.palletArrangement[0].pallets.filter((p: any) => p.isStackedTier === 'top')).toHaveLength(9);
     });
 
+    it('stacks only weight groups explicitly marked as stackable', () => {
+      const groups: WeightEntry[] = [
+        { id: 1, quantity: 4, weight: '100', stackable: false },
+        { id: 2, quantity: 4, weight: '200', stackable: true },
+      ];
+      const result = calculateLoadingLogic('curtainSider', groups, [], true, false, 'auto', 'EUP_FIRST', undefined, undefined, 'force');
+      const tops = result.palletArrangement[0].pallets.filter((p: any) => p.isStackedTier === 'top');
+      expect(tops).toHaveLength(2);
+      expect(tops.every((p: any) => p.sourceId === 2)).toBe(true);
+    });
+
+    it('warns when a double stack would stand alone in its row', () => {
+      const result = forceEup(2);
+      expect(result.warnings).toContainEqual({ code: 'unevenStacking', params: { row: 1 } });
+    });
+
     it('retains the backward-compatible floor-first default', () => {
       const result = calculateLoadingLogic('curtainSider', entry(18, 100), [], true, false, 'auto', 'EUP_FIRST');
       expect(result.loadedEuroPalletsBase).toBe(18);
@@ -264,6 +280,10 @@ describe('static axle calculations', () => {
     expect(result.axleCalculation.available && result.axleCalculation.supportTractor.calculatedKg).toBe(18_000);
     expect(result.axleCalculation.available && result.axleCalculation.supportTractor.exceeded).toBe(false);
     expect(result.warnings.some(w => w.code === 'axleLimitExceeded')).toBe(false);
+    expect(result.warnings).toContainEqual({
+      code: 'axleLimitApproaching',
+      params: { component: 'supportTractor', calculatedKg: 18_000, limitKg: 18_000, percent: 100 },
+    });
   });
 
   it.each(['roadTrain', 'smallTruck', 'Waggon', 'Waggon2'] as const)('marks %s axle calculation unavailable', truck => {

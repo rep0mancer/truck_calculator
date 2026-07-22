@@ -26,8 +26,8 @@ export default function HomePage() {
   const [locale, setLocale] = useState<Locale>('de');
   const t = translations[locale];
   const [selectedTruck, setSelectedTruck] = useState('curtainSider');
-  const [eupWeights, setEupWeights] = useState<WeightEntry[]>([{ id: 1, weight: '', quantity: 0 }]);
-  const [dinWeights, setDinWeights] = useState<WeightEntry[]>([{ id: 2, weight: '', quantity: 0 }]);
+  const [eupWeights, setEupWeights] = useState<WeightEntry[]>([{ id: 1, weight: '', quantity: 0, stackable: false }]);
+  const [dinWeights, setDinWeights] = useState<WeightEntry[]>([{ id: 2, weight: '', quantity: 0, stackable: false }]);
   const [eupLoadingPattern, setEupLoadingPattern] = useState('auto');
   const [isEUPStackable, setIsEUPStackable] = useState(false);
   const [isDINStackable, setIsDINStackable] = useState(false);
@@ -167,8 +167,8 @@ export default function HomePage() {
   }, [locale]);
 
   const handleClearAllPallets = () => {
-    setEupWeights([{ id: Date.now(), weight: '', quantity: 0 }]);
-    setDinWeights([{ id: Date.now() + 1, weight: '', quantity: 0 }]);
+    setEupWeights([{ id: Date.now(), weight: '', quantity: 0, stackable: false }]);
+    setDinWeights([{ id: Date.now() + 1, weight: '', quantity: 0, stackable: false }]);
     setIsEUPStackable(false);
     setIsDINStackable(false);
     setEupStackLimit(0);
@@ -191,10 +191,10 @@ export default function HomePage() {
     );
     if (palletTypeToMax === 'industrial') {
         setDinWeights([{ id: Date.now(), weight: '', quantity: simResults.totalDinPalletsVisual }]);
-        setEupWeights([{ id: Date.now() + 1, weight: '', quantity: 0 }]);
+        setEupWeights([{ id: Date.now() + 1, weight: '', quantity: 0, stackable: false }]);
     } else if (palletTypeToMax === 'euro') {
         setEupWeights([{ id: Date.now(), weight: '', quantity: simResults.totalEuroPalletsVisual }]);
-        setDinWeights([{ id: Date.now() + 1, weight: '', quantity: 0 }]);
+        setDinWeights([{ id: Date.now() + 1, weight: '', quantity: 0, stackable: false }]);
     }
   };
  
