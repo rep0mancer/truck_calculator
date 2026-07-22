@@ -1,4 +1,4 @@
-export type Locale = 'de' | 'en' | 'it' | 'hr' | 'sk' | 'cs' | 'uk';
+export type Locale = 'de' | 'gsw' | 'en' | 'it' | 'hr' | 'sk' | 'cs' | 'uk';
 
 export const translations = {
   de: {
@@ -8,6 +8,14 @@ export const translations = {
     auto: 'Auto-Optimieren', long: 'Längs (3 nebeneinander)', broad: 'Quer (2 nebeneinander)', visualization: 'Ladefläche Visualisierung', unit: 'Einheit', front: 'Front', empty: 'Keine Paletten zum Anzeigen.',
     loaded: 'Geladene Paletten (Visuell)', industrial: 'Industrie (DIN)', euro: 'Euro (EUP)', base: 'Basis', remaining: 'Verbleibende Kapazität', roomFor: 'Platz für:', more: 'weitere', or: 'oder', pallet: 'Palette', pallets: 'Paletten',
     weight: 'Geschätztes Gewicht', max: 'Max', messages: 'Meldungen', noProblems: 'Keine Probleme erkannt.', quantity: 'Anzahl', weightPer: 'Gewicht', addWeightGroup: 'Gewichtsgruppe hinzufügen', decrease: 'Menge reduzieren', increase: 'Menge erhöhen', remove: 'Gruppe entfernen', filledTitle: 'LKW aufgefüllt', filledDescription: 'Freier Platz wurde mit {type} Paletten gefüllt.',
+  },
+  gsw: {
+    title: 'Laderaumrächner', subtitle: 'So chön chönnted d Palettli im Laschti stah (europäischi Standards)', truckType: 'Laschti-Typ:', reset: 'Alles zruggsetze',
+    dinPallets: 'Industriepalettli (DIN)', euroPallets: 'Europalettli (EUP)', fillDin: 'De Räscht mit DIN uffülle', fillEup: 'De Räscht mit EUP uffülle',
+    stackable: 'Stapelbar (zweifach)', stackLimit: 'Stapelbari Palettli (0 = alli)', loadingPattern: 'EUP-Lademuster:', selected: 'Usgwählt', none: 'Nüt',
+    auto: 'Automatisch optimiere', long: 'Längs (3 näbenand)', broad: 'Quer (2 näbenand)', visualization: 'Ladeflächi zum Aaluege', unit: 'Einheit', front: 'Vorne', empty: 'Kei Palettli zum Aaluege.',
+    loaded: 'Gladeni Palettli (visuell)', industrial: 'Industrie (DIN)', euro: 'Euro (EUP)', base: 'Bodeplätz', remaining: 'Übrigi Kapazität', roomFor: 'Platz für:', more: 'meh', or: 'oder', pallet: 'Palettli', pallets: 'Palettli',
+    weight: 'Gschätzts Gwicht', max: 'Max', messages: 'Meldigä', noProblems: 'Alles tipptopp.', quantity: 'Aazahl', weightPer: 'Gwicht', addWeightGroup: 'Gwichtsgruppe dezue tue', decrease: 'Weniger', increase: 'Meh', remove: 'Gruppe furtue', filledTitle: 'Laschti isch voll', filledDescription: 'De freii Platz isch mit {type}-Palettli uffüllt worde.',
   },
   en: {
     title: 'Load Space Calculator', subtitle: 'European-standard pallet placement visualization', truckType: 'Vehicle type:', reset: 'Reset all',
@@ -65,6 +73,7 @@ export type TranslationKey = keyof typeof translations.de;
 export function translateWarning(warning: string, locale: Locale): string {
   if (locale === 'de') return warning;
   const localized = {
+    gsw: ['S Gwichtslimit isch erreicht.', 'Info: Uf em Bahnwage cha mer nöd staple; drum ischs abgstellt.', 'ACHTUNG – meh als 10,5 t ligged uf weniger als 40% vo de Ladeflächi.', 'Nöd alli Palettli händ Platz gha. Übrig: ', ' und ', 'ACHTUNG – villicht isch d Achslast z hoch: '],
     en: ['Weight limit reached.', 'Info: stacking is not possible on rail wagons and was disabled.', 'WARNING – more than 10.5 t is concentrated on less than 40% of the load floor.', 'Not all pallets could be loaded. Remaining: ', ' and ', 'WARNING – possible axle-load exceedance: '],
     it: ['Limite di peso raggiunto.', 'Info: sui carri ferroviari non è possibile impilare; la funzione è stata disattivata.', 'ATTENZIONE – oltre 10,5 t sono concentrate su meno del 40% del piano di carico.', 'Non è stato possibile caricare tutti i pallet. Rimanenti: ', ' e ', 'ATTENZIONE – possibile superamento del carico per asse: '],
     hr: ['Dosegnuto je ograničenje težine.', 'Info: slaganje na željezničkim vagonima nije moguće i isključeno je.', 'UPOZORENJE – više od 10,5 t nalazi se na manje od 40% utovarne površine.', 'Nije moguće utovariti sve palete. Preostalo: ', ' i ', 'UPOZORENJE – moguće prekoračenje osovinskog opterećenja: '],

@@ -12,6 +12,7 @@ import { calculateLoadingLogic, KILOGRAM_FORMATTER, MAX_GROSS_WEIGHT_KG, MAX_PAL
 
 const LANGUAGES = [
   { code: 'de', flagSrc: '/flags/at.svg', label: 'Deutsch (Österreich)' },
+  { code: 'gsw', flagSrc: '/flags/ch.svg', label: 'Schweizer Deutsch' },
   { code: 'en', flagSrc: '/flags/gb.svg', label: 'English' },
   { code: 'it', flagSrc: '/flags/it.svg', label: 'Italiano' },
   { code: 'hr', flagSrc: '/flags/hr.svg', label: 'Hrvatski' },
@@ -340,7 +341,7 @@ export default function HomePage() {
   return (
     <div className="container mx-auto p-4 font-sans space-y-6">
       <header className="relative bg-gradient-to-r from-blue-700 to-blue-900 p-5 rounded-t-lg shadow-lg mb-6 text-slate-100">
-        <div className="relative z-10 mt-4 flex flex-wrap justify-center gap-2 lg:absolute lg:right-4 lg:top-3 lg:mt-0 lg:max-w-[26rem] lg:justify-end" role="group" aria-label="Language / Sprache">
+        <div className="relative z-10 mt-4 flex flex-wrap justify-center gap-2 xl:absolute xl:right-4 xl:top-3 xl:mt-0 xl:max-w-[30rem] xl:justify-end" role="group" aria-label="Language / Sprache">
           {LANGUAGES.map(language => (
             <button
               key={language.code}
@@ -355,7 +356,7 @@ export default function HomePage() {
             </button>
           ))}
         </div>
-        <h1 className="text-3xl font-bold text-center tracking-tight drop-shadow-sm lg:px-80">{t.title}</h1>
+        <h1 className="text-3xl font-bold text-center tracking-tight drop-shadow-sm xl:pr-[30rem]">{t.title}</h1>
         <p className="text-center text-sm text-slate-100/90 drop-shadow">{t.subtitle}</p>
       </header>
       <main className="p-6 bg-white shadow-lg rounded-b-lg">
