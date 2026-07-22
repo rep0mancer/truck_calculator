@@ -1,3 +1,4 @@
+import type { LoadingWarning } from './lib/loadingCalculator';
 export type Locale = 'de' | 'gsw' | 'fr' | 'en' | 'it' | 'hr' | 'sk' | 'cs' | 'uk';
 
 export const translations = {
@@ -8,6 +9,7 @@ export const translations = {
     auto: 'Auto-Optimieren', long: 'Längs (3 nebeneinander)', broad: 'Quer (2 nebeneinander)', visualization: 'Ladefläche Visualisierung', unit: 'Einheit', front: 'Front', empty: 'Keine Paletten zum Anzeigen.',
     loaded: 'Geladene Paletten (Visuell)', industrial: 'Industrie (DIN)', euro: 'Euro (EUP)', base: 'Basis', remaining: 'Verbleibende Kapazität', roomFor: 'Platz für:', more: 'weitere', or: 'oder', pallet: 'Palette', pallets: 'Paletten',
     weight: 'Geschätztes Gewicht', max: 'Max', messages: 'Meldungen', noProblems: 'Keine Probleme erkannt.', quantity: 'Anzahl', weightPer: 'Gewicht', addWeightGroup: 'Gewichtsgruppe hinzufügen', decrease: 'Menge reduzieren', increase: 'Menge erhöhen', remove: 'Gruppe entfernen', filledTitle: 'LKW aufgefüllt', filledDescription: 'Freier Platz wurde mit {type} Paletten gefüllt.',
+    warningWagonStackingDisabled: 'Stapelung ist auf Bahnwagen nicht verfügbar.', warningPalletsRemaining: 'Nicht alle Paletten konnten geladen werden. Verbleibend: {industrial} DIN und {euro} EUP.', warningWeightLimitReached: 'Gewichtslimit erreicht.', warningAxleLimitExceeded: '{component} überlastet: {calculated} kg berechnet, {limit} kg zulässig.', axleSupportTractor: 'Stütz-/Zugmaschinen-Achsgruppe', axleTrailerAxleGroup: 'Trailer-Dreiachsgruppe',
   },
   gsw: {
     title: 'Laderaumrächner', subtitle: 'So chön chönnted d Palettli im Laschti stah (europäischi Standards)', truckType: 'Laschti-Typ:', reset: 'Alles zruggsetze',
@@ -16,6 +18,7 @@ export const translations = {
     auto: 'Automatisch optimiere', long: 'Längs (3 näbenand)', broad: 'Quer (2 näbenand)', visualization: 'Ladeflächi zum Aaluege', unit: 'Einheit', front: 'Vorne', empty: 'Kei Palettli zum Aaluege.',
     loaded: 'Gladeni Palettli (visuell)', industrial: 'Industrie (DIN)', euro: 'Euro (EUP)', base: 'Bodeplätz', remaining: 'Übrigi Kapazität', roomFor: 'Platz für:', more: 'meh', or: 'oder', pallet: 'Palettli', pallets: 'Palettli',
     weight: 'Gschätzts Gwicht', max: 'Max', messages: 'Meldigä', noProblems: 'Alles tipptopp.', quantity: 'Aazahl', weightPer: 'Gwicht', addWeightGroup: 'Gwichtsgruppe dezue tue', decrease: 'Weniger', increase: 'Meh', remove: 'Gruppe furtue', filledTitle: 'Laschti isch voll', filledDescription: 'De freii Platz isch mit {type}-Palettli uffüllt worde.',
+    warningWagonStackingDisabled: 'Uf Bahnwäge cha mer nöd staple.', warningPalletsRemaining: 'Nöd alli Palettli händ Platz. Übrig: {industrial} DIN und {euro} EUP.', warningWeightLimitReached: 'S Gwichtslimit isch erreicht.', warningAxleLimitExceeded: '{component} überlastet: {calculated} kg berechnet, {limit} kg erlaubt.', axleSupportTractor: 'Stütz-/Zugmaschine-Achsgruppe', axleTrailerAxleGroup: 'Trailer-Drüüachsgruppe',
   },
   fr: {
     title: 'Calculateur d\'espace de chargement', subtitle: 'Visualisation du placement des palettes selon les normes européennes', truckType: 'Type de véhicule :', reset: 'Tout réinitialiser',
@@ -24,6 +27,7 @@ export const translations = {
     auto: 'Optimiser automatiquement', long: 'En longueur (3 côte à côte)', broad: 'En largeur (2 côte à côte)', visualization: 'Visualisation de l\'espace de chargement', unit: 'Unité', front: 'Avant', empty: 'Aucune palette à afficher.',
     loaded: 'Palettes chargées (visuel)', industrial: 'Industrielles (DIN)', euro: 'Euro (EUP)', base: 'Places au sol', remaining: 'Capacité restante', roomFor: 'Place pour :', more: 'de plus', or: 'ou', pallet: 'palette', pallets: 'palettes',
     weight: 'Poids estimé', max: 'Max.', messages: 'Messages', noProblems: 'Aucun problème détecté.', quantity: 'Quantité', weightPer: 'Poids', addWeightGroup: 'Ajouter un groupe de poids', decrease: 'Réduire la quantité', increase: 'Augmenter la quantité', remove: 'Supprimer le groupe', filledTitle: 'Véhicule rempli', filledDescription: 'L\'espace libre a été rempli avec des palettes {type}.',
+    warningWagonStackingDisabled: "L'empilage n'est pas disponible sur les wagons.", warningPalletsRemaining: "Toutes les palettes n'ont pas pu être chargées. Restantes : {industrial} DIN et {euro} EUP.", warningWeightLimitReached: 'Limite de poids atteinte.', warningAxleLimitExceeded: '{component} surchargé : {calculated} kg calculés, {limit} kg autorisés.', axleSupportTractor: 'Groupe d’essieux porteur/tracteur', axleTrailerAxleGroup: 'Tridem de la remorque',
   },
   en: {
     title: 'Load Space Calculator', subtitle: 'European-standard pallet placement visualization', truckType: 'Vehicle type:', reset: 'Reset all',
@@ -32,6 +36,7 @@ export const translations = {
     auto: 'Optimize automatically', long: 'Lengthwise (3 abreast)', broad: 'Crosswise (2 abreast)', visualization: 'Load space visualization', unit: 'Unit', front: 'Front', empty: 'No pallets to display.',
     loaded: 'Loaded pallets (visual)', industrial: 'Industrial (DIN)', euro: 'Euro (EUP)', base: 'Floor positions', remaining: 'Remaining capacity', roomFor: 'Room for:', more: 'more', or: 'or', pallet: 'pallet', pallets: 'pallets',
     weight: 'Estimated weight', max: 'Max', messages: 'Messages', noProblems: 'No problems detected.', quantity: 'Quantity', weightPer: 'Weight', addWeightGroup: 'Add weight group', decrease: 'Decrease quantity', increase: 'Increase quantity', remove: 'Remove group', filledTitle: 'Truck filled', filledDescription: 'Free space was filled with {type} pallets.',
+    warningWagonStackingDisabled: 'Stacking is not available on rail wagons.', warningPalletsRemaining: 'Not all pallets could be loaded. Remaining: {industrial} DIN and {euro} EUP.', warningWeightLimitReached: 'Weight limit reached.', warningAxleLimitExceeded: '{component} overloaded: {calculated} kg calculated, {limit} kg allowed.', axleSupportTractor: 'Support/tractor axle group', axleTrailerAxleGroup: 'Trailer tridem axle group',
   },
 
   it: {
@@ -41,6 +46,7 @@ export const translations = {
     auto: 'Ottimizza automaticamente', long: 'Longitudinale (3 affiancati)', broad: 'Trasversale (2 affiancati)', visualization: 'Visualizzazione spazio di carico', unit: 'Unità', front: 'Fronte', empty: 'Nessun pallet da visualizzare.',
     loaded: 'Pallet caricati (vista)', industrial: 'Industriali (DIN)', euro: 'Euro (EUP)', base: 'Posti a terra', remaining: 'Capacità residua', roomFor: 'Spazio per:', more: 'altri', or: 'oppure', pallet: 'pallet', pallets: 'pallet',
     weight: 'Peso stimato', max: 'Max', messages: 'Messaggi', noProblems: 'Nessun problema rilevato.', quantity: 'Quantità', weightPer: 'Peso', addWeightGroup: 'Aggiungi gruppo di peso', decrease: 'Riduci quantità', increase: 'Aumenta quantità', remove: 'Rimuovi gruppo', filledTitle: 'Veicolo riempito', filledDescription: 'Lo spazio libero è stato riempito con pallet {type}.',
+    warningWagonStackingDisabled: 'La sovrapposizione non è disponibile sui carri ferroviari.', warningPalletsRemaining: 'Non è stato possibile caricare tutti i pallet. Restano: {industrial} DIN e {euro} EUP.', warningWeightLimitReached: 'Limite di peso raggiunto.', warningAxleLimitExceeded: '{component} sovraccarico: {calculated} kg calcolati, {limit} kg consentiti.', axleSupportTractor: 'Gruppo assi supporto/trattore', axleTrailerAxleGroup: 'Gruppo tridem del rimorchio',
   },
   hr: {
     title: 'Kalkulator utovarnog prostora', subtitle: 'Prikaz smještaja paleta prema europskim standardima', truckType: 'Vrsta vozila:', reset: 'Poništi sve',
@@ -49,6 +55,7 @@ export const translations = {
     auto: 'Automatska optimizacija', long: 'Uzdužno (3 usporedno)', broad: 'Poprečno (2 usporedno)', visualization: 'Prikaz utovarnog prostora', unit: 'Jedinica', front: 'Prednja strana', empty: 'Nema paleta za prikaz.',
     loaded: 'Utovarene palete (prikaz)', industrial: 'Industrijske (DIN)', euro: 'Euro (EUP)', base: 'Podna mjesta', remaining: 'Preostali kapacitet', roomFor: 'Mjesta za:', more: 'još', or: 'ili', pallet: 'paletu', pallets: 'paleta',
     weight: 'Procijenjena težina', max: 'Maks.', messages: 'Poruke', noProblems: 'Nema uočenih problema.', quantity: 'Količina', weightPer: 'Težina', addWeightGroup: 'Dodaj grupu težine', decrease: 'Smanji količinu', increase: 'Povećaj količinu', remove: 'Ukloni grupu', filledTitle: 'Vozilo je popunjeno', filledDescription: 'Slobodan prostor popunjen je paletama {type}.',
+    warningWagonStackingDisabled: 'Slaganje nije dostupno na željezničkim vagonima.', warningPalletsRemaining: 'Nije moguće utovariti sve palete. Preostalo: {industrial} DIN i {euro} EUP.', warningWeightLimitReached: 'Dosegnuto je ograničenje težine.', warningAxleLimitExceeded: '{component} je preopterećen: izračunato {calculated} kg, dopušteno {limit} kg.', axleSupportTractor: 'Potporna/traktorska osovinska grupa', axleTrailerAxleGroup: 'Troosovinska grupa prikolice',
   },
   sk: {
     title: 'Kalkulačka nákladného priestoru', subtitle: 'Vizualizácia uloženia paliet podľa európskych noriem', truckType: 'Typ vozidla:', reset: 'Obnoviť všetko',
@@ -57,6 +64,7 @@ export const translations = {
     auto: 'Automaticky optimalizovať', long: 'Pozdĺžne (3 vedľa seba)', broad: 'Priečne (2 vedľa seba)', visualization: 'Vizualizácia nákladného priestoru', unit: 'Jednotka', front: 'Predná časť', empty: 'Žiadne palety na zobrazenie.',
     loaded: 'Naložené palety (vizuálne)', industrial: 'Priemyselné (DIN)', euro: 'Euro (EUP)', base: 'Podlahové miesta', remaining: 'Zostávajúca kapacita', roomFor: 'Miesto pre:', more: 'ďalších', or: 'alebo', pallet: 'paletu', pallets: 'paliet',
     weight: 'Odhadovaná hmotnosť', max: 'Max.', messages: 'Správy', noProblems: 'Neboli zistené žiadne problémy.', quantity: 'Počet', weightPer: 'Hmotnosť', addWeightGroup: 'Pridať hmotnostnú skupinu', decrease: 'Znížiť počet', increase: 'Zvýšiť počet', remove: 'Odstrániť skupinu', filledTitle: 'Vozidlo naplnené', filledDescription: 'Voľný priestor bol vyplnený paletami {type}.',
+    warningWagonStackingDisabled: 'Stohovanie nie je dostupné na železničných vozňoch.', warningPalletsRemaining: 'Nepodarilo sa naložiť všetky palety. Zostáva: {industrial} DIN a {euro} EUP.', warningWeightLimitReached: 'Bol dosiahnutý hmotnostný limit.', warningAxleLimitExceeded: '{component} je preťažená: vypočítané {calculated} kg, povolené {limit} kg.', axleSupportTractor: 'Podporná/ťahačová skupina náprav', axleTrailerAxleGroup: 'Trojnápravová skupina prívesu',
   },
   cs: {
     title: 'Kalkulačka nákladového prostoru', subtitle: 'Vizualizace uložení palet podle evropských norem', truckType: 'Typ vozidla:', reset: 'Obnovit vše',
@@ -65,6 +73,7 @@ export const translations = {
     auto: 'Automaticky optimalizovat', long: 'Podélně (3 vedle sebe)', broad: 'Příčně (2 vedle sebe)', visualization: 'Vizualizace nákladového prostoru', unit: 'Jednotka', front: 'Přední část', empty: 'Žádné palety k zobrazení.',
     loaded: 'Naložené palety (vizuálně)', industrial: 'Průmyslové (DIN)', euro: 'Euro (EUP)', base: 'Podlahová místa', remaining: 'Zbývající kapacita', roomFor: 'Místo pro:', more: 'dalších', or: 'nebo', pallet: 'paletu', pallets: 'palet',
     weight: 'Odhadovaná hmotnost', max: 'Max.', messages: 'Zprávy', noProblems: 'Nebyly zjištěny žádné problémy.', quantity: 'Počet', weightPer: 'Hmotnost', addWeightGroup: 'Přidat hmotnostní skupinu', decrease: 'Snížit počet', increase: 'Zvýšit počet', remove: 'Odstranit skupinu', filledTitle: 'Vozidlo naplněno', filledDescription: 'Volný prostor byl vyplněn paletami {type}.',
+    warningWagonStackingDisabled: 'Stohování není dostupné na železničních vozech.', warningPalletsRemaining: 'Nepodařilo se naložit všechny palety. Zbývá: {industrial} DIN a {euro} EUP.', warningWeightLimitReached: 'Byl dosažen hmotnostní limit.', warningAxleLimitExceeded: '{component} je přetížena: vypočteno {calculated} kg, povoleno {limit} kg.', axleSupportTractor: 'Podpěrná/tahačová skupina náprav', axleTrailerAxleGroup: 'Třínápravová skupina přívěsu',
   },
   uk: {
     title: 'Калькулятор вантажного простору', subtitle: 'Візуалізація розміщення палет за європейськими стандартами', truckType: 'Тип транспорту:', reset: 'Скинути все',
@@ -73,6 +82,7 @@ export const translations = {
     auto: 'Автоматична оптимізація', long: 'Поздовжньо (3 поруч)', broad: 'Поперечно (2 поруч)', visualization: 'Візуалізація вантажного простору', unit: 'Секція', front: 'Передня частина', empty: 'Немає палет для відображення.',
     loaded: 'Завантажені палети (візуально)', industrial: 'Промислові (DIN)', euro: 'Євро (EUP)', base: 'Місця на підлозі', remaining: 'Залишкова місткість', roomFor: 'Місце для:', more: 'ще', or: 'або', pallet: 'палети', pallets: 'палет',
     weight: 'Орієнтовна вага', max: 'Макс.', messages: 'Повідомлення', noProblems: 'Проблем не виявлено.', quantity: 'Кількість', weightPer: 'Вага', addWeightGroup: 'Додати вагову групу', decrease: 'Зменшити кількість', increase: 'Збільшити кількість', remove: 'Видалити групу', filledTitle: 'Транспорт заповнено', filledDescription: 'Вільний простір заповнено палетами {type}.',
+    warningWagonStackingDisabled: 'Штабелювання недоступне на залізничних вагонах.', warningPalletsRemaining: 'Не всі палети вдалося завантажити. Залишилося: {industrial} DIN і {euro} EUP.', warningWeightLimitReached: 'Досягнуто обмеження ваги.', warningAxleLimitExceeded: '{component} перевантажена: розраховано {calculated} кг, дозволено {limit} кг.', axleSupportTractor: 'Опорна/тягачева група осей', axleTrailerAxleGroup: 'Тривісна група причепа',
   },
 } as const;
 
@@ -106,4 +116,19 @@ export function translateWarning(warning: string, locale: Locale): string {
     .replace(/maximale DIN-Kapazität ist (\d+)\. Angeforderte Menge (\d+), es werden (\d+) platziert\./, 'maximum DIN capacity is $1. $2 requested; $3 will be placed.')
     .replace(/ACHTUNG – mögliche Achslastüberschreitung: /, text[5])
     .replace(/ACHTUNG - ACHSLAST bei (DIN|EUP) im AUGE BEHALTEN! \((\d+) gestapelte (DIN|EUP)\)/, 'WARNING – monitor axle load for $1! ($2 stacked $3)');
+}
+
+
+export function translateLoadingWarning(warning: LoadingWarning | string, locale: Locale): string {
+  if (typeof warning === 'string') return translateWarning(warning, locale);
+  const t = translations[locale];
+  if (warning.code === 'wagonStackingDisabled') return t.warningWagonStackingDisabled;
+  if (warning.code === 'weightLimitReached') return t.warningWeightLimitReached;
+  if (warning.code === 'palletsRemaining') return t.warningPalletsRemaining
+    .replace('{industrial}', String(warning.params.industrial)).replace('{euro}', String(warning.params.euro));
+  const component = warning.params.component === 'supportTractor' ? t.axleSupportTractor : t.axleTrailerAxleGroup;
+  const format = new Intl.NumberFormat(locale === 'gsw' ? 'de-CH' : locale);
+  return t.warningAxleLimitExceeded.replace('{component}', component)
+    .replace('{calculated}', format.format(warning.params.calculatedKg))
+    .replace('{limit}', format.format(warning.params.limitKg));
 }
