@@ -2,12 +2,24 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import Image from 'next/image';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { WeightInputs } from '@/components/WeightInputs';
 import { translateWarning, translations, type Locale } from '@/i18n';
 
 import { calculateLoadingLogic, KILOGRAM_FORMATTER, MAX_GROSS_WEIGHT_KG, MAX_PALLET_SIMULATION_QUANTITY, PALLET_TYPES, TRUCK_TYPES, type WeightEntry } from '@/lib/loadingCalculator';
+
+const LANGUAGES = [
+  { code: 'de', flagSrc: '/flags/at.svg', label: 'Deutsch (Österreich)' },
+  { code: 'gsw', flagSrc: '/flags/ch.svg', label: 'Schweizer Deutsch' },
+  { code: 'en', flagSrc: '/flags/gb.svg', label: 'English' },
+  { code: 'it', flagSrc: '/flags/it.svg', label: 'Italiano' },
+  { code: 'hr', flagSrc: '/flags/hr.svg', label: 'Hrvatski' },
+  { code: 'sk', flagSrc: '/flags/sk.svg', label: 'Slovenčina' },
+  { code: 'cs', flagSrc: '/flags/cz.svg', label: 'Čeština' },
+  { code: 'uk', flagSrc: '/flags/ua.svg', label: 'Українська' },
+] as const;
 
 export default function HomePage() {
   const [locale, setLocale] = useState<Locale>('de');
@@ -329,12 +341,22 @@ export default function HomePage() {
   return (
     <div className="container mx-auto p-4 font-sans space-y-6">
       <header className="relative bg-gradient-to-r from-blue-700 to-blue-900 p-5 rounded-t-lg shadow-lg mb-6 text-slate-100">
-        <div className="mt-4 flex flex-wrap justify-center gap-2 sm:absolute sm:right-4 sm:top-3 sm:mt-0 sm:max-w-[26rem] sm:justify-end" role="group" aria-label="Language / Sprache">
-          {([{ code: 'de', flag: '🇩🇪', label: 'Deutsch' }, { code: 'en', flag: '🇬🇧', label: 'English' }, { code: 'it', flag: '🇮🇹', label: 'Italiano' }, { code: 'hr', flag: '🇭🇷', label: 'Hrvatski' }, { code: 'sk', flag: '🇸🇰', label: 'Slovenčina' }, { code: 'cs', flag: '🇨🇿', label: 'Čeština' }, { code: 'uk', flag: '🇺🇦', label: 'Українська' }] as const).map(language => (
-            <button key={language.code} type="button" onClick={() => setLocale(language.code)} aria-label={language.label} aria-pressed={locale === language.code} title={language.label} className={`flex min-h-11 min-w-11 items-center justify-center rounded-xl border-2 px-2 text-2xl leading-none shadow-sm transition duration-150 hover:-translate-y-0.5 hover:scale-105 hover:bg-white/25 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70 active:translate-y-0 active:scale-95 ${locale === language.code ? 'border-white bg-white/30 shadow-lg' : 'border-white/40 bg-white/10 opacity-85 hover:opacity-100'}`}>{language.flag}</button>
+        <div className="relative z-10 mt-4 flex flex-wrap justify-center gap-2 xl:absolute xl:right-4 xl:top-3 xl:mt-0 xl:max-w-[30rem] xl:justify-end" role="group" aria-label="Language / Sprache">
+          {LANGUAGES.map(language => (
+            <button
+              key={language.code}
+              type="button"
+              onClick={() => setLocale(language.code)}
+              aria-label={language.label}
+              aria-pressed={locale === language.code}
+              title={language.label}
+              className={`flex min-h-11 min-w-11 items-center justify-center rounded-xl border-2 px-2 text-2xl leading-none shadow-sm transition duration-150 hover:-translate-y-0.5 hover:scale-105 hover:bg-white/25 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70 active:translate-y-0 active:scale-95 ${locale === language.code ? 'border-white bg-white/30 shadow-lg' : 'border-white/40 bg-white/10 opacity-85 hover:opacity-100'}`}
+            >
+              <Image src={language.flagSrc} alt="" width={28} height={21} className="pointer-events-none h-auto w-7 select-none rounded-sm shadow-sm" />
+            </button>
           ))}
         </div>
-        <h1 className="text-3xl font-bold text-center tracking-tight drop-shadow-sm sm:px-80">{t.title}</h1>
+        <h1 className="text-3xl font-bold text-center tracking-tight drop-shadow-sm xl:pr-[30rem]">{t.title}</h1>
         <p className="text-center text-sm text-slate-100/90 drop-shadow">{t.subtitle}</p>
       </header>
       <main className="p-6 bg-white shadow-lg rounded-b-lg">

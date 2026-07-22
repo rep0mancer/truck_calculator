@@ -6,7 +6,7 @@ const locales = Object.keys(translations) as Locale[];
 describe('translations', () => {
   it('provides every UI string for every supported language', () => {
     const germanKeys = Object.keys(translations.de);
-    expect(locales).toEqual(['de', 'en', 'it', 'hr', 'sk', 'cs', 'uk']);
+    expect(locales).toEqual(['de', 'gsw', 'en', 'it', 'hr', 'sk', 'cs', 'uk']);
     for (const locale of locales) {
       expect(Object.keys(translations[locale])).toEqual(germanKeys);
       for (const value of Object.values(translations[locale])) expect(value.trim()).not.toBe('');
