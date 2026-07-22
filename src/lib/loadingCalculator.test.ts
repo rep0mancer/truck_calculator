@@ -91,6 +91,64 @@ describe('loadingCalculator real-world combination matrix', () => {
     }
   });
 
+  describe('forced stacking strategy', () => {
+    const forceEup = (quantity: number, limit: number | undefined = undefined) =>
+      calculateLoadingLogic('curtainSider', entry(quantity, 100), [], true, false, 'auto', 'EUP_FIRST', limit, undefined, 'force');
+
+    it('turns 18 EUP into exactly nine same-type double-stack positions', () => {
+      const result = forceEup(18);
+      expect(result.loadedEuroPalletsBase).toBe(9);
+      expect(result.totalEuroPalletsVisual).toBe(18);
+      expect(result.palletArrangement[0].pallets.filter((p: any) => p.isStackedTier === 'top')).toHaveLength(9);
+    });
+
+    it('retains the backward-compatible floor-first default', () => {
+      const result = calculateLoadingLogic('curtainSider', entry(18, 100), [], true, false, 'auto', 'EUP_FIRST');
+      expect(result.loadedEuroPalletsBase).toBe(18);
+      expect(result.palletArrangement[0].pallets.some((p: any) => p.isStackedTier === 'top')).toBe(false);
+    });
+
+    it('pairs as many odd cargo items as possible and leaves one base', () => {
+      const result = forceEup(19);
+      expect(result.loadedEuroPalletsBase).toBe(10);
+      expect(result.totalEuroPalletsVisual).toBe(19);
+    });
+
+    it('continues to interpret finite limits as maximum top counts', () => {
+      const result = forceEup(18, 4);
+      expect(result.loadedEuroPalletsBase).toBe(14);
+      expect(result.totalEuroPalletsVisual - result.loadedEuroPalletsBase).toBe(4);
+    });
+
+    it('applies independent EUP and DIN strategies to mixed cargo', () => {
+      const result = calculateLoadingLogic('curtainSider', entry(6, 100), entry(6, 200, 2), true, true, 'auto', 'DIN_FIRST', 0, 0, 'force', 'overflow-only');
+      expect(result.totalEuroPalletsVisual - result.loadedEuroPalletsBase).toBe(3);
+      expect(result.totalDinPalletsVisual - result.loadedIndustrialPalletsBase).toBe(0);
+    });
+
+    it('retains every mixed-weight pallet exactly once in deterministic adjacent pairs', () => {
+      const weights = [{ id: 1, quantity: 3, weight: '100' }, { id: 2, quantity: 3, weight: '250' }];
+      const result = calculateLoadingLogic('curtainSider', weights, [], true, false, 'auto', 'EUP_FIRST', 0, 0, 'force');
+      const displayed = result.palletArrangement.flatMap(unit => unit.pallets) as any[];
+      expect(displayed.map(p => p.weight).sort((a, b) => a - b)).toEqual([100, 100, 100, 250, 250, 250]);
+      expect(displayed.reduce((sum, pallet) => sum + pallet.weight, 0)).toBe(result.totalWeightKg);
+    });
+
+    it('is disabled on rail wagons and still rejects cargo over payload', () => {
+      const wagon = calculateLoadingLogic('Waggon', entry(18, 100), [], true, false, 'auto', 'EUP_FIRST', 0, 0, 'force');
+      expect(wagon.loadedEuroPalletsBase).toBe(wagon.totalEuroPalletsVisual);
+      const payload = calculateLoadingLogic('curtainSider', entry(18, 2_000), [], true, false, 'auto', 'EUP_FIRST', 0, 0, 'force');
+      expect(payload.totalWeightKg).toBeLessThanOrEqual(TRUCK_TYPES.curtainSider.maxGrossWeightKg);
+      expect(payload.totalEuroPalletsVisual).toBeLessThan(18);
+    });
+
+    it('uses forced pairs in remaining-capacity simulations', () => {
+      const simulation = calculateLoadingLogic('curtainSider', entry(300, 0), [], true, false, 'auto', 'EUP_FIRST', 0, 0, 'force');
+      expect(simulation.totalEuroPalletsVisual).toBe(66);
+      expect(simulation.loadedEuroPalletsBase).toBe(33);
+    });
+  });
+
   it('preserves existing EUPs when the remaining space is filled with stackable DINs', () => {
     const existingEups = entry(10, 0);
     const fillSimulation = calculateLoadingLogic(
