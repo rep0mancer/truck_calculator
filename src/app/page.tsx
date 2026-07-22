@@ -6,9 +6,9 @@ import Image from 'next/image';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { WeightInputs } from '@/components/WeightInputs';
-import { translateWarning, translations, type Locale } from '@/i18n';
+import { translateLoadingWarning, translations, type Locale } from '@/i18n';
 
-import { calculateLoadingLogic, KILOGRAM_FORMATTER, MAX_GROSS_WEIGHT_KG, MAX_PALLET_SIMULATION_QUANTITY, PALLET_TYPES, TRUCK_TYPES, type StackingStrategy, type WeightEntry } from '@/lib/loadingCalculator';
+import { calculateLoadingLogic, KILOGRAM_FORMATTER, MAX_GROSS_WEIGHT_KG, MAX_PALLET_SIMULATION_QUANTITY, PALLET_TYPES, TRUCK_TYPES, type LoadingWarning, type WeightEntry } from '@/lib/loadingCalculator';
 
 const LANGUAGES = [
   { code: 'de', flagSrc: '/flags/at.svg', label: 'Deutsch (Österreich)' },
@@ -39,7 +39,7 @@ export default function HomePage() {
   const [loadedIndustrialPalletsBase, setLoadedIndustrialPalletsBase] = useState(0);
   const [totalEuroPalletsVisual, setTotalEuroPalletsVisual] = useState(0);
   const [totalDinPalletsVisual, setTotalDinPalletsVisual] = useState(0);
-  const [warnings, setWarnings] = useState<string[]>([]);
+  const [warnings, setWarnings] = useState<Array<LoadingWarning | string>>([]);
   const [palletArrangement, setPalletArrangement] = useState<any[]>([]);
   const [totalWeightKg, setTotalWeightKg] = useState(0);
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
@@ -343,7 +343,11 @@ export default function HomePage() {
 
   const truckVisualizationScale = 0.35;
 
-  const warningsWithoutInfo = warnings.filter(w => !w.toLowerCase().includes('platz') && !w.toLowerCase().includes('benötigt'));
+  const warningText = (warning: LoadingWarning | string) => translateLoadingWarning(warning, locale);
+  const warningsWithoutInfo = warnings.filter(w => {
+    const text = warningText(w).toLowerCase();
+    return !text.includes('platz') && !text.includes('benötigt');
+  });
   let meldungenStyle = {
     bg: 'bg-gray-50', border: 'border-gray-200',
     header: 'text-gray-800', list: 'text-gray-700'
@@ -351,7 +355,7 @@ export default function HomePage() {
 
   if (warningsWithoutInfo.length === 0 && (totalDinPalletsVisual > 0 || totalEuroPalletsVisual > 0)) {
     meldungenStyle = { bg: 'bg-green-50', border: 'border-green-200', header: 'text-green-800', list: 'text-green-700' };
-  } else if (warningsWithoutInfo.some(w => w.toLowerCase().includes('konnte nicht'))) {
+  } else if (warningsWithoutInfo.some(w => typeof w !== 'string' ? w.code === 'palletsRemaining' : warningText(w).toLowerCase().includes('konnte nicht'))) {
     meldungenStyle = { bg: 'bg-red-50', border: 'border-red-200', header: 'text-red-800', list: 'text-red-700' };
   } else if (warningsWithoutInfo.length > 0) {
     meldungenStyle = { bg: 'bg-yellow-50', border: 'border-yellow-200', header: 'text-yellow-800', list: 'text-yellow-700' };
@@ -550,7 +554,7 @@ export default function HomePage() {
             <h3 className={`font-semibold mb-2 ${meldungenStyle.header} drop-shadow-sm`}>{t.messages}</h3>
             {warnings.length > 0 ? (
                 <ul className={`list-disc list-inside text-sm space-y-1 ${meldungenStyle.list}`}>
-                {warnings.map((w, i) => <li key={i}>{translateWarning(w, locale)}</li>)}
+                {warnings.map((w, i) => <li key={i}>{warningText(w)}</li>)}
                 </ul>
             ) : (
                 <p className={`text-sm ${meldungenStyle.list}`}>{t.noProblems}</p>

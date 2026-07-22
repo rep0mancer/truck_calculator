@@ -63,7 +63,7 @@ describe('loadingCalculator real-world combination matrix', () => {
       const result = calculateLoadingLogic(truck, entry(10), entry(10, 500, 2), true, true, 'auto');
       expect(result.loadedEuroPalletsBase).toBe(result.totalEuroPalletsVisual);
       expect(result.loadedIndustrialPalletsBase).toBe(result.totalDinPalletsVisual);
-      expect(result.warnings.some(warning => warning.includes('Stapeln'))).toBe(true);
+      expect(result.warnings.some(warning => warning.code === 'wagonStackingDisabled')).toBe(true);
     }
   });
 
@@ -177,7 +177,7 @@ describe('loadingCalculator real-world combination matrix', () => {
     expect(result.loadedIndustrialPalletsBase).toBe(23);
     expect(result.loadedEuroPalletsBase).toBe(4);
     expect(result.totalWeightKg).toBe(0);
-    expect(result.warnings.some(warning => warning.includes('Übrig'))).toBe(false);
+    expect(result.warnings.some(warning => warning.code === 'palletsRemaining')).toBe(false);
 
     const floor = result.palletArrangement[0].pallets.filter((p: any) => p.isStackedTier !== 'top');
     expect(floor).toHaveLength(27);
@@ -218,6 +218,58 @@ describe('loadingCalculator real-world combination matrix', () => {
       const result = calculateLoadingLogic('curtainSider', entry(eup, 0), entry(din, 0, 2), false, false, 'auto', 'DIN_FIRST');
       expect([result.totalDinPalletsVisual, result.totalEuroPalletsVisual], `${din} DIN + ${eup} EUP`).toEqual([din, eup]);
     }
+  });
+});
+
+describe('static axle calculations', () => {
+  it('reports front-heavy and rear-heavy placements differently at identical cargo weight', () => {
+    const front = calculateLoadingLogic('curtainSider', entry(10, 0), entry(12, 2_000, 2), false, false, 'auto');
+    const rear = calculateLoadingLogic('curtainSider', entry(2, 12_000), entry(15, 0, 2), false, false, 'auto');
+    expect(front.totalWeightKg).toBe(rear.totalWeightKg);
+    expect(front.axleCalculation.available && front.axleCalculation.exceededComponents).toContain('supportTractor');
+    expect(rear.axleCalculation.available && rear.axleCalculation.exceededComponents).toContain('trailerAxleGroup');
+    expect(front.warnings.filter(w => w.code === 'axleLimitExceeded')).not.toEqual(rear.warnings.filter(w => w.code === 'axleLimitExceeded'));
+  });
+
+  it('balances reactions for an evenly distributed load and includes unladen reactions', () => {
+    const result = calculateLoadingLogic('curtainSider', entry(22, 500), [], false, false, 'auto');
+    expect(result.axleCalculation.available).toBe(true);
+    if (!result.axleCalculation.available) return;
+    expect(result.axleCalculation.supportTractor.cargoReactionKg + result.axleCalculation.trailerAxleGroup.cargoReactionKg).toBeCloseTo(result.totalWeightKg);
+    expect(result.axleCalculation.supportTractor.calculatedKg).toBeCloseTo(result.axleCalculation.supportTractor.cargoReactionKg + 5_500);
+    expect(result.axleCalculation.trailerAxleGroup.calculatedKg).toBeCloseTo(result.axleCalculation.trailerAxleGroup.cargoReactionKg + 6_500);
+  });
+
+  it('preserves mixed and stacked pallet weights in placement moments', () => {
+    const result = calculateLoadingLogic('curtainSider', [{ id: 1, quantity: 2, weight: '300' }, { id: 2, quantity: 2, weight: '700' }], entry(4, 1_100, 3), true, true, 'auto', 'DIN_FIRST');
+    const weights = result.palletArrangement.flatMap(unit => unit.pallets.map(p => p.weight));
+    expect(weights.sort((a, b) => a - b)).toEqual([300, 300, 700, 700, 1_100, 1_100, 1_100, 1_100]);
+    expect(result.axleCalculation.available).toBe(true);
+    if (result.axleCalculation.available) {
+      expect(result.axleCalculation.supportTractor.cargoReactionKg + result.axleCalculation.trailerAxleGroup.cargoReactionKg).toBeCloseTo(6_400);
+    }
+  });
+
+  it('returns configured unladen reactions for an empty semitrailer', () => {
+    const result = calculateLoadingLogic('frigo', [], [], false, false, 'auto');
+    expect(result.axleCalculation.available && result.axleCalculation.supportTractor.calculatedKg).toBe(5_500);
+    expect(result.axleCalculation.available && result.axleCalculation.trailerAxleGroup.calculatedKg).toBe(6_500);
+    expect(result.axleCalculation.available && result.axleCalculation.exceededComponents).toEqual([]);
+  });
+
+  it('does not warn when the support reaction is exactly at its limit', () => {
+    // A DIN pallet in the first row has its centre at the fifth wheel (50 cm),
+    // putting its entire 12,500 kg cargo reaction on the 5,500 kg support tare.
+    const result = calculateLoadingLogic('curtainSider', [], entry(1, 12_500), false, false, 'auto');
+    expect(result.axleCalculation.available && result.axleCalculation.supportTractor.calculatedKg).toBe(18_000);
+    expect(result.axleCalculation.available && result.axleCalculation.supportTractor.exceeded).toBe(false);
+    expect(result.warnings.some(w => w.code === 'axleLimitExceeded')).toBe(false);
+  });
+
+  it.each(['roadTrain', 'smallTruck', 'Waggon', 'Waggon2'] as const)('marks %s axle calculation unavailable', truck => {
+    const result = calculateLoadingLogic(truck, entry(10, 1_000), [], false, false, 'auto');
+    expect(result.axleCalculation).toEqual({ available: false, reason: 'unsupportedVehicleConfiguration' });
+    expect(result.warnings.some(w => w.code === 'axleLimitExceeded')).toBe(false);
   });
 });
 
