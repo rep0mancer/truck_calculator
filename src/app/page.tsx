@@ -344,22 +344,19 @@ export default function HomePage() {
   const truckVisualizationScale = 0.35;
 
   const warningText = (warning: LoadingWarning | string) => translateLoadingWarning(warning, locale);
-  const warningsWithoutInfo = warnings.filter(w => {
-    const text = warningText(w).toLowerCase();
-    return !text.includes('platz') && !text.includes('benötigt');
+  const impossibleWarningCodes = new Set<LoadingWarning['code']>([
+    'palletsRemaining', 'weightLimitReached', 'axleLimitExceeded'
+  ]);
+  const hasImpossibleWarning = warnings.some(w => {
+    if (typeof w !== 'string') return impossibleWarningCodes.has(w.code);
+    // Legacy calculator messages are generated in German before translation.
+    return /konnte nicht|kapazit.t.*überschritten|maximale.*kapazit.t|benötigt|volle LKW|requires? \d+ trucks?/i.test(w);
   });
-  let meldungenStyle = {
-    bg: 'bg-gray-50', border: 'border-gray-200',
-    header: 'text-gray-800', list: 'text-gray-700'
-  };
-
-  if (warningsWithoutInfo.length === 0 && (totalDinPalletsVisual > 0 || totalEuroPalletsVisual > 0)) {
-    meldungenStyle = { bg: 'bg-green-50', border: 'border-green-200', header: 'text-green-800', list: 'text-green-700' };
-  } else if (warningsWithoutInfo.some(w => typeof w !== 'string' ? w.code === 'palletsRemaining' : warningText(w).toLowerCase().includes('konnte nicht'))) {
-    meldungenStyle = { bg: 'bg-red-50', border: 'border-red-200', header: 'text-red-800', list: 'text-red-700' };
-  } else if (warningsWithoutInfo.length > 0) {
-    meldungenStyle = { bg: 'bg-yellow-50', border: 'border-yellow-200', header: 'text-yellow-800', list: 'text-yellow-700' };
-  }
+  const meldungenStyle = hasImpossibleWarning
+    ? { bg: 'bg-red-50', border: 'border-red-200', header: 'text-red-800', list: 'text-red-700' }
+    : warnings.length > 0
+      ? { bg: 'bg-yellow-50', border: 'border-yellow-200', header: 'text-yellow-800', list: 'text-yellow-700' }
+      : { bg: 'bg-green-50', border: 'border-green-200', header: 'text-green-800', list: 'text-green-700' };
 
   return (
     <div className="container mx-auto p-4 font-sans space-y-6">
@@ -379,7 +376,7 @@ export default function HomePage() {
             </button>
           ))}
         </div>
-        <h1 className="text-3xl font-bold text-center tracking-tight drop-shadow-sm xl:pr-[34rem]">{t.title}</h1>
+        <h1 className="text-3xl font-bold text-center tracking-tight drop-shadow-sm">{t.title}</h1>
         <p className="text-center text-sm text-slate-100/90 drop-shadow">{t.subtitle}</p>
       </header>
       <main className="p-6 bg-white shadow-lg rounded-b-lg">
