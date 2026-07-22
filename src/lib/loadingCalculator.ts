@@ -174,8 +174,7 @@ export function calculateLoadingLogic(
   const flatten = (entries: WeightEntry[], type: Kind): Single[] => entries.flatMap(entry =>
     Array.from({ length: Math.max(0, Math.floor(Number(entry.quantity) || 0)) }, () => ({
       id: ++id, type, sourceId: entry.id, weight: Math.max(0, Number.parseFloat(entry.weight) || 0),
-      // Missing means stackable for backwards compatibility with saved data.
-      stackable: entry.stackable !== false,
+      stackable: entry.stackable === true,
     })),
   );
   const requested = { euro: flatten(eupWeights, 'euro'), industrial: flatten(dinWeights, 'industrial') };
@@ -192,7 +191,11 @@ export function calculateLoadingLogic(
   let weight = 0;
 
   const tops: Record<Kind, Single[]> = { euro: [], industrial: [] };
-  const canStack = { euro: eupStackable && !truckKey.startsWith('Waggon'), industrial: dinStackable && !truckKey.startsWith('Waggon') };
+  const globallyStackable = { euro: eupStackable, industrial: dinStackable };
+  const canStack = {
+    euro: (globallyStackable.euro || requested.euro.some(pallet => pallet.stackable)) && !truckKey.startsWith('Waggon'),
+    industrial: (globallyStackable.industrial || requested.industrial.some(pallet => pallet.stackable)) && !truckKey.startsWith('Waggon'),
+  };
   const limits = { euro: stackLimit(maxStackedEup), industrial: stackLimit(maxStackedDin) };
   const strategies = { euro: eupStackingStrategy, industrial: dinStackingStrategy };
 
@@ -202,8 +205,11 @@ export function calculateLoadingLogic(
     // Forced pairs follow flattened input order: first is base, second is top.
     // An odd final pallet is a base. Paired bases are kept together at the end
     // so rendering's stacked block retains the exact base/top association.
-    const stackableCargo = cargo.filter(pallet => pallet.stackable);
-    const unstackableCargo = cargo.filter(pallet => !pallet.stackable);
+    // The original type-wide switch remains the convenient "all groups"
+    // option. Per-group flags are an additional opt-in when that switch is off.
+    const isStackable = (pallet: Single) => globallyStackable[type] || pallet.stackable;
+    const stackableCargo = cargo.filter(isStackable);
+    const unstackableCargo = cargo.filter(pallet => !isStackable(pallet));
     const forcedPairCount = canStack[type] && strategies[type] === 'force'
       ? Math.min(Math.floor(stackableCargo.length / 2), limits[type]) : 0;
     const candidates: Array<{ base: Single; top?: Single }> = [];
@@ -229,7 +235,9 @@ export function calculateLoadingLogic(
   for (const type of priority) if (canStack[type]) {
     if (strategies[type] === 'force') continue;
     for (const pallet of rejected[type]) {
-      if (!pallet.stackable || tops[type].length >= floor[type].filter(base => base.stackable).length || tops[type].length >= limits[type]) continue;
+      if (!(globallyStackable[type] || pallet.stackable)
+        || tops[type].length >= floor[type].filter(base => globallyStackable[type] || base.stackable).length
+        || tops[type].length >= limits[type]) continue;
       if (weight + pallet.weight > truck.maxGrossWeightKg) continue;
       tops[type].push(pallet); weight += pallet.weight;
     }
@@ -302,7 +310,10 @@ export function calculateLoadingLogic(
   const basesEup = all.filter(p => p.type === 'euro' && p.isStackedTier !== 'top').length;
   const basesDin = all.filter(p => p.type === 'industrial' && p.isStackedTier !== 'top').length;
   const warnings: LoadingWarning[] = [];
-  if (truckKey.startsWith('Waggon') && (eupStackable || dinStackable)) warnings.push({ code: 'wagonStackingDisabled' });
+  if (truckKey.startsWith('Waggon') && (canStack.euro || canStack.industrial || eupStackable || dinStackable
+    || requested.euro.some(pallet => pallet.stackable) || requested.industrial.some(pallet => pallet.stackable))) {
+    warnings.push({ code: 'wagonStackingDisabled' });
+  }
   if (loadedEup < requested.euro.length || loadedDin < requested.industrial.length) warnings.push({ code: 'palletsRemaining', params: { industrial: requested.industrial.length - loadedDin, euro: requested.euro.length - loadedEup } });
   if (weight >= truck.maxGrossWeightKg) warnings.push({ code: 'weightLimitReached' });
   let rowNumber = 0;

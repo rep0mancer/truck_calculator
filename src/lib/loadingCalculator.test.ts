@@ -107,10 +107,21 @@ describe('loadingCalculator real-world combination matrix', () => {
         { id: 1, quantity: 4, weight: '100', stackable: false },
         { id: 2, quantity: 4, weight: '200', stackable: true },
       ];
-      const result = calculateLoadingLogic('curtainSider', groups, [], true, false, 'auto', 'EUP_FIRST', undefined, undefined, 'force');
+      const result = calculateLoadingLogic('curtainSider', groups, [], false, false, 'auto', 'EUP_FIRST', undefined, undefined, 'force');
       const tops = result.palletArrangement[0].pallets.filter((p: any) => p.isStackedTier === 'top');
       expect(tops).toHaveLength(2);
       expect(tops.every((p: any) => p.sourceId === 2)).toBe(true);
+    });
+
+    it('keeps the type-wide switch as an all-groups stacking option', () => {
+      const groups: WeightEntry[] = [
+        { id: 1, quantity: 4, weight: '100', stackable: false },
+        { id: 2, quantity: 4, weight: '200', stackable: false },
+      ];
+      const result = calculateLoadingLogic('curtainSider', groups, [], true, false, 'auto', 'EUP_FIRST', undefined, undefined, 'force');
+      const tops = result.palletArrangement[0].pallets.filter((p: any) => p.isStackedTier === 'top');
+      expect(tops).toHaveLength(4);
+      expect(new Set(tops.map((p: any) => p.sourceId))).toEqual(new Set([1, 2]));
     });
 
     it('warns when a double stack would stand alone in its row', () => {
