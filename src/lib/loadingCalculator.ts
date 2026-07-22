@@ -1,10 +1,12 @@
-export type WeightEntry = { id: number; weight: string; quantity: number };
+export type WeightEntry = { id: number; weight: string; quantity: number; stackable?: boolean };
 
 export type AxleComponent = 'supportTractor' | 'trailerAxleGroup';
 export type LoadingWarning =
   | { code: 'wagonStackingDisabled' }
   | { code: 'palletsRemaining'; params: { industrial: number; euro: number } }
   | { code: 'weightLimitReached' }
+  | { code: 'unevenStacking'; params: { row: number } }
+  | { code: 'axleLimitApproaching'; params: { component: AxleComponent; calculatedKg: number; limitKg: number; percent: number } }
   | { code: 'axleLimitExceeded'; params: { component: AxleComponent; calculatedKg: number; limitKg: number } };
 
 export type AxleCalculation = {
@@ -76,7 +78,7 @@ export const MAX_PALLET_SIMULATION_QUANTITY = 300;
 export const KILOGRAM_FORMATTER = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 0 });
 
 type Kind = 'euro' | 'industrial';
-type Single = { id: number; type: Kind; weight: number; sourceId: number };
+type Single = { id: number; type: Kind; weight: number; sourceId: number; stackable: boolean };
 type Pattern = 'auto' | 'long' | 'broad';
 /** overflow-only preserves the legacy policy; force pairs cargo before floor planning. */
 export type StackingStrategy = 'overflow-only' | 'force';
@@ -172,6 +174,7 @@ export function calculateLoadingLogic(
   const flatten = (entries: WeightEntry[], type: Kind): Single[] => entries.flatMap(entry =>
     Array.from({ length: Math.max(0, Math.floor(Number(entry.quantity) || 0)) }, () => ({
       id: ++id, type, sourceId: entry.id, weight: Math.max(0, Number.parseFloat(entry.weight) || 0),
+      stackable: entry.stackable === true,
     })),
   );
   const requested = { euro: flatten(eupWeights, 'euro'), industrial: flatten(dinWeights, 'industrial') };
@@ -188,7 +191,11 @@ export function calculateLoadingLogic(
   let weight = 0;
 
   const tops: Record<Kind, Single[]> = { euro: [], industrial: [] };
-  const canStack = { euro: eupStackable && !truckKey.startsWith('Waggon'), industrial: dinStackable && !truckKey.startsWith('Waggon') };
+  const globallyStackable = { euro: eupStackable, industrial: dinStackable };
+  const canStack = {
+    euro: (globallyStackable.euro || requested.euro.some(pallet => pallet.stackable)) && !truckKey.startsWith('Waggon'),
+    industrial: (globallyStackable.industrial || requested.industrial.some(pallet => pallet.stackable)) && !truckKey.startsWith('Waggon'),
+  };
   const limits = { euro: stackLimit(maxStackedEup), industrial: stackLimit(maxStackedDin) };
   const strategies = { euro: eupStackingStrategy, industrial: dinStackingStrategy };
 
@@ -198,11 +205,16 @@ export function calculateLoadingLogic(
     // Forced pairs follow flattened input order: first is base, second is top.
     // An odd final pallet is a base. Paired bases are kept together at the end
     // so rendering's stacked block retains the exact base/top association.
+    // The original type-wide switch remains the convenient "all groups"
+    // option. Per-group flags are an additional opt-in when that switch is off.
+    const isStackable = (pallet: Single) => globallyStackable[type] || pallet.stackable;
+    const stackableCargo = cargo.filter(isStackable);
+    const unstackableCargo = cargo.filter(pallet => !isStackable(pallet));
     const forcedPairCount = canStack[type] && strategies[type] === 'force'
-      ? Math.min(Math.floor(cargo.length / 2), limits[type]) : 0;
+      ? Math.min(Math.floor(stackableCargo.length / 2), limits[type]) : 0;
     const candidates: Array<{ base: Single; top?: Single }> = [];
-    for (let index = 0; index < forcedPairCount * 2; index += 2) candidates.push({ base: cargo[index], top: cargo[index + 1] });
-    const unpaired = cargo.slice(forcedPairCount * 2).map(base => ({ base }));
+    for (let index = 0; index < forcedPairCount * 2; index += 2) candidates.push({ base: stackableCargo[index], top: stackableCargo[index + 1] });
+    const unpaired = [...unstackableCargo, ...stackableCargo.slice(forcedPairCount * 2)].map(base => ({ base }));
     for (const candidate of [...unpaired, ...candidates]) {
       const pallet = candidate.base;
       const d = floor.industrial.length + (type === 'industrial' ? 1 : 0);
@@ -223,7 +235,9 @@ export function calculateLoadingLogic(
   for (const type of priority) if (canStack[type]) {
     if (strategies[type] === 'force') continue;
     for (const pallet of rejected[type]) {
-      if (tops[type].length >= floor[type].length || tops[type].length >= limits[type]) continue;
+      if (!(globallyStackable[type] || pallet.stackable)
+        || tops[type].length >= floor[type].filter(base => globallyStackable[type] || base.stackable).length
+        || tops[type].length >= limits[type]) continue;
       if (weight + pallet.weight > truck.maxGrossWeightKg) continue;
       tops[type].push(pallet); weight += pallet.weight;
     }
@@ -232,8 +246,8 @@ export function calculateLoadingLogic(
   const allocation = getAllocation(floor.industrial.length, floor.euro.length)!;
   const arrangements = truck.units.map((unit, unitIndex) => {
     const counts = allocation[unitIndex];
-    const unitDin = floor.industrial.splice(0, counts.din);
-    const unitEup = floor.euro.splice(0, counts.eup);
+    const unitDin = floor.industrial.splice(0, counts.din).sort((a, b) => Number(a.stackable) - Number(b.stackable));
+    const unitEup = floor.euro.splice(0, counts.eup).sort((a, b) => Number(a.stackable) - Number(b.stackable));
     const stackedDin = unitDin.splice(Math.max(0, unitDin.length - tops.industrial.length));
     const stackedEup = unitEup.splice(Math.max(0, unitEup.length - tops.euro.length));
     const takeDinTops = tops.industrial.splice(0, stackedDin.length);
@@ -296,9 +310,25 @@ export function calculateLoadingLogic(
   const basesEup = all.filter(p => p.type === 'euro' && p.isStackedTier !== 'top').length;
   const basesDin = all.filter(p => p.type === 'industrial' && p.isStackedTier !== 'top').length;
   const warnings: LoadingWarning[] = [];
-  if (truckKey.startsWith('Waggon') && (eupStackable || dinStackable)) warnings.push({ code: 'wagonStackingDisabled' });
+  if (truckKey.startsWith('Waggon') && (canStack.euro || canStack.industrial || eupStackable || dinStackable
+    || requested.euro.some(pallet => pallet.stackable) || requested.industrial.some(pallet => pallet.stackable))) {
+    warnings.push({ code: 'wagonStackingDisabled' });
+  }
   if (loadedEup < requested.euro.length || loadedDin < requested.industrial.length) warnings.push({ code: 'palletsRemaining', params: { industrial: requested.industrial.length - loadedDin, euro: requested.euro.length - loadedEup } });
   if (weight >= truck.maxGrossWeightKg) warnings.push({ code: 'weightLimitReached' });
+  let rowNumber = 0;
+  for (const unit of arrangements) {
+    const rows = new Map<number, typeof unit.pallets>();
+    for (const pallet of unit.pallets) {
+      const row = rows.get(pallet.x) ?? [];
+      row.push(pallet); rows.set(pallet.x, row);
+    }
+    for (const row of [...rows.values()].sort((a, b) => a[0].x - b[0].x)) {
+      rowNumber++;
+      const bases = row.filter(pallet => pallet.isStackedTier !== 'top');
+      if (bases.length === 1 && row.some(pallet => pallet.isStackedTier === 'top')) warnings.push({ code: 'unevenStacking', params: { row: rowNumber } });
+    }
+  }
   let axleCalculation: AxleCalculation = { available: false, reason: 'unsupportedVehicleConfiguration' };
   if (truck.axleModel) {
     const model = truck.axleModel;
@@ -323,9 +353,10 @@ export function calculateLoadingLogic(
       exceededComponents,
     };
     axleCalculation = calculated;
-    for (const component of exceededComponents) {
+    for (const component of (['supportTractor', 'trailerAxleGroup'] as AxleComponent[])) {
       const result = component === 'supportTractor' ? calculated.supportTractor : calculated.trailerAxleGroup;
-      warnings.push({ code: 'axleLimitExceeded', params: { component, calculatedKg: Math.round(result.calculatedKg), limitKg: result.limitKg } });
+      if (result.exceeded) warnings.push({ code: 'axleLimitExceeded', params: { component, calculatedKg: Math.round(result.calculatedKg), limitKg: result.limitKg } });
+      else if (result.calculatedKg >= result.limitKg * 0.9) warnings.push({ code: 'axleLimitApproaching', params: { component, calculatedKg: Math.round(result.calculatedKg), limitKg: result.limitKg, percent: Math.round(result.calculatedKg / result.limitKg * 100) } });
     }
   }
   const baseArea = basesEup * PALLET_TYPES.euro.area + basesDin * PALLET_TYPES.industrial.area;

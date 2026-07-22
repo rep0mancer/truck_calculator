@@ -8,6 +8,7 @@ type WeightEntry = {
   id: number;
   weight: string;
   quantity: number;
+  stackable?: boolean;
 };
 
 interface WeightInputsProps {
@@ -21,19 +22,19 @@ export function WeightInputs({ entries, onChange, palletType, locale }: WeightIn
   const t = translations[locale];
   const handleAddEntry = () => {
     const maxId = entries.reduce((max, entry) => Math.max(max, entry.id), 0);
-    onChange([...entries, { id: maxId + 1, weight: '', quantity: 0 }]);
+    onChange([...entries, { id: maxId + 1, weight: '', quantity: 0, stackable: false }]);
   };
 
   const handleRemoveEntry = (id: number) => {
     onChange(entries.filter(entry => entry.id !== id));
   };
 
-  const handleEntryChange = (id: number, field: 'weight' | 'quantity', value: string) => {
+  const handleEntryChange = (id: number, field: 'weight' | 'quantity' | 'stackable', value: string | boolean) => {
     const newEntries = entries.map(entry => {
       if (entry.id === id) {
-        const newQuantity = field === 'quantity' ? parseInt(value, 10) || 0 : entry.quantity;
-        const newWeight = field === 'weight' ? value : entry.weight;
-        return { ...entry, quantity: newQuantity, weight: newWeight };
+        const newQuantity = field === 'quantity' ? parseInt(String(value), 10) || 0 : entry.quantity;
+        const newWeight = field === 'weight' ? String(value) : entry.weight;
+        return { ...entry, quantity: newQuantity, weight: newWeight, stackable: field === 'stackable' ? Boolean(value) : entry.stackable };
       }
       return entry;
     });
@@ -48,6 +49,7 @@ export function WeightInputs({ entries, onChange, palletType, locale }: WeightIn
       <div className="flex items-center gap-2 mb-2">
         <label className="w-20 text-center text-xs font-semibold text-slate-600">{t.quantity}</label>
         <label className="w-32 text-center text-xs font-semibold text-slate-600">{t.weightPer}/{palletType} (kg)</label>
+        <label className="w-16 text-center text-xs font-semibold text-slate-600">{t.stackableShort}</label>
       </div>
       {entries.map(entry => (
         <div key={entry.id} className="flex items-center gap-3 mt-2 rounded-2xl border border-white/30 bg-white/10 px-3 py-2 backdrop-blur-xl shadow-[0_18px_36px_-28px_rgba(15,23,42,0.45)]">
@@ -85,6 +87,7 @@ export function WeightInputs({ entries, onChange, palletType, locale }: WeightIn
             placeholder={`${t.weightPer}/${palletType}`}
             className="w-32 text-center font-semibold"
           />
+          <input type="checkbox" checked={entry.stackable === true} onChange={e => handleEntryChange(entry.id, 'stackable', e.target.checked)} className="h-4 w-4 accent-emerald-500" aria-label={`${t.stackable}: ${entry.weight || palletType}`} />
           {entries.length > 1 && (
             <button
               type="button"
