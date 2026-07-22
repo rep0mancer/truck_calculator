@@ -91,6 +91,21 @@ describe('loadingCalculator real-world combination matrix', () => {
     }
   });
 
+  it('preserves existing EUPs when the remaining space is filled with stackable DINs', () => {
+    const existingEups = entry(10, 0);
+    const fillSimulation = calculateLoadingLogic(
+      'curtainSider', existingEups, entry(300, 0, 2), false, true, 'auto', 'EUP_FIRST', 0, 0,
+    );
+    const dinToAdd = fillSimulation.totalDinPalletsVisual;
+    const finalResult = calculateLoadingLogic(
+      'curtainSider', existingEups, entry(dinToAdd, 0, 2), false, true, 'auto', 'EUP_FIRST', 0, 0,
+    );
+
+    expect(finalResult.totalEuroPalletsVisual).toBe(10);
+    expect(finalResult.totalDinPalletsVisual).toBe(dinToAdd);
+    expect(finalResult.palletArrangement).toEqual(fillSimulation.palletArrangement);
+  });
+
   it('skips an overweight pallet and continues with later entries', () => {
     const result = calculateLoadingLogic('curtainSider', [{ id: 1, quantity: 1, weight: '25000' }, { id: 2, quantity: 2, weight: '100' }], [], false, false, 'auto');
     expect(result.totalEuroPalletsVisual).toBe(2);
