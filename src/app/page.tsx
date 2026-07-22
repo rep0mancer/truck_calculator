@@ -43,6 +43,7 @@ export default function HomePage() {
   const [actualEupLoadingPattern, setActualEupLoadingPattern] = useState('auto');
   const [remainingCapacity, setRemainingCapacity] = useState<{ eup: number, din: number }>({ eup: 0, din: 0 });
   const [lastEdited, setLastEdited] = useState<'eup' | 'din'>('eup');
+  const [placementOrder, setPlacementOrder] = useState<'DIN_FIRST' | 'EUP_FIRST'>('DIN_FIRST');
   const { toast } = useToast();
   const isWaggonSelected = ['Waggon', 'Waggon2'].includes(selectedTruck);
   const selectedTruckConfig = TRUCK_TYPES[selectedTruck as keyof typeof TRUCK_TYPES];
@@ -58,7 +59,7 @@ export default function HomePage() {
       dinWeights,
       isEUPStackable, isDINStackable,
       eupLoadingPattern as 'auto' | 'long' | 'broad',
-      'DIN_FIRST',
+      placementOrder,
       eupStackLimit,
       dinStackLimit
     );
@@ -141,7 +142,7 @@ export default function HomePage() {
     
     setRemainingCapacity({ eup: remainingEup, din: remainingDin });
     
-  }, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, eupStackLimit, dinStackLimit]);
+  }, [selectedTruck, eupWeights, dinWeights, isEUPStackable, isDINStackable, eupLoadingPattern, placementOrder, eupStackLimit, dinStackLimit]);
 
   useEffect(() => {
     calculateAndSetState();
@@ -165,6 +166,7 @@ export default function HomePage() {
     setEupStackLimit(0);
     setDinStackLimit(0);
     setEupLoadingPattern('auto');
+    setPlacementOrder('DIN_FIRST');
   };
 
   const handleMaximizePallets = (palletTypeToMax: 'euro' | 'industrial') => {
@@ -210,6 +212,12 @@ export default function HomePage() {
 
     const addedEups = res.totalEuroPalletsVisual - currentEups;
     const addedDins = res.totalDinPalletsVisual - currentDins;
+
+    // Keep the cargo that was already entered ahead of the fill cargo when
+    // React recalculates the final arrangement. Reverting to DIN_FIRST here
+    // after an EUP-first fill could evict existing EUPs when DIN stacking is
+    // enabled, so the displayed result would no longer match this simulation.
+    setPlacementOrder(order);
 
     if (typeToFill === 'euro' && addedEups > 0) {
         setEupWeights(weights => {
