@@ -1,12 +1,69 @@
 export type WeightEntry = { id: number; weight: string; quantity: number };
 
+export type AxleComponent = 'supportTractor' | 'trailerAxleGroup';
+export type LoadingWarning =
+  | { code: 'wagonStackingDisabled' }
+  | { code: 'palletsRemaining'; params: { industrial: number; euro: number } }
+  | { code: 'weightLimitReached' }
+  | { code: 'axleLimitExceeded'; params: { component: AxleComponent; calculatedKg: number; limitKg: number } };
+
+export type AxleCalculation = {
+  available: true;
+  fifthWheelPositionCm: number;
+  trailerAxleGroupCenterCm: number;
+  supportTractor: { cargoReactionKg: number; unladenReactionKg: number; calculatedKg: number; limitKg: number; exceeded: boolean };
+  trailerAxleGroup: { cargoReactionKg: number; unladenReactionKg: number; calculatedKg: number; limitKg: number; exceeded: boolean };
+  exceededComponents: AxleComponent[];
+} | { available: false; reason: 'unsupportedVehicleConfiguration' };
+
+type AxleModel = {
+  fifthWheelPositionCm: number;
+  trailerAxleGroupCenterCm: number;
+  supportTractorLimitKg: number;
+  trailerAxleGroupLimitKg: number;
+  unladenSupportReactionKg: number;
+  unladenTrailerAxleGroupReactionKg: number;
+};
+
+/*
+ * Legal baseline: consolidated Directive 96/53/EC, Annex I, points 3.1-3.5:
+ * single non-driving axle 10 t; single driving axle 11.5 t; motor-vehicle
+ * tandem 11.5/16/18 t (19 t only with the stated suspension/tyre conditions);
+ * trailer tandem 11/16/18/20 t according to spacing; trailer tridem 21/24 t.
+ * Source: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:01996L0053-20240506
+ *
+ * The UI identifies German as Austria. Austrian KFG 1967 § 4(7a) uses the
+ * same applicable 18 t tractor tandem and 24 t trailer tridem maxima here, so
+ * no stricter Austrian value is required for this assumed 2+3 semitrailer.
+ * Source: https://www.ris.bka.gv.at/NormDokument.wxe?Abfrage=Bundesnormen&Gesetzesnummer=10011384&Paragraf=4
+ * These are group limits, deliberately not a universal per-axle constant.
+ * Geometry and unladen reactions are explicit engineering assumptions for a
+ * representative 13.2 m semitrailer and must be replaced with plate/weighbridge
+ * data for a specific vehicle.
+ */
+export const EU_AXLE_LIMITS_KG = {
+  single: { nonDriving: 10_000, driving: 11_500 },
+  motorVehicleTandem: { under1m: 11_500, from1mTo1_3m: 16_000, from1_3mTo1_8m: 18_000, qualifiedFrom1_3mTo1_8m: 19_000 },
+  trailerTandem: { under1m: 11_000, from1mTo1_3m: 16_000, from1_3mTo1_8m: 18_000, from1_8m: 20_000 },
+  trailerTridem: { upTo1_3m: 21_000, from1_3mTo1_4m: 24_000 },
+} as const;
+
+export const STANDARD_SEMITRAILER_AXLE_MODEL: Readonly<AxleModel> = {
+  fifthWheelPositionCm: 50,
+  trailerAxleGroupCenterCm: 1080,
+  supportTractorLimitKg: EU_AXLE_LIMITS_KG.motorVehicleTandem.from1_3mTo1_8m,
+  trailerAxleGroupLimitKg: EU_AXLE_LIMITS_KG.trailerTridem.from1_3mTo1_4m,
+  unladenSupportReactionKg: 5_500,
+  unladenTrailerAxleGroupReactionKg: 6_500,
+};
+
 export const TRUCK_TYPES = {
-  roadTrain: { name: 'Hängerzug (2x 7,2m)', units: [{ id: 'unit1', length: 720, width: 245 }, { id: 'unit2', length: 720, width: 245 }], totalLength: 1440, usableLength: 1440, maxWidth: 245, maxGrossWeightKg: 24000 },
-  curtainSider: { name: 'Planensattel Standard (13.2m)', units: [{ id: 'main', length: 1320, width: 245 }], totalLength: 1320, usableLength: 1320, maxWidth: 245, maxGrossWeightKg: 24000 },
-  frigo: { name: 'Frigo (Kühler) Standard (13.2m)', units: [{ id: 'main', length: 1320, width: 245 }], totalLength: 1320, usableLength: 1320, maxWidth: 245, maxGrossWeightKg: 18300 },
-  smallTruck: { name: 'Motorwagen (7.2m)', units: [{ id: 'main', length: 720, width: 245 }], totalLength: 720, usableLength: 720, maxWidth: 245, maxGrossWeightKg: 10000 },
-  Waggon: { name: 'Waggon POE', units: [{ id: 'main', length: 1520, width: 290 }], totalLength: 1520, usableLength: 1520, maxWidth: 290, maxDinPallets: 26, maxGrossWeightKg: 24000 },
-  Waggon2: { name: 'Waggon KRM', units: [{ id: 'main', length: 1600, width: 290 }], totalLength: 1600, usableLength: 1600, maxWidth: 290, maxDinPallets: 28, maxGrossWeightKg: 24000 },
+  roadTrain: { name: 'Hängerzug (2x 7,2m)', units: [{ id: 'unit1', length: 720, width: 245 }, { id: 'unit2', length: 720, width: 245 }], totalLength: 1440, usableLength: 1440, maxWidth: 245, maxGrossWeightKg: 24000, axleModel: null },
+  curtainSider: { name: 'Planensattel Standard (13.2m)', units: [{ id: 'main', length: 1320, width: 245 }], totalLength: 1320, usableLength: 1320, maxWidth: 245, maxGrossWeightKg: 24000, axleModel: STANDARD_SEMITRAILER_AXLE_MODEL },
+  frigo: { name: 'Frigo (Kühler) Standard (13.2m)', units: [{ id: 'main', length: 1320, width: 245 }], totalLength: 1320, usableLength: 1320, maxWidth: 245, maxGrossWeightKg: 18300, axleModel: STANDARD_SEMITRAILER_AXLE_MODEL },
+  smallTruck: { name: 'Motorwagen (7.2m)', units: [{ id: 'main', length: 720, width: 245 }], totalLength: 720, usableLength: 720, maxWidth: 245, maxGrossWeightKg: 10000, axleModel: null },
+  Waggon: { name: 'Waggon POE', units: [{ id: 'main', length: 1520, width: 290 }], totalLength: 1520, usableLength: 1520, maxWidth: 290, maxDinPallets: 26, maxGrossWeightKg: 24000, axleModel: null },
+  Waggon2: { name: 'Waggon KRM', units: [{ id: 'main', length: 1600, width: 290 }], totalLength: 1600, usableLength: 1600, maxWidth: 290, maxDinPallets: 28, maxGrossWeightKg: 24000, axleModel: null },
 } as const;
 
 export const PALLET_TYPES = {
@@ -28,6 +85,7 @@ type PlannedRow =
   | { kind: 'MIXED_DIN_EUP'; length: 100; dinCount: 1; eupCount: 1 };
 type RowPlan = { rows: PlannedRow[]; length: number };
 type UnitAllocation = { din: number; eup: number; plan: RowPlan };
+type RenderedPallet = { x: number; y: number; width: number; height: number; weight: number; type: Kind; isStackedTier: 'base' | 'top' | null; [key: string]: unknown };
 
 function euroRows(count: number, pattern: Pattern): PlannedRow[] | null {
   if (count === 0) return [];
@@ -171,14 +229,14 @@ export function calculateLoadingLogic(
         const removed = takeEupTops.shift(); if (removed) weight -= removed.weight;
       }
     }
-    const pallets: Record<string, unknown>[] = [];
+    const pallets: RenderedPallet[] = [];
     let x = 0;
     let dinLabel = 0; let eupLabel = 0;
     const add = (base: Single, top: Single | undefined, px: number, py: number, width: number, height: number) => {
       const labelId = base.type === 'euro' ? ++eupLabel : ++dinLabel;
-      const visual = { x: px, y: py, width, height, type: base.type, isStackedTier: top ? 'base' : null, unitId: unit.id, labelId, displayBaseLabelId: labelId, displayStackedLabelId: top ? labelId + 1 : null, showAsFraction: Boolean(top), key: `${base.type}_${base.id}` };
+      const visual = { x: px, y: py, width, height, weight: base.weight, type: base.type, isStackedTier: top ? 'base' : null, unitId: unit.id, labelId, displayBaseLabelId: labelId, displayStackedLabelId: top ? labelId + 1 : null, showAsFraction: Boolean(top), key: `${base.type}_${base.id}` };
       pallets.push(visual);
-      if (top) pallets.push({ ...visual, isStackedTier: 'top', labelId: base.type === 'euro' ? ++eupLabel : ++dinLabel, key: `${base.type}_${base.id}_stack` });
+      if (top) pallets.push({ ...visual, weight: top.weight, isStackedTier: 'top', labelId: base.type === 'euro' ? ++eupLabel : ++dinLabel, key: `${base.type}_${base.id}_stack` });
     };
     const renderPlan = (plan: RowPlan, dinBases: Single[], dinTops: Single[], eupBases: Single[], eupTops: Single[]) => {
       let dinIndex = 0; let eupIndex = 0;
@@ -212,10 +270,39 @@ export function calculateLoadingLogic(
   const loadedDin = all.filter(p => p.type === 'industrial').length;
   const basesEup = all.filter(p => p.type === 'euro' && p.isStackedTier !== 'top').length;
   const basesDin = all.filter(p => p.type === 'industrial' && p.isStackedTier !== 'top').length;
-  const warnings: string[] = [];
-  if (truckKey.startsWith('Waggon') && (eupStackable || dinStackable)) warnings.push('Info: Stapeln ist auf dem Waggon nicht möglich und wurde deaktiviert.');
-  if (loadedEup < requested.euro.length || loadedDin < requested.industrial.length) warnings.push(`Konnte nicht alle Paletten laden. Übrig: ${requested.industrial.length - loadedDin} DIN und ${requested.euro.length - loadedEup} EUP.`);
-  if (weight >= truck.maxGrossWeightKg) warnings.push('Gewichtslimit erreicht.');
+  const warnings: LoadingWarning[] = [];
+  if (truckKey.startsWith('Waggon') && (eupStackable || dinStackable)) warnings.push({ code: 'wagonStackingDisabled' });
+  if (loadedEup < requested.euro.length || loadedDin < requested.industrial.length) warnings.push({ code: 'palletsRemaining', params: { industrial: requested.industrial.length - loadedDin, euro: requested.euro.length - loadedEup } });
+  if (weight >= truck.maxGrossWeightKg) warnings.push({ code: 'weightLimitReached' });
+  let axleCalculation: AxleCalculation = { available: false, reason: 'unsupportedVehicleConfiguration' };
+  if (truck.axleModel) {
+    const model = truck.axleModel;
+    const span = model.trailerAxleGroupCenterCm - model.fifthWheelPositionCm;
+    const renderedPallets = arrangements.flatMap(unit => unit.pallets) as Array<{ x: number; width: number; weight: number }>;
+    const cargo = renderedPallets.reduce<{ support: number; trailer: number }>((sum, p) => {
+      const center = p.x + p.width / 2;
+      return {
+        support: sum.support + p.weight * (model.trailerAxleGroupCenterCm - center) / span,
+        trailer: sum.trailer + p.weight * (center - model.fifthWheelPositionCm) / span,
+      };
+    }, { support: 0, trailer: 0 });
+    const support = cargo.support + model.unladenSupportReactionKg;
+    const trailer = cargo.trailer + model.unladenTrailerAxleGroupReactionKg;
+    const exceededComponents: AxleComponent[] = [];
+    if (support > model.supportTractorLimitKg) exceededComponents.push('supportTractor');
+    if (trailer > model.trailerAxleGroupLimitKg) exceededComponents.push('trailerAxleGroup');
+    const calculated: Extract<AxleCalculation, { available: true }> = {
+      available: true, fifthWheelPositionCm: model.fifthWheelPositionCm, trailerAxleGroupCenterCm: model.trailerAxleGroupCenterCm,
+      supportTractor: { cargoReactionKg: cargo.support, unladenReactionKg: model.unladenSupportReactionKg, calculatedKg: support, limitKg: model.supportTractorLimitKg, exceeded: support > model.supportTractorLimitKg },
+      trailerAxleGroup: { cargoReactionKg: cargo.trailer, unladenReactionKg: model.unladenTrailerAxleGroupReactionKg, calculatedKg: trailer, limitKg: model.trailerAxleGroupLimitKg, exceeded: trailer > model.trailerAxleGroupLimitKg },
+      exceededComponents,
+    };
+    axleCalculation = calculated;
+    for (const component of exceededComponents) {
+      const result = component === 'supportTractor' ? calculated.supportTractor : calculated.trailerAxleGroup;
+      warnings.push({ code: 'axleLimitExceeded', params: { component, calculatedKg: Math.round(result.calculatedKg), limitKg: result.limitKg } });
+    }
+  }
   const baseArea = basesEup * PALLET_TYPES.euro.area + basesDin * PALLET_TYPES.industrial.area;
-  return { palletArrangement: arrangements, loadedIndustrialPalletsBase: basesDin, loadedEuroPalletsBase: basesEup, totalDinPalletsVisual: loadedDin, totalEuroPalletsVisual: loadedEup, utilizationPercentage: Number((baseArea / (truck.usableLength * truck.maxWidth) * 100).toFixed(1)), warnings, totalWeightKg: weight, eupLoadingPatternUsed: pattern };
+  return { palletArrangement: arrangements, loadedIndustrialPalletsBase: basesDin, loadedEuroPalletsBase: basesEup, totalDinPalletsVisual: loadedDin, totalEuroPalletsVisual: loadedEup, utilizationPercentage: Number((baseArea / (truck.usableLength * truck.maxWidth) * 100).toFixed(1)), warnings, axleCalculation, totalWeightKg: weight, eupLoadingPatternUsed: pattern };
 }
